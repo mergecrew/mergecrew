@@ -1,0 +1,154 @@
+import { Injectable } from '@nestjs/common';
+import { NotFoundError } from '@mergecrew/domain';
+import { PrismaService } from '../../common/prisma.service.js';
+import { TenantContextService } from '../../common/tenant-context.service.js';
+import { QueueService } from '../../common/queue.service.js';
+import { EventlogService } from '../../common/eventlog.service.js';
+
+@Injectable()
+export class RunService {
+  constructor(
+    private prisma: PrismaService,
+    private tenant: TenantContextService,
+    private queue: QueueService,
+    private eventlogSvc: EventlogService,
+  ) {}
+
+  async list(projectSlug: string, opts: { limit?: number }) {
+    const t = this.tenant.require();
+    const project = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.project.findFirst({ where: { slug: projectSlug, organizationId: t.organizationId } }),
+    );
+    if (!project) throw new NotFoundError();
+    return this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.dailyRun.findMany({
+        where: { projectId: project.id },
+        orderBy: { scheduledAt: 'desc' },
+        take: opts.limit ?? 30,
+      }),
+    );
+  }
+
+  async get(runId: string) {
+    const t = this.tenant.require();
+    const run = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.dailyRun.findFirst({ where: { id: runId, organizationId: t.organizationId } }),
+    );
+    if (!run) throw new NotFoundError();
+    return run;
+  }
+
+  /** Enqueue a "Run now" event for the orchestrator. */
+  async runNow(projectSlug: string) {
+    const t = this.tenant.require();
+    const project = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.project.findFirst({ where: { slug: projectSlug, organizationId: t.organizationId } }),
+    );
+    if (!project) throw new NotFoundError();
+    await this.queue.get('run.due').add(
+      'run.due',
+      { organizationId: t.organizationId, projectId: project.id, manual: true },
+      { removeOnComplete: 1000, removeOnFail: 1000 },
+    );
+    return { queued: true, projectId: project.id };
+  }
+
+  async cancel(runId: string) {
+    const t = this.tenant.require();
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.dailyRun.update({
+        where: { id: runId },
+        data: { status: 'cancelled', finishedAt: new Date() },
+      }),
+    );
+    await this.eventlogSvc.eventlog.emit({
+      organizationId: t.organizationId,
+      projectId: (await this.get(runId)).projectId,
+      dailyRunId: runId,
+      type: 'RUN_CANCELLED',
+      actor: { kind: 'user', id: t.userId },
+    });
+    return { cancelled: true };
+  }
+
+  async timeline(runId: string, afterEventId?: string) {
+    const t = this.tenant.require();
+    return this.eventlogSvc.eventlog.replayRun(t.organizationId, runId, afterEventId);
+  }
+
+  /**
+   * Returns the run as a tree of workflows → agent steps → (model turns + tool calls).
+   * Used by the run-detail page to show what the agents actually did.
+   */
+  async detail(runId: string) {
+    const t = this.tenant.require();
+    const run = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.dailyRun.findFirst({ where: { id: runId, organizationId: t.organizationId } }),
+    );
+    if (!run) throw new NotFoundError();
+
+    const workflows = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.workflowRun.findMany({
+        where: { dailyRunId: runId },
+        orderBy: { startedAt: 'asc' },
+      }),
+    );
+    const wfIds = workflows.map((w) => w.id);
+    const steps = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.agentStep.findMany({
+        where: { workflowRunId: { in: wfIds } },
+        orderBy: { startedAt: 'asc' },
+      }),
+    );
+    const stepIds = steps.map((s) => s.id);
+    const [turns, tools] = await Promise.all([
+      this.prisma.withTenant(t.organizationId, (tx) =>
+        tx.modelTurn.findMany({
+          where: { agentStepId: { in: stepIds } },
+          orderBy: [{ agentStepId: 'asc' }, { sequence: 'asc' }],
+        }),
+      ),
+      this.prisma.withTenant(t.organizationId, (tx) =>
+        tx.toolCall.findMany({
+          where: { agentStepId: { in: stepIds } },
+          orderBy: [{ agentStepId: 'asc' }, { sequence: 'asc' }],
+        }),
+      ),
+    ]);
+
+    const turnsByStep = new Map<string, typeof turns>();
+    for (const tn of turns) {
+      const arr = turnsByStep.get(tn.agentStepId) ?? [];
+      arr.push(tn);
+      turnsByStep.set(tn.agentStepId, arr);
+    }
+    const toolsByStep = new Map<string, typeof tools>();
+    for (const tc of tools) {
+      const arr = toolsByStep.get(tc.agentStepId) ?? [];
+      arr.push(tc);
+      toolsByStep.set(tc.agentStepId, arr);
+    }
+    const stepsByWf = new Map<string, typeof steps>();
+    for (const s of steps) {
+      const arr = stepsByWf.get(s.workflowRunId) ?? [];
+      arr.push(s);
+      stepsByWf.set(s.workflowRunId, arr);
+    }
+
+    return {
+      run,
+      workflows: workflows.map((w) => ({
+        ...w,
+        agentSteps: (stepsByWf.get(w.id) ?? []).map((s) => ({
+          ...s,
+          totalUsdEstimate: Number(s.totalUsdEstimate),
+          modelTurns: (turnsByStep.get(s.id) ?? []).map((t) => ({
+            ...t,
+            usdEstimate: Number(t.usdEstimate),
+          })),
+          toolCalls: toolsByStep.get(s.id) ?? [],
+        })),
+      })),
+    };
+  }
+}

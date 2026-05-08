@@ -1,0 +1,33 @@
+{
+  "name": "@mergecrew/llm",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@mergecrew/db": "workspace:*",
+    "@mergecrew/domain": "workspace:*",
+    "@langchain/anthropic": "^0.3.11",
+    "@langchain/aws": "^0.1.2",
+    "@langchain/core": "^0.3.27",
+    "@langchain/ollama": "^0.1.4",
+    "@langchain/openai": "^0.3.16",
+    "@prisma/client": "^5.22.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.1"
+  }
+}

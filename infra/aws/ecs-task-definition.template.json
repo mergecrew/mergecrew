@@ -1,0 +1,45 @@
+{
+  "family": "mergecrew-${SERVICE}",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::${ACCOUNT_ID}:role/mergecrew-ecs-execution",
+  "taskRoleArn": "arn:aws:iam::${ACCOUNT_ID}:role/mergecrew-${SERVICE}-task",
+  "containerDefinitions": [
+    {
+      "name": "${SERVICE}",
+      "image": "${ECR_REGISTRY}/mergecrew/${SERVICE}:${TAG}",
+      "essential": true,
+      "portMappings": [{ "containerPort": 4000, "protocol": "tcp" }],
+      "environment": [
+        { "name": "NODE_ENV", "value": "production" },
+        { "name": "AWS_REGION", "value": "us-east-1" }
+      ],
+      "secrets": [
+        { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:us-east-1:${ACCOUNT_ID}:secret:mergecrew/${ENV}/db" },
+        { "name": "REDIS_URL", "valueFrom": "arn:aws:secretsmanager:us-east-1:${ACCOUNT_ID}:secret:mergecrew/${ENV}/redis" },
+        { "name": "JWT_SECRET", "valueFrom": "arn:aws:secretsmanager:us-east-1:${ACCOUNT_ID}:secret:mergecrew/${ENV}/jwt" },
+        { "name": "KMS_MASTER_KEY", "valueFrom": "arn:aws:secretsmanager:us-east-1:${ACCOUNT_ID}:secret:mergecrew/${ENV}/kms-key" },
+        { "name": "GITHUB_APP_ID", "valueFrom": "arn:aws:secretsmanager:us-east-1:${ACCOUNT_ID}:secret:mergecrew/${ENV}/github-app-id" },
+        { "name": "GITHUB_APP_PRIVATE_KEY", "valueFrom": "arn:aws:secretsmanager:us-east-1:${ACCOUNT_ID}:secret:mergecrew/${ENV}/github-app-private-key" },
+        { "name": "GITHUB_APP_WEBHOOK_SECRET", "valueFrom": "arn:aws:secretsmanager:us-east-1:${ACCOUNT_ID}:secret:mergecrew/${ENV}/github-webhook-secret" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/mergecrew/${SERVICE}",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "node -e 'process.exit(0)'"],
+        "interval": 30,
+        "retries": 3,
+        "startPeriod": 30,
+        "timeout": 5
+      }
+    }
+  ]
+}

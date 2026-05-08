@@ -1,0 +1,36 @@
+{
+  "name": "mergecrew",
+  "private": true,
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "format": "prettier --write .",
+    "db:migrate": "pnpm --filter @mergecrew/db migrate",
+    "db:generate": "pnpm --filter @mergecrew/db generate",
+    "db:seed": "pnpm --filter @mergecrew/db seed",
+    "db:reset": "pnpm --filter @mergecrew/db reset",
+    "compose:up": "docker compose -f docker-compose.yml up -d",
+    "compose:down": "docker compose -f docker-compose.yml down"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "eslint": "^9.12.0",
+    "prettier": "^3.3.3",
+    "turbo": "^2.1.3",
+    "typescript": "^5.6.2",
+    "tsx": "^4.19.1",
+    "vitest": "^2.1.1"
+  },
+  "pnpm": {
+    "patchedDependencies": {}
+  }
+}

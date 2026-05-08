@@ -1,0 +1,161 @@
+# VCS adapter
+
+Mergecrew's relationship with the user's repository is mediated entirely through the `VcsProvider` interface. V1 ships one implementation: GitHub. V2 may add GitLab/Gitea. Mergecrew does not run its own forge.
+
+## Interface
+
+```ts
+interface VcsProvider {
+  id: 'github' | 'gitlab' | 'gitea';
+
+  // Workspace
+  cloneIntoWorkspace(repo: ConnectedRepo, ref: string, dest: WorkspacePath): Promise<void>;
+  fetchUpdate(workspace: WorkspacePath, ref: string): Promise<void>;
+
+  // Branches & commits
+  createBranch(workspace: WorkspacePath, name: string, fromRef: string): Promise<void>;
+  commit(workspace: WorkspacePath, opts: { message: string; authorName: string; authorEmail: string; signoff?: boolean }): Promise<{ sha: string }>;
+  push(workspace: WorkspacePath, branch: string): Promise<void>;
+
+  // PRs
+  openPullRequest(repo: ConnectedRepo, opts: PullRequestOpts): Promise<PullRequest>;
+  commentOnPullRequest(repo: ConnectedRepo, prNumber: number, body: string): Promise<void>;
+  mergePullRequest(repo: ConnectedRepo, prNumber: number, opts: MergeOpts): Promise<MergeResult>;
+  revertPullRequest(repo: ConnectedRepo, prNumber: number): Promise<{ revertPrNumber: number }>;
+  closePullRequest(repo: ConnectedRepo, prNumber: number): Promise<void>;
+
+  // Read-only
+  listOpenPullRequests(repo: ConnectedRepo): Promise<PullRequest[]>;
+  getDefaultBranch(repo: ConnectedRepo): Promise<string>;
+  getFileAt(repo: ConnectedRepo, ref: string, path: string): Promise<{ contentBase64: string }>;
+
+  // Webhook ingestion
+  verifyWebhookSignature(headers: Record<string,string>, body: Buffer, secret: string): boolean;
+  parseWebhookEvent(headers: Record<string,string>, body: Buffer): VcsEvent;
+}
+```
+
+## GitHub implementation
+
+### App, not OAuth
+
+Mergecrew is installed as a **GitHub App**, not via personal OAuth. Reasons:
+
+- Per-installation tokens with explicit repo and permission scopes.
+- Tokens are short-lived and re-issued automatically.
+- Webhook URL is per-app, not per-user.
+- Does not depend on a specific human's GitHub account remaining at the company.
+
+### Permissions requested
+
+- **Repository**:
+  - Contents: read & write (required for cloning, committing, branching).
+  - Pull requests: read & write (open, comment, merge, revert).
+  - Workflows: read & write (trigger workflow_dispatch for the deploy adapter).
+  - Checks: read (read CI status).
+  - Issues: read & write (Bug Triage agent comments and creates issues).
+  - Metadata: read.
+- **Account**:
+  - Email addresses: read (used at sign-up if user authenticates with GitHub).
+
+The principle is "as few as needed for V1." We do not ask for `Administration` or `Org members` permissions.
+
+### Webhooks
+
+Mergecrew subscribes to:
+
+- `pull_request` (opened, synchronize, closed, reopened, edited, ready_for_review, review_requested).
+- `pull_request_review` and `pull_request_review_comment` (so user comments on PRs feed back to agents).
+- `workflow_run` (so the deploy adapter learns of completion).
+- `installation` and `installation_repositories` (track app install/uninstall).
+- `check_run` (CI status updates).
+
+Webhooks are delivered to `/webhooks/github`, signature verified, persisted, then dispatched onto the orchestrator's inbox.
+
+### Workspaces
+
+Each Changeset gets a per-changeset working directory:
+
+```
+/var/mergecrew/work/{run_id}/{cs_id}/
+```
+
+Lifecycle:
+
+1. **Setup.** `git clone --depth 50 --branch <default> --filter=blob:none <repo-url>`. Shallow + partial clones to keep IO low.
+2. **Branch.** `git checkout -b mergecrew/<cs_id>`.
+3. **Edits.** Skills (`repo.write_file`, etc.) operate on this tree.
+4. **Commits.** Commits are authored as `Mergecrew (<agent-kind>) <mergecrew@<tenant>.mergecrew.dev>`, with a `Co-authored-by:` trailer for the underlying provider+model when relevant.
+5. **Push.** `git push origin mergecrew/<cs_id>`.
+6. **PR.** `openPullRequest` against the project's configured base branch.
+7. **Teardown.** Workspace is destroyed when the changeset reaches a terminal state.
+
+Branch naming: `mergecrew/<cs_id>` (cs_id is the short URL-safe Changeset id). Long-running changesets get a human-readable suffix: `mergecrew/<cs_id>-tax-id-export`.
+
+### Commit messages
+
+Mergecrew writes structured commit messages:
+
+```
+<type>(<scope>): <subject>
+
+<body>
+
+Mergecrew-Changeset: cs_2tA9X
+Mergecrew-Run: run_2026-05-08_p1
+Mergecrew-Lifecycle-Node: implementation
+Co-authored-by: <agent-kind> via <provider>/<model>
+```
+
+`<type>` follows Conventional Commits. The body is written by the agent; the trailers are stamped by the runtime.
+
+### PR body
+
+PRs include:
+
+- A "What & why" paragraph (PM agent's spec, condensed).
+- A "How" section (high-level summary of changes).
+- A "Test plan" checklist.
+- A "Risk" callout (sensitive paths, irreversible operations, schema changes).
+- A "Mergecrew metadata" footer (run id, changeset id, links to the timeline and transcript).
+
+### Authorship and attribution
+
+Commits are authored by a Mergecrew bot identity tied to the tenant, not by the human user. This:
+- Keeps blame readable.
+- Lets the user's commit verification policies treat Mergecrew commits explicitly.
+- Avoids confusing "did I write this?" moments during code review.
+
+### Don't-touch enforcement
+
+Before any `repo.write_file` or `repo.git.commit`, the policy engine compares written paths against:
+- Agent's `do_not_touch` patterns (per-agent).
+- Project's sensitive patterns (per-project, e.g., `apps/*/src/auth/**`).
+- Lifecycle's hard-blocked patterns (project-wide, e.g., `**/.env*`).
+
+Hits on agent-level patterns auto-escalate to a human gate. Hits on project-level patterns require approval before continuing. Hits on hard-blocked patterns reject the tool call outright.
+
+### Rate limits & backoff
+
+GitHub API rate limits are real:
+- Per-installation: 5,000 req/h baseline.
+- Mergecrew tracks rate-limit headers and backs off proactively.
+- Workspace operations prefer the Git protocol over the API for bulk reads (cheaper).
+
+### Errors we handle explicitly
+
+- **Force-pushed base branch.** When the project's base branch moves under us, the orchestrator detects the divergence at PR-open time, rebases the changeset's branch (or, on conflict, opens a "rebase needed" gate).
+- **Concurrent edits to the same file.** Two changesets in the same run editing the same file: the second changeset's branch is rebased on the first's merged result before its PR opens.
+- **Force-deleted branches.** The agent re-pushes; if the user deleted the PR's branch, the changeset is failed with a human-readable explanation.
+
+## Cross-cutting policies
+
+- All git operations run with `core.autocrlf=false`, `core.filemode=false` for cross-platform stability.
+- All git operations run inside the per-step abort signal scope.
+- All operations are logged to the `eventlog` with skill-level grain (no raw secrets, no full diffs at log level).
+
+## V2 considerations
+
+- **GitLab adapter.** Same interface; webhook differences are encapsulated.
+- **Gitea / self-hosted GitHub Enterprise.** Same interface; the runner needs network access to the on-prem URL.
+- **Multi-repo project.** A Project gains `ConnectedRepo[]` instead of a single repo, and changesets carry which repo they target. The agent runtime must reason about cross-repo coordination (e.g., shared types). Deferred.

@@ -1,0 +1,703 @@
+// Mergecrew database schema. See docs/02-architecture/09-data-model.md.
+// pgvector is used for memory embeddings via raw SQL migration since
+// Prisma's vector support is preview-flagged.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DATABASE_MIGRATE_URL")
+  extensions = [uuidOssp(map: "uuid-ossp"), pgcrypto, vector]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Identity & tenancy
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
+  name         String?
+  avatarUrl    String?   @map("avatar_url")
+  defaultOrgId String?   @map("default_org_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  memberships Membership[]
+  decisions   Decision[]
+  intentItems IntentInboxItem[]
+  approvals   ApprovalRequest[] @relation("ApprovalResolvedBy")
+
+  @@map("users")
+}
+
+model Organization {
+  id                       String    @id @default(uuid()) @db.Uuid
+  slug                     String    @unique
+  name                     String
+  timezone                 String    @default("UTC")
+  workingHoursStart        String    @default("09:00") @map("working_hours_start")
+  workingHoursEnd          String    @default("18:00") @map("working_hours_end")
+  defaultLlmProfileId      String?   @map("default_llm_profile_id") @db.Uuid
+  defaultGatePolicyId      String?   @map("default_gate_policy_id") @db.Uuid
+  complianceAuditRetention Int       @default(365) @map("compliance_audit_retention_days")
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt                DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  memberships         Membership[]
+  projects            Project[]
+  llmProviders        LlmProvider[]
+  llmProfiles         LlmProfile[]
+  auditEntries        AuditLogEntry[]
+  lifecycleTemplates  OrgLifecycleTemplate[]
+
+  @@map("organizations")
+}
+
+model OrgLifecycleTemplate {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String   @default("default")
+  sourceYaml     String   @map("source_yaml")
+  parsed         Json
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, name])
+  @@map("org_lifecycle_templates")
+}
+
+enum OrgRole {
+  owner
+  admin
+  operator
+  viewer
+
+  @@map("org_role")
+}
+
+model Membership {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  role           OrgRole
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@map("memberships")
+}
+
+model AuditLogEntry {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  actorUserId    String?  @map("actor_user_id") @db.Uuid
+  action         String
+  target         Json
+  metadata       Json     @default("{}")
+  occurredAt     DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, occurredAt(sort: Desc)])
+  @@map("audit_log_entries")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Projects
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Project {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  slug           String
+  name           String
+  description    String?
+  archivedAt     DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connectedRepo     ConnectedRepo?
+  deployTargets     DeployTarget[]
+  trackerTarget     TrackerTarget?
+  secrets           ProjectSecret[]
+  lifecycles        Lifecycle[]
+  gatePolicies      GatePolicy[]
+  dailyRuns         DailyRun[]
+  changesets        Changeset[]
+  approvalRequests  ApprovalRequest[]
+  intentItems       IntentInboxItem[]
+  schedules         Schedule[]
+  memoryDocs        MemoryDocument[]
+  timelineEvents    TimelineEvent[]
+  deploys           Deploy[]
+
+  @@unique([organizationId, slug])
+  @@map("projects")
+}
+
+model ConnectedRepo {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  projectId      String   @unique @map("project_id") @db.Uuid
+  vcsProvider    String   @map("vcs_provider")
+  installationId String   @map("installation_id")
+  repoId         String   @map("repo_id")
+  repoFullName   String   @map("repo_full_name")
+  defaultBranch  String   @map("default_branch")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("connected_repos")
+}
+
+enum DeployTargetKind {
+  dev
+  staging
+  prod
+
+  @@map("deploy_target_kind")
+}
+
+model DeployTarget {
+  id             String           @id @default(uuid()) @db.Uuid
+  organizationId String           @map("organization_id") @db.Uuid
+  projectId      String           @map("project_id") @db.Uuid
+  kind           DeployTargetKind
+  adapterId      String           @map("adapter_id")
+  config         Json
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  deploys Deploy[]
+
+  @@unique([projectId, kind])
+  @@map("deploy_targets")
+}
+
+model TrackerTarget {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  projectId      String   @unique @map("project_id") @db.Uuid
+  adapterId      String   @map("adapter_id")
+  config         Json
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("tracker_targets")
+}
+
+model ProjectSecret {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  projectId      String   @map("project_id") @db.Uuid
+  name           String
+  ciphertext     Bytes
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, name])
+  @@map("project_secrets")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LLM providers & profiles
+// ─────────────────────────────────────────────────────────────────────────────
+
+model LlmProvider {
+  id                    String   @id @default(uuid()) @db.Uuid
+  organizationId        String   @map("organization_id") @db.Uuid
+  kind                  String
+  label                 String
+  endpoint              String?
+  credentialCiphertext  Bytes?   @map("credential_ciphertext")
+  capabilityOverrides   Json?    @map("capability_overrides")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invocations  LlmInvocation[]
+  modelTurns   ModelTurn[]
+
+  @@map("llm_providers")
+}
+
+model LlmProfile {
+  id                  String   @id @default(uuid()) @db.Uuid
+  organizationId      String   @map("organization_id") @db.Uuid
+  name                String
+  preferenceOrder     Json     @map("preference_order")
+  capabilityRouting   Json     @map("capability_routing")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, name])
+  @@map("llm_profiles")
+}
+
+model ModelPriceTable {
+  providerKind             String   @map("provider_kind")
+  modelId                  String   @map("model_id")
+  effectiveAt              DateTime @map("effective_at") @db.Timestamptz(6)
+  inputPerMillionUsd       Decimal  @map("input_per_million_usd") @db.Decimal(10, 6)
+  outputPerMillionUsd      Decimal  @map("output_per_million_usd") @db.Decimal(10, 6)
+  cacheReadPerMillionUsd   Decimal? @map("cache_read_per_million_usd") @db.Decimal(10, 6)
+  cacheWritePerMillionUsd  Decimal? @map("cache_write_per_million_usd") @db.Decimal(10, 6)
+
+  @@id([providerKind, modelId, effectiveAt])
+  @@map("model_price_table")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Lifecycle & gate policies
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Lifecycle {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  projectId      String   @map("project_id") @db.Uuid
+  version        Int
+  sourceYaml     String   @map("source_yaml")
+  parsed         Json
+  activeFrom     DateTime @default(now()) @map("active_from") @db.Timestamptz(6)
+
+  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  dailyRuns DailyRun[]
+
+  @@unique([projectId, version])
+  @@map("lifecycles")
+}
+
+model GatePolicy {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  projectId      String?  @map("project_id") @db.Uuid
+  policy         Json
+  version        Int
+  activeFrom     DateTime @default(now()) @map("active_from") @db.Timestamptz(6)
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("gate_policies")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Runs
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum DailyRunStatus {
+  pending
+  running
+  paused_rate_limit
+  paused_gate
+  done
+  failed
+  cancelled
+
+  @@map("daily_run_status")
+}
+
+model DailyRun {
+  id             String         @id @default(uuid()) @db.Uuid
+  organizationId String         @map("organization_id") @db.Uuid
+  projectId      String         @map("project_id") @db.Uuid
+  lifecycleId    String         @map("lifecycle_id") @db.Uuid
+  scheduledAt    DateTime       @map("scheduled_at") @db.Timestamptz(6)
+  startedAt      DateTime?      @map("started_at") @db.Timestamptz(6)
+  finishedAt     DateTime?      @map("finished_at") @db.Timestamptz(6)
+  status         DailyRunStatus @default(pending)
+  metadata       Json           @default("{}")
+
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  lifecycle     Lifecycle      @relation(fields: [lifecycleId], references: [id])
+  workflowRuns  WorkflowRun[]
+  changesets    Changeset[]
+  pauses        RunPause[]
+  intentsPicked IntentInboxItem[]
+
+  @@index([projectId, scheduledAt(sort: Desc)])
+  @@map("daily_runs")
+}
+
+model WorkflowRun {
+  id                   String      @id @default(uuid()) @db.Uuid
+  organizationId       String      @map("organization_id") @db.Uuid
+  dailyRunId           String      @map("daily_run_id") @db.Uuid
+  workflowId           String      @map("workflow_id")
+  parentWorkflowRunId  String?     @map("parent_workflow_run_id") @db.Uuid
+  status               String
+  startedAt            DateTime?   @map("started_at") @db.Timestamptz(6)
+  finishedAt           DateTime?   @map("finished_at") @db.Timestamptz(6)
+
+  dailyRun  DailyRun     @relation(fields: [dailyRunId], references: [id], onDelete: Cascade)
+  steps     AgentStep[]
+  parent    WorkflowRun? @relation("WorkflowRunParent", fields: [parentWorkflowRunId], references: [id])
+  children  WorkflowRun[] @relation("WorkflowRunParent")
+  changesets Changeset[]
+
+  @@map("workflow_runs")
+}
+
+model AgentStep {
+  id                   String   @id @default(uuid()) @db.Uuid
+  organizationId       String   @map("organization_id") @db.Uuid
+  workflowRunId        String   @map("workflow_run_id") @db.Uuid
+  agentKind            String   @map("agent_kind")
+  agentInstanceId      String   @map("agent_instance_id") @db.Uuid
+  attempt              Int      @default(1)
+  status               String
+  input                Json
+  output               Json?
+  failureReason        String?  @map("failure_reason")
+  startedAt            DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt           DateTime? @map("finished_at") @db.Timestamptz(6)
+  totalInputTokens     Int      @default(0) @map("total_input_tokens")
+  totalOutputTokens    Int      @default(0) @map("total_output_tokens")
+  totalUsdEstimate     Decimal  @default(0) @map("total_usd_estimate") @db.Decimal(12, 6)
+
+  workflowRun WorkflowRun @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+  toolCalls   ToolCall[]
+  modelTurns  ModelTurn[]
+  pauses      RunPause[]
+
+  @@index([status, startedAt])
+  @@map("agent_steps")
+}
+
+model ToolCall {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @map("organization_id") @db.Uuid
+  agentStepId     String   @map("agent_step_id") @db.Uuid
+  sequence        Int
+  skillName       String   @map("skill_name")
+  input           Json
+  output          Json?
+  isError         Boolean  @default(false) @map("is_error")
+  startedAt       DateTime @map("started_at") @db.Timestamptz(6)
+  finishedAt      DateTime? @map("finished_at") @db.Timestamptz(6)
+  sideEffectClass String   @map("side_effect_class")
+
+  step AgentStep @relation(fields: [agentStepId], references: [id], onDelete: Cascade)
+
+  @@unique([agentStepId, sequence])
+  @@map("tool_calls")
+}
+
+model ModelTurn {
+  id                   String   @id @default(uuid()) @db.Uuid
+  organizationId       String   @map("organization_id") @db.Uuid
+  agentStepId          String   @map("agent_step_id") @db.Uuid
+  sequence             Int
+  providerId           String   @map("provider_id") @db.Uuid
+  modelId              String   @map("model_id")
+  inputTokens          Int      @map("input_tokens")
+  outputTokens         Int      @map("output_tokens")
+  cacheReadTokens      Int      @default(0) @map("cache_read_tokens")
+  cacheWriteTokens     Int      @default(0) @map("cache_write_tokens")
+  thinkingTokens       Int?     @map("thinking_tokens")
+  latencyMs            Int      @map("latency_ms")
+  usdEstimate          Decimal  @map("usd_estimate") @db.Decimal(12, 6)
+  rawRequestBlobUrl    String?  @map("raw_request_blob_url")
+  rawResponseBlobUrl   String?  @map("raw_response_blob_url")
+  occurredAt           DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  step     AgentStep   @relation(fields: [agentStepId], references: [id], onDelete: Cascade)
+  provider LlmProvider @relation(fields: [providerId], references: [id])
+
+  @@unique([agentStepId, sequence])
+  @@map("model_turns")
+}
+
+model LlmInvocation {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @map("organization_id") @db.Uuid
+  projectId       String   @map("project_id") @db.Uuid
+  runId           String?  @map("run_id") @db.Uuid
+  agentStepId     String?  @map("agent_step_id") @db.Uuid
+  providerId      String   @map("provider_id") @db.Uuid
+  modelId         String   @map("model_id")
+  inputTokens     Int      @map("input_tokens")
+  outputTokens    Int      @map("output_tokens")
+  cacheReadTokens Int      @default(0) @map("cache_read_tokens")
+  cacheWriteTokens Int     @default(0) @map("cache_write_tokens")
+  thinkingTokens  Int?     @map("thinking_tokens")
+  latencyMs       Int      @map("latency_ms")
+  usdEstimate     Decimal  @map("usd_estimate") @db.Decimal(12, 6)
+  occurredAt      DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  provider LlmProvider @relation(fields: [providerId], references: [id])
+
+  @@index([organizationId, occurredAt(sort: Desc)])
+  @@index([projectId, occurredAt(sort: Desc)])
+  @@map("llm_invocations")
+}
+
+model RunPause {
+  id                 String   @id @default(uuid()) @db.Uuid
+  organizationId     String   @map("organization_id") @db.Uuid
+  dailyRunId         String   @map("daily_run_id") @db.Uuid
+  stepId             String?  @map("step_id") @db.Uuid
+  kind               String
+  providerId         String?  @map("provider_id") @db.Uuid
+  approvalRequestId  String?  @map("approval_request_id") @db.Uuid
+  pausedAt           DateTime @default(now()) @map("paused_at") @db.Timestamptz(6)
+  wakeAt             DateTime? @map("wake_at") @db.Timestamptz(6)
+  resumedAt          DateTime? @map("resumed_at") @db.Timestamptz(6)
+
+  dailyRun DailyRun  @relation(fields: [dailyRunId], references: [id], onDelete: Cascade)
+  step     AgentStep? @relation(fields: [stepId], references: [id])
+
+  @@index([wakeAt])
+  @@map("run_pauses")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Changesets, deploys, decisions, approvals
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ChangesetStatus {
+  proposed
+  building
+  testing
+  tests_failed
+  flagged
+  pr_open
+  dev_deployed
+  awaiting_decision
+  promoted
+  rolled_back
+  deferred
+  abandoned
+
+  @@map("changeset_status")
+}
+
+model Changeset {
+  id              String           @id
+  organizationId  String           @map("organization_id") @db.Uuid
+  projectId       String           @map("project_id") @db.Uuid
+  dailyRunId      String           @map("daily_run_id") @db.Uuid
+  workflowRunId   String?          @map("workflow_run_id") @db.Uuid
+  title           String
+  whyParagraph    String?          @map("why_paragraph") @db.Text
+  branch          String
+  status          ChangesetStatus  @default(proposed)
+  prNumber        Int?             @map("pr_number")
+  prUrl           String?          @map("pr_url")
+  devDeployId     String?          @map("dev_deploy_id") @db.Uuid
+  testSummary     Json?            @map("test_summary")
+  riskChip        String?          @map("risk_chip")
+  estimatedUsd    Decimal          @default(0) @map("estimated_usd") @db.Decimal(12, 6)
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project        Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  dailyRun       DailyRun          @relation(fields: [dailyRunId], references: [id], onDelete: Cascade)
+  workflowRun    WorkflowRun?      @relation(fields: [workflowRunId], references: [id])
+  decisions      Decision[]
+  deploys        Deploy[]
+  approvalRequests ApprovalRequest[]
+
+  @@index([projectId, status, updatedAt(sort: Desc)])
+  @@map("changesets")
+}
+
+model Deploy {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @map("organization_id") @db.Uuid
+  projectId       String   @map("project_id") @db.Uuid
+  changesetId     String?  @map("changeset_id")
+  deployTargetId  String   @map("deploy_target_id") @db.Uuid
+  ref             String
+  correlationId   String   @map("correlation_id")
+  externalRunId   String?  @map("external_run_id")
+  url             String?
+  status          String
+  startedAt       DateTime @map("started_at") @db.Timestamptz(6)
+  finishedAt      DateTime? @map("finished_at") @db.Timestamptz(6)
+
+  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  changeset     Changeset?    @relation(fields: [changesetId], references: [id])
+  deployTarget  DeployTarget  @relation(fields: [deployTargetId], references: [id])
+
+  @@unique([projectId, correlationId])
+  @@map("deploys")
+}
+
+model Decision {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  changesetId    String   @map("changeset_id")
+  userId         String   @map("user_id") @db.Uuid
+  kind           String
+  comment        String?  @db.Text
+  occurredAt     DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  changeset Changeset @relation(fields: [changesetId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@map("decisions")
+}
+
+model ApprovalRequest {
+  id                 String    @id @default(uuid()) @db.Uuid
+  organizationId     String    @map("organization_id") @db.Uuid
+  projectId          String    @map("project_id") @db.Uuid
+  workflowRunId      String    @map("workflow_run_id") @db.Uuid
+  changesetId        String?   @map("changeset_id")
+  reason             String
+  details            Json
+  requiredRole       String    @map("required_role")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  resolvedAt         DateTime? @map("resolved_at") @db.Timestamptz(6)
+  resolvedByUserId   String?   @map("resolved_by_user_id") @db.Uuid
+  resolution         String?
+
+  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  changeset Changeset? @relation(fields: [changesetId], references: [id])
+  resolver  User?      @relation("ApprovalResolvedBy", fields: [resolvedByUserId], references: [id])
+
+  @@index([projectId, resolvedAt])
+  @@map("approval_requests")
+}
+
+model IntentInboxItem {
+  id                 String    @id @default(uuid()) @db.Uuid
+  organizationId     String    @map("organization_id") @db.Uuid
+  projectId          String    @map("project_id") @db.Uuid
+  submittedByUserId  String    @map("submitted_by_user_id") @db.Uuid
+  body               String    @db.Text
+  status             String    @default("queued")
+  pickedUpRunId      String?   @map("picked_up_run_id") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [submittedByUserId], references: [id])
+  pickedUpRun   DailyRun? @relation(fields: [pickedUpRunId], references: [id])
+
+  @@index([projectId, status, createdAt])
+  @@map("intent_inbox_items")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Schedules
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Schedule {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  projectId      String   @unique @map("project_id") @db.Uuid
+  cron           String   @default("0 8 * * 1-5")
+  timezone       String   @default("UTC")
+  enabled        Boolean  @default(true)
+  lastFiredAt    DateTime? @map("last_fired_at") @db.Timestamptz(6)
+  nextFireAt     DateTime? @map("next_fire_at") @db.Timestamptz(6)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([nextFireAt])
+  @@map("schedules")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Timeline & memory
+// ─────────────────────────────────────────────────────────────────────────────
+
+model TimelineEvent {
+  id              BigInt   @id @default(autoincrement())
+  eventId         String   @unique @map("event_id") @db.Uuid
+  organizationId  String   @map("organization_id") @db.Uuid
+  projectId       String   @map("project_id") @db.Uuid
+  dailyRunId      String?  @map("daily_run_id") @db.Uuid
+  workflowRunId   String?  @map("workflow_run_id") @db.Uuid
+  agentStepId     String?  @map("agent_step_id") @db.Uuid
+  changesetId     String?  @map("changeset_id")
+  parentEventId   String?  @map("parent_event_id") @db.Uuid
+  type            String
+  actor           Json
+  payload         Json
+  occurredAt      DateTime @map("occurred_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([dailyRunId, occurredAt(sort: Desc)])
+  @@index([projectId, occurredAt(sort: Desc)])
+  @@map("timeline_events")
+}
+
+model MemoryDocument {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  projectId      String   @map("project_id") @db.Uuid
+  collection     String
+  content        String   @db.Text
+  // Vector embedding column added by raw SQL migration; see migrations/00_init.
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, collection])
+  @@map("memory_documents")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sessions for NextAuth (kept here so all persistence is under one roof)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AuthAccount {
+  id                String  @id @default(uuid()) @db.Uuid
+  userId            String  @map("user_id") @db.Uuid
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refreshToken      String? @map("refresh_token") @db.Text
+  accessToken       String? @map("access_token") @db.Text
+  expiresAt         Int?    @map("expires_at")
+  tokenType         String? @map("token_type")
+  scope             String?
+  idToken           String? @map("id_token") @db.Text
+  sessionState      String? @map("session_state")
+
+  @@unique([provider, providerAccountId])
+  @@map("auth_accounts")
+}
+
+model AuthSession {
+  id           String   @id @default(uuid()) @db.Uuid
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id") @db.Uuid
+  expires      DateTime @db.Timestamptz(6)
+
+  @@map("auth_sessions")
+}
+
+model AuthVerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime @db.Timestamptz(6)
+
+  @@unique([identifier, token])
+  @@map("auth_verification_tokens")
+}

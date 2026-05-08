@@ -1,0 +1,25 @@
+ARG NODE_VERSION=22-bookworm-slim
+
+FROM node:${NODE_VERSION} AS base
+RUN corepack enable
+WORKDIR /repo
+
+FROM base AS deps
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* tsconfig.base.json ./
+COPY apps/worker-cron/package.json apps/worker-cron/
+COPY packages/ packages/
+RUN pnpm install --frozen-lockfile=false
+
+FROM deps AS build
+COPY . .
+RUN pnpm --filter @mergecrew/db generate
+RUN pnpm --filter @mergecrew/worker-cron... build
+
+FROM node:${NODE_VERSION} AS runtime
+WORKDIR /app
+COPY --from=build /repo/node_modules /app/node_modules
+COPY --from=build /repo/apps/worker-cron/dist /app/dist
+COPY --from=build /repo/apps/worker-cron/package.json /app/package.json
+COPY --from=build /repo/packages /app/packages
+USER node
+CMD ["node", "dist/main.js"]

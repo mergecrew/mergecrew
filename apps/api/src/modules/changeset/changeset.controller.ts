@@ -1,0 +1,45 @@
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { ChangesetService } from './changeset.service.js';
+import { RequireRole, RoleGuard } from '../../common/role.guard.js';
+import type { DecisionKind } from '@mergecrew/domain';
+
+@Controller('v1/orgs/:slug/projects/:projectSlug')
+@UseGuards(RoleGuard)
+export class ChangesetController {
+  constructor(private cs: ChangesetService) {}
+
+  @Get('changesets')
+  async list(
+    @Param('projectSlug') projectSlug: string,
+    @Query('status') status?: string,
+    @Query('run_id') runId?: string,
+  ) {
+    return { items: await this.cs.list(projectSlug, { status, runId }) };
+  }
+
+  @Get('changesets/:csId')
+  async get(@Param('csId') csId: string) {
+    return this.cs.get(csId);
+  }
+
+  @Post('changesets/:csId/decisions')
+  @RequireRole('operator')
+  async decide(@Param('csId') csId: string, @Body() body: { kind: DecisionKind; comment?: string }) {
+    return this.cs.decide(csId, body.kind, body.comment);
+  }
+
+  @Get('digest/:date')
+  async digest(@Param('projectSlug') projectSlug: string, @Param('date') date: string) {
+    return this.cs.digestFor(projectSlug, date);
+  }
+
+  @Post('digest/:date/group-promote')
+  @RequireRole('operator')
+  async groupPromote(
+    @Param('projectSlug') projectSlug: string,
+    @Param('date') date: string,
+    @Body() body: { ids: string[] },
+  ) {
+    return this.cs.groupPromote(projectSlug, date, body.ids);
+  }
+}

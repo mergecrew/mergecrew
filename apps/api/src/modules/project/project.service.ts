@@ -1,0 +1,331 @@
+import { Injectable } from '@nestjs/common';
+import { NotFoundError, ValidationError } from '@mergecrew/domain';
+import { GitHubIssuesProvider, type TrackerProvider } from '@mergecrew/adapters-tracker';
+import { PrismaService } from '../../common/prisma.service.js';
+import { TenantContextService } from '../../common/tenant-context.service.js';
+import { CryptoService } from '../../common/crypto.service.js';
+import { defaultConfig } from '@mergecrew/config-yaml';
+
+const TRACKER_TOKEN_SECRET = 'TRACKER_TOKEN';
+const SUPPORTED_TRACKERS = ['github-issues', 'linear'] as const;
+type TrackerAdapterId = (typeof SUPPORTED_TRACKERS)[number];
+
+@Injectable()
+export class ProjectService {
+  constructor(
+    private prisma: PrismaService,
+    private tenant: TenantContextService,
+    private crypto: CryptoService,
+  ) {}
+
+  async list() {
+    const t = this.tenant.require();
+    return this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.project.findMany({
+        where: { organizationId: t.organizationId, deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+      }),
+    );
+  }
+
+  async create(input: { name: string; slug: string }) {
+    const t = this.tenant.require();
+    const slug = input.slug.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+    const project = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.project.create({
+        data: {
+          organizationId: t.organizationId,
+          slug,
+          name: input.name,
+        },
+      }),
+    );
+
+    // Seed an initial Lifecycle. If the org has a default template, use it;
+    // otherwise fall back to the built-in default config.
+    const orgTemplate = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.orgLifecycleTemplate.findFirst({
+        where: { organizationId: t.organizationId, name: 'default' },
+      }),
+    );
+    const parsed = orgTemplate ? orgTemplate.parsed : (defaultConfig() as any);
+    const sourceYaml = orgTemplate?.sourceYaml ?? '';
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.lifecycle.create({
+        data: {
+          organizationId: t.organizationId,
+          projectId: project.id,
+          version: 1,
+          sourceYaml,
+          parsed,
+        },
+      }),
+    );
+
+    // Default schedule.
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.schedule.create({
+        data: {
+          organizationId: t.organizationId,
+          projectId: project.id,
+          cron: '0 8 * * 1-5',
+          timezone: 'UTC',
+          enabled: true,
+        },
+      }),
+    );
+
+    return project;
+  }
+
+  async detail(slug: string) {
+    const t = this.tenant.require();
+    const p = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.project.findFirst({
+        where: { organizationId: t.organizationId, slug, deletedAt: null },
+        include: { connectedRepo: true, deployTargets: true },
+      }),
+    );
+    if (!p) throw new NotFoundError();
+    return p;
+  }
+
+  async getById(id: string) {
+    const t = this.tenant.require();
+    const p = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.project.findFirst({ where: { id, organizationId: t.organizationId } }),
+    );
+    if (!p) throw new NotFoundError();
+    return p;
+  }
+
+  async update(slug: string, patch: { name?: string; description?: string | null; archived?: boolean }) {
+    const project = await this.detail(slug);
+    const data: { name?: string; description?: string | null; archivedAt?: Date | null } = {};
+    if (patch.name !== undefined) {
+      const trimmed = patch.name.trim();
+      if (!trimmed) throw new ValidationError('name cannot be empty');
+      data.name = trimmed;
+    }
+    if (patch.description !== undefined) {
+      data.description = patch.description === null ? null : patch.description.trim() || null;
+    }
+    if (patch.archived !== undefined) {
+      data.archivedAt = patch.archived ? new Date() : null;
+    }
+    return this.prisma.withTenant(project.organizationId, (tx) =>
+      tx.project.update({ where: { id: project.id }, data }),
+    );
+  }
+
+  async connectRepo(slug: string, input: {
+    installationId: string;
+    repoId: string;
+    repoFullName: string;
+    defaultBranch: string;
+  }) {
+    if (!/^[^/\s]+\/[^/\s]+$/.test(input.repoFullName)) {
+      throw new ValidationError('repoFullName must be "owner/repo"');
+    }
+    const project = await this.detail(slug);
+    return this.prisma.withTenant(project.organizationId, (tx) =>
+      tx.connectedRepo.upsert({
+        where: { projectId: project.id },
+        update: {
+          installationId: input.installationId,
+          repoId: input.repoId,
+          repoFullName: input.repoFullName,
+          defaultBranch: input.defaultBranch,
+        },
+        create: {
+          organizationId: project.organizationId,
+          projectId: project.id,
+          vcsProvider: 'github',
+          installationId: input.installationId,
+          repoId: input.repoId,
+          repoFullName: input.repoFullName,
+          defaultBranch: input.defaultBranch,
+        },
+      }),
+    );
+  }
+
+  async disconnectRepo(slug: string) {
+    const project = await this.detail(slug);
+    await this.prisma.withTenant(project.organizationId, (tx) =>
+      tx.connectedRepo.deleteMany({ where: { projectId: project.id } }),
+    );
+  }
+
+  async listDeployTargets(slug: string) {
+    const project = await this.detail(slug);
+    return this.prisma.withTenant(project.organizationId, (tx) =>
+      tx.deployTarget.findMany({ where: { projectId: project.id } }),
+    );
+  }
+
+  async upsertDeployTarget(slug: string, input: {
+    kind: 'dev' | 'staging' | 'prod';
+    adapterId: string;
+    config: Record<string, unknown>;
+  }) {
+    const project = await this.detail(slug);
+    return this.prisma.withTenant(project.organizationId, (tx) =>
+      tx.deployTarget.upsert({
+        where: { projectId_kind: { projectId: project.id, kind: input.kind } },
+        update: { adapterId: input.adapterId, config: input.config as any },
+        create: {
+          organizationId: project.organizationId,
+          projectId: project.id,
+          kind: input.kind,
+          adapterId: input.adapterId,
+          config: input.config as any,
+        },
+      }),
+    );
+  }
+
+  async listSecrets(slug: string) {
+    const project = await this.detail(slug);
+    const rows = await this.prisma.withTenant(project.organizationId, (tx) =>
+      tx.projectSecret.findMany({ where: { projectId: project.id } }),
+    );
+    return rows.map((r) => ({ id: r.id, name: r.name, createdAt: r.createdAt }));
+  }
+
+  async setSecret(slug: string, name: string, value: string) {
+    if (!name || !/^[A-Z][A-Z0-9_]*$/.test(name)) {
+      throw new ValidationError('secret name must be UPPER_SNAKE');
+    }
+    const project = await this.detail(slug);
+    const ciphertext = this.crypto.encrypt(value);
+    await this.prisma.withTenant(project.organizationId, (tx) =>
+      tx.projectSecret.upsert({
+        where: { projectId_name: { projectId: project.id, name } },
+        update: { ciphertext },
+        create: {
+          organizationId: project.organizationId,
+          projectId: project.id,
+          name,
+          ciphertext,
+        },
+      }),
+    );
+  }
+
+  async deleteSecret(slug: string, name: string) {
+    const project = await this.detail(slug);
+    await this.prisma.withTenant(project.organizationId, (tx) =>
+      tx.projectSecret.delete({ where: { projectId_name: { projectId: project.id, name } } }),
+    );
+  }
+
+  async getSecretPlaintext(projectId: string, name: string): Promise<string | null> {
+    const t = this.tenant.require();
+    const r = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.projectSecret.findFirst({ where: { projectId, name } }),
+    );
+    if (!r) return null;
+    return this.crypto.decrypt(r.ciphertext);
+  }
+
+  async getTracker(slug: string) {
+    const project = await this.detail(slug);
+    const target = await this.prisma.withTenant(project.organizationId, (tx) =>
+      tx.trackerTarget.findUnique({ where: { projectId: project.id } }),
+    );
+    if (!target) return null;
+    const tokenSecret = await this.prisma.withTenant(project.organizationId, (tx) =>
+      tx.projectSecret.findFirst({
+        where: { projectId: project.id, name: TRACKER_TOKEN_SECRET },
+      }),
+    );
+    return {
+      id: target.id,
+      adapterId: target.adapterId,
+      config: target.config,
+      hasToken: tokenSecret !== null,
+      createdAt: target.createdAt,
+      updatedAt: target.updatedAt,
+    };
+  }
+
+  async upsertTracker(slug: string, input: {
+    adapterId: string;
+    config: Record<string, unknown>;
+    token?: string;
+  }) {
+    if (!SUPPORTED_TRACKERS.includes(input.adapterId as TrackerAdapterId)) {
+      throw new ValidationError(`unsupported tracker adapter: ${input.adapterId}`);
+    }
+    if (input.adapterId === 'github-issues') {
+      const repo = (input.config?.repoFullName as string | undefined) ?? '';
+      if (!/^[^/\s]+\/[^/\s]+$/.test(repo)) {
+        throw new ValidationError('github-issues requires config.repoFullName as "owner/repo"');
+      }
+    }
+    const project = await this.detail(slug);
+    const target = await this.prisma.withTenant(project.organizationId, (tx) =>
+      tx.trackerTarget.upsert({
+        where: { projectId: project.id },
+        update: { adapterId: input.adapterId, config: input.config as any },
+        create: {
+          organizationId: project.organizationId,
+          projectId: project.id,
+          adapterId: input.adapterId,
+          config: input.config as any,
+        },
+      }),
+    );
+    if (input.token && input.token.length > 0) {
+      await this.setSecret(slug, TRACKER_TOKEN_SECRET, input.token);
+    }
+    return target;
+  }
+
+  async deleteTracker(slug: string) {
+    const project = await this.detail(slug);
+    await this.prisma.withTenant(project.organizationId, (tx) =>
+      tx.trackerTarget.deleteMany({ where: { projectId: project.id } }),
+    );
+    await this.prisma.withTenant(project.organizationId, (tx) =>
+      tx.projectSecret.deleteMany({
+        where: { projectId: project.id, name: TRACKER_TOKEN_SECRET },
+      }),
+    );
+  }
+
+  /**
+   * Build a TrackerProvider for the project, or return null if not configured.
+   * Used by the API's "test connection" endpoint and by the runner at step time.
+   */
+  async buildTrackerProvider(projectId: string): Promise<TrackerProvider | null> {
+    const t = this.tenant.require();
+    const target = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.trackerTarget.findUnique({ where: { projectId } }),
+    );
+    if (!target) return null;
+    const token = await this.getSecretPlaintext(projectId, TRACKER_TOKEN_SECRET);
+    if (!token) return null;
+    if (target.adapterId === 'github-issues') {
+      const repoFullName = (target.config as any)?.repoFullName ?? '';
+      return new GitHubIssuesProvider({ installationToken: token, repoFullName });
+    }
+    return null;
+  }
+
+  async testTracker(slug: string): Promise<{ ok: boolean; sample?: unknown; error?: string }> {
+    const project = await this.detail(slug);
+    try {
+      const provider = await this.buildTrackerProvider(project.id);
+      if (!provider) return { ok: false, error: 'Tracker not fully configured (missing target or token).' };
+      const issues = await provider.listIssues({ max: 3 });
+      return {
+        ok: true,
+        sample: issues.map((i) => ({ id: i.id, title: i.title, status: i.status, url: i.url })),
+      };
+    } catch (e: any) {
+      return { ok: false, error: String(e?.message ?? e) };
+    }
+  }
+}

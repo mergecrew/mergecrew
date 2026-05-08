@@ -1,0 +1,17 @@
+{
+  "name": "@mergecrew/config-yaml",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "default": "./dist/index.js" } },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@mergecrew/domain": "workspace:*",
+    "yaml": "^2.5.1"
+  },
+  "devDependencies": { "typescript": "^5.6.2" }
+}

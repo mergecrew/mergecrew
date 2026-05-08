@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: mergecrew
+          POSTGRES_PASSWORD: mergecrew
+          POSTGRES_DB: mergecrew
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U mergecrew -d mergecrew"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    env:
+      DATABASE_URL: postgresql://mergecrew:mergecrew@localhost:5432/mergecrew?schema=public
+      DATABASE_MIGRATE_URL: postgresql://mergecrew:mergecrew@localhost:5432/mergecrew?schema=public
+      REDIS_URL: redis://localhost:6379
+      KMS_MASTER_KEY: base64:0000000000000000000000000000000000000000000=
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm --filter @mergecrew/db generate
+      - run: pnpm --filter @mergecrew/db migrate
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: pnpm test --if-present

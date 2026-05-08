@@ -1,0 +1,24 @@
+ARG NODE_VERSION=22-bookworm-slim
+
+FROM node:${NODE_VERSION} AS base
+RUN corepack enable
+WORKDIR /repo
+
+FROM base AS deps
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* tsconfig.base.json ./
+COPY apps/web/package.json apps/web/
+COPY packages/ packages/
+RUN pnpm install --frozen-lockfile=false
+
+FROM deps AS build
+COPY . .
+RUN pnpm --filter @mergecrew/web build
+
+FROM node:${NODE_VERSION} AS runtime
+WORKDIR /app
+COPY --from=build /repo/apps/web/.next/standalone /app
+COPY --from=build /repo/apps/web/.next/static /app/.next/static
+COPY --from=build /repo/apps/web/public /app/public
+EXPOSE 3000
+USER node
+CMD ["node", "server.js"]
