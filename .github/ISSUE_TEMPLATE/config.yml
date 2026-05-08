@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discussions
+    url: https://github.com/mergecrew/mergecrew/discussions
+    about: Questions, design proposals, or anything that isn't a bug or feature request.
+  - name: Security disclosure
+    url: https://github.com/mergecrew/mergecrew/security/advisories/new
+    about: Report a vulnerability privately.
