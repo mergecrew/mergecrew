@@ -11,6 +11,13 @@ export interface ResolveRequest {
   capability: ModelCapability;
   profile: LlmProfile;
   override?: ProviderRef;
+  /**
+   * Agent kind (e.g. 'planner', 'coder', 'bug-triage'). When set and the
+   * profile declares `capabilityRouting[agentKind]`, those required features
+   * are merged with `capability` before resolution. This lets a profile
+   * upgrade a specific agent's needs without changing the call sites.
+   */
+  agentKind?: string;
 }
 
 export interface Resolved {
@@ -26,18 +33,27 @@ export class CapabilityRouter {
   ) {}
 
   resolve(req: ResolveRequest): Resolved {
+    const need = this.requiredCapability(req);
     const candidates: string[] = [];
     if (req.override) candidates.push(req.override);
     candidates.push(...req.profile.preferenceOrder);
 
     for (const ref of candidates) {
-      const r = this.tryCandidate(ref, req.capability);
+      const r = this.tryCandidate(ref, need);
       if (r) return r;
     }
     throw new ProviderUnavailableError(
       'router',
-      `no provider satisfies capability ${JSON.stringify(req.capability)}`,
+      `no provider satisfies capability ${JSON.stringify(need)}`,
     );
+  }
+
+  private requiredCapability(req: ResolveRequest): ModelCapability {
+    const perAgent =
+      req.agentKind && req.profile.capabilityRouting
+        ? req.profile.capabilityRouting[req.agentKind]
+        : undefined;
+    return perAgent ? mergeCapabilities(req.capability, perAgent) : req.capability;
   }
 
   private tryCandidate(ref: string, need: ModelCapability): Resolved | null {
@@ -81,4 +97,21 @@ export class CapabilityRouter {
   registryHandle(): ProviderRegistry {
     return this.registry;
   }
+}
+
+function mergeCapabilities(a: ModelCapability, b: ModelCapability): ModelCapability {
+  const merged: ModelCapability = {
+    ...(a.reasoning || b.reasoning ? { reasoning: true } : {}),
+    ...(a.tools || b.tools ? { tools: true } : {}),
+    ...(a.parallelTools || b.parallelTools ? { parallelTools: true } : {}),
+    ...(a.vision || b.vision ? { vision: true } : {}),
+    ...(a.embedding || b.embedding ? { embedding: true } : {}),
+    ...(a.thinking || b.thinking ? { thinking: true } : {}),
+    ...(a.promptCache || b.promptCache ? { promptCache: true } : {}),
+    ...(a.responseJsonSchema || b.responseJsonSchema ? { responseJsonSchema: true } : {}),
+    ...(a.lowLatency || b.lowLatency ? { lowLatency: true } : {}),
+  };
+  const longest = (a.longContext ?? 0) >= (b.longContext ?? 0) ? a.longContext : b.longContext;
+  if (longest) merged.longContext = longest;
+  return merged;
 }

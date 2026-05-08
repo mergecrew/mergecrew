@@ -118,6 +118,7 @@ export async function runAgentStep(ctx: RunCtx): Promise<StepOutcome> {
       resolved = ctx.router.resolve({
         capability: need,
         profile: ctx.llmProfile,
+        agentKind: ctx.agent.kind,
         override:
           agent.model && agent.model.startsWith('capability:')
             ? undefined

@@ -1,6 +1,13 @@
 import { ProviderUnavailableError, type ModelCapability } from '@mergecrew/domain';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import { buildChatModel, capabilitiesFor, type BuildModelOptions, type ProviderConfig } from './models.js';
+import type { Embeddings } from '@langchain/core/embeddings';
+import {
+  buildChatModel,
+  buildEmbeddingsModel,
+  capabilitiesFor,
+  type BuildModelOptions,
+  type ProviderConfig,
+} from './models.js';
 
 export type { ProviderConfig } from './models.js';
 
@@ -41,5 +48,16 @@ export class ProviderRegistry {
 
   buildModel(id: string, modelId: string, opts: BuildModelOptions = {}): BaseChatModel {
     return buildChatModel(this.get(id), modelId, opts);
+  }
+
+  buildEmbeddings(id: string, modelId: string): Embeddings {
+    const cfg = this.get(id);
+    if (!capabilitiesFor(cfg, modelId).embedding) {
+      throw new ProviderUnavailableError(
+        id,
+        `model ${modelId} on provider ${id} (${cfg.kind}) is not declared as an embedding model`,
+      );
+    }
+    return buildEmbeddingsModel(cfg, modelId);
   }
 }

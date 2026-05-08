@@ -171,7 +171,9 @@ return {
 
 ## Embeddings
 
-Embeddings are not yet wired through this layer. The Memory store integration uses `pgvector` directly; provider-side embedding via LangChain's `Embeddings` class is on the contributor checklist — the catalog already declares `embedding: true` for `nomic-embed*` and OpenAI embedding models.
+Embeddings are wired through this layer the same way chat models are: the registry exposes `buildEmbeddings(providerId, modelId)` that returns a LangChain `Embeddings` instance for embedding-capable providers (`packages/llm/src/registry.ts`). The factory in `models.ts` (`buildEmbeddingsModel`) maps provider kinds to LangChain's `OpenAIEmbeddings`, `BedrockEmbeddings`, or `OllamaEmbeddings`; Anthropic does not ship an embeddings model and throws if requested. The catalog declares `embedding: true` for `text-embedding-*` (OpenAI), `amazon.titan-embed-*` / `cohere.embed-*` (Bedrock), and `nomic-embed-*` / `mxbai-embed-*` (Ollama).
+
+The Memory skills currently insert documents into `memory_documents` without populating the `embedding` column; vector similarity search is not yet exposed as a skill. The factory above is the seam where similarity-search skills will compute embeddings when added.
 
 ## Provider list
 
