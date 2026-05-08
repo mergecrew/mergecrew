@@ -38,6 +38,10 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile=false
+      - name: Bootstrap Postgres roles + extensions
+        env:
+          PGPASSWORD: mergecrew
+        run: psql -h localhost -U mergecrew -d mergecrew -f infra/sql/init/00-roles.sql
       - run: pnpm --filter @mergecrew/db generate
       - run: pnpm --filter @mergecrew/db migrate
       - run: pnpm typecheck
