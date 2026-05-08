@@ -7,12 +7,12 @@ Mergecrew runs unsupervised. The single biggest reason a daily run "stops workin
 1. **A 429 must never fail a run.** It must pause the affected branch and resume cleanly.
 2. **Resume must be transparent to the user.** They see a marker on the timeline; they don't act.
 3. **Provider failover must be a real path, not theoretical.** The fallback must already be configured and exercised.
-4. **No runaway spend.** Per-org budgets (V1.x) and per-org concurrency caps (V1) are hard ceilings.
+4. **No runaway spend.** Per-org daily $ ceilings and per-org concurrency caps are Planned hard ceilings; today only the per-(provider, model) circuit breaker enforces a ceiling.
 5. **Honest telemetry.** Time spent paused vs working is visible to the user.
 
 ## Provider error taxonomy
 
-The runtime classifies provider responses into:
+The runtime distinguishes the cases the orchestrator's `onStepReply` and the runner's circuit breaker reason about. A full taxonomy classifier — labelling every provider response into the table below before the orchestrator sees it — is Planned, not implemented; the implemented set is `rate_limited`, `failed`, `cancelled`, `budget_exhausted`, `gated_reject`, and `completed`.
 
 | Class | Examples | Action |
 |---|---|---|
@@ -26,8 +26,6 @@ The runtime classifies provider responses into:
 | `model_unavailable` | model doesn't exist or is decommissioned | failover to next candidate |
 | `safety_block` | provider safety system refused | fail the step; surface to user |
 | `cancelled` | abort signal fired | cancelled |
-
-Each class has a deterministic handler in the runner.
 
 ## Backoff & jitter
 
@@ -54,41 +52,35 @@ For each agent's `modelRequirement`, the LlmProfile defines a preference order. 
 
 ## Circuit breaker
 
-Per `(provider_id, model_id)`:
+Implemented in `packages/llm/src/circuit-breaker.ts`. Per `(provider_id, model_id)`:
 - Sliding window of last 50 calls.
 - Open if error rate > 25% in the window.
 - Half-open after 60s; one probe call decides.
 
 Circuit-breaker state is stored in Redis with a TTL fallback so it doesn't permanently lock a provider out.
 
-## Per-org budgets (V1.x)
+## Per-org budgets (Planned)
+
+The intended shape:
 
 - Daily $ ceiling (configurable; default off, then on with a warn-only soft cap).
 - Hard stop when reached: the orchestrator declines new step dispatches; running steps complete.
 - Surfaced on the timeline as `RUN_PAUSED_BUDGET`.
 - Owner can raise the budget; the run resumes automatically.
 
-## Per-org concurrency caps
-
-- Max in-flight runs: 5 (default).
-- Max concurrent agent steps across all runs: 20 (default).
-- Max concurrent calls to a single provider: 8 (default).
-- All raisable; capped by global platform limits to protect runner pool.
+Not implemented today: there is no daily-$ ceiling, no `RUN_PAUSED_BUDGET` event, and no per-org concurrency cap layer. Today the only spend ceiling is the per-(provider, model) circuit breaker plus per-org BYOK quotas at the provider itself.
 
 ## Observability of pauses
 
-Every pause writes a `run_pause` row and a TimelineEvent. The user sees:
+Every pause writes a `run_pauses` row and a TimelineEvent. The user sees:
 
 - Why we paused (provider name + reason).
 - When we'll resume (`wake_at`).
 - A live countdown.
-- A "force resume" button that replays the same step (for debugging — emits an audit event).
 
-End-of-day metrics include:
+A "force resume" UI button is Planned, not implemented.
 
-- Total wall-clock time.
-- Active time (steps actually running).
-- Paused time (rate-limited / gate / budget).
+End-of-day metrics — total wall-clock time, active time, and paused time — are Planned.
 
 ## Provider-specific notes
 

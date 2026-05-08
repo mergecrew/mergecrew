@@ -1,26 +1,25 @@
 # Agentic runtime
 
-The runtime is the loop that turns an `Agent` definition into work performed against the connected systems. It is provider-agnostic at the top and provider-specific at the bottom.
+The runtime turns an `AgentDefinition` into work performed against the connected systems. It lives in `@mergecrew/agent-runtime` and is built on **LangGraph.js StateGraph** with a LangChain `BaseChatModel` (resolved per step) at the agent node.
 
 ## Goals
 
 - One agent loop, many providers (Anthropic, OpenAI, Bedrock, Ollama).
-- Streamed events end-to-end (timeline updates as the agent works).
-- Bounded blast radius: every tool call goes through a vetted Skill, never raw shell.
-- Durable: every step result is checkpointed so a process restart can resume.
-- Inspectable: every prompt, every tool call, every model response is replayable.
+- Policy-gated tool calls: every tool call goes through a vetted Skill, never raw shell.
+- Bounded blast radius: per-step iteration and tool-call ceilings, plus token / USD budgets.
+- Rate-limit aware: 429 returns up to the orchestrator (which schedules a wake-up); the runner does not sleep.
+- Inspectable: every model turn and tool call is persisted (`ModelTurn`, `ToolCall` rows) plus a transcript blob.
 
 ## Anatomy of an Agent
 
 ```ts
+// packages/domain/src — shape used by the runner
 type AgentDefinition = {
   kind: AgentKind;                // e.g., "BackendEngineer"
-  systemPrompt: string;           // role-shaped, role-specific
-  modelRequirement: ModelCapability;  // e.g., "reasoning+tools+200k"
-  modelOverride?: string;         // e.g., "claude-opus-4-7"
-  fallbacks?: ProviderRef[];      // e.g., ["bedrock/anthropic.claude-opus-4-7"]
-  skills: SkillRef[];             // names; the runtime resolves to instances
-  doNotTouch: GlobPattern[];      // path patterns the agent must not write
+  systemPrompt?: string;          // role-shaped, optional; falls back to defaultSystemPrompt(kind)
+  model?: string;                 // either "capability:..." or a concrete ProviderRef ("anthropic/claude-sonnet-4-6")
+  skills: (string | { name: string })[];   // skill names; resolved via SkillExecutor
+  doNotTouch?: string[];          // glob patterns checked by PolicyEngine
   maxStepsPerRun?: number;        // default 12
   maxToolCallsPerStep?: number;   // default 8
   budget?: { tokens?: number; usd?: number };
@@ -30,207 +29,153 @@ type AgentDefinition = {
 ## Anatomy of a Skill
 
 ```ts
-type SkillDefinition = {
+// packages/skills/src/types.ts
+interface SkillDefinition<I = unknown, O = unknown> {
   name: string;                   // e.g., "repo.write_file"
-  description: string;            // shown to the model as the tool spec
-  inputSchema: JsonSchema;
-  outputSchema: JsonSchema;
-  sideEffectClass: 'read' | 'write_workspace' | 'write_external' | 'irreversible';
-  capabilities: SkillCapability[]; // e.g., ["fs.write", "git.commit"]
-  execute(input: unknown, ctx: SkillExecutionContext): Promise<unknown>;
-};
+  description: string;            // shown to the model as the tool description
+  inputSchema: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
+  sideEffectClass: SideEffectClass;       // 'read' | 'write_workspace' | 'write_external' | 'irreversible'
+  capabilities: SkillCapability[];        // e.g., ['fs.write', 'git.commit']
+  timeoutMs?: number;             // default 60_000
+  execute(input: I, ctx: SkillExecutionContext): Promise<SkillResult<O>>;
+}
 ```
 
-A `Skill` instance binds a `SkillDefinition` to the project's adapter configs (e.g., the `deploy.dev` skill carries the GitHub Actions workflow filename + repo).
+A `Skill` instance is registered with the `SkillExecutor` at runner startup. The executor enforces the timeout and wraps the call in a composed `AbortSignal`.
 
 ## The agent loop
 
-Pseudocode for one `AgentStep`:
+The loop is a LangGraph `StateGraph` with two nodes (`agent`, `tools`) and conditional edges between them. Source: `packages/agent-runtime/src/loop.ts`.
+
+```
+              ┌────────┐ tool_calls > 0  ┌────────┐
+   START ───▶ │ agent  │ ──────────────▶ │ tools  │
+              │  node  │ ◀────────────── │  node  │
+              └────────┘                 └────────┘
+                  │                          │
+                  │ tool_calls = 0           │ outcome set
+                  ▼                          ▼
+                 END                        END
+```
+
+**State** (`packages/agent-runtime/src/loop.ts:60-77`):
 
 ```ts
-async function runAgentStep(step: AgentStep, ctx: RunCtx): Promise<StepOutcome> {
-  const agent = ctx.agentDefs[step.agentRef];
-  const tools = ctx.skills.toolSpecs(agent.skills);
-
-  let messages = buildInitialMessages(agent, step.input);
-  let totalTokens = 0;
-  let toolCallsMade = 0;
-
-  for (let i = 0; i < (agent.maxStepsPerRun ?? 12); i++) {
-    const provider = ctx.llm.resolve(agent.modelRequirement, agent.modelOverride);
-
-    let response: ChatResponse;
-    try {
-      response = await provider.chat({
-        model: provider.modelId,
-        messages,
-        tools,
-        stream: true,
-        onChunk: chunk => ctx.eventlog.emit({ type: 'AGENT_STEP_CHUNK', payload: chunk }),
-      });
-    } catch (e) {
-      if (isRateLimited(e)) {
-        return { kind: 'rate_limited', retryAfterMs: e.retryAfterMs ?? 60_000 };
-      }
-      if (await ctx.llm.canFallover(provider, e)) {
-        continue; // fallover swap, retry same iteration
-      }
-      throw e;
-    }
-
-    totalTokens += response.usage.totalTokens;
-    persistModelTurn(ctx, step.id, response);
-
-    if (response.toolCalls.length === 0) {
-      // Final assistant message
-      return {
-        kind: 'completed',
-        output: response.text,
-        toolCallsMade,
-        totalTokens,
-      };
-    }
-
-    for (const call of response.toolCalls) {
-      if (++toolCallsMade > (agent.maxToolCallsPerStep ?? 8)) {
-        return { kind: 'failed', reason: 'tool_call_budget_exhausted' };
-      }
-      const allowed = ctx.policy.check(agent, call);
-      if (!allowed.ok) {
-        // E.g., write to a do-not-touch path → escalate to human gate
-        const escalation = await ctx.gates.escalate(allowed.reason, call, step);
-        if (escalation === 'reject') {
-          return { kind: 'gated_reject', reason: allowed.reason };
-        }
-        // 'approve' fall-through resumes execution
-      }
-      const result = await ctx.skills.execute(call, { agent, step, run: ctx.run });
-      messages = appendToolResult(messages, call, result);
-      ctx.eventlog.emit({ type: 'AGENT_TOOL_CALL', payload: { name: call.name, brief: result.brief } });
-    }
-  }
-
-  return { kind: 'failed', reason: 'step_iteration_budget_exhausted' };
-}
+const StateAnnotation = Annotation.Root({
+  messages: Annotation<BaseMessage[]>({ reducer: (l, r) => l.concat(r), default: () => [] }),
+  toolCallsMade: Annotation<number>({ reducer: (_l, r) => r, default: () => 0 }),
+  iteration:     Annotation<number>({ reducer: (_l, r) => r, default: () => 0 }),
+  outcome:       Annotation<StepOutcome | null>({ reducer: (_l, r) => r, default: () => null }),
+});
 ```
+
+**Agent node** (`packages/agent-runtime/src/loop.ts:107-171`):
+
+1. Check `abortSignal` and the iteration ceiling (`maxStepsPerRun`).
+2. Compute the required `ModelCapability` (`ctx.capabilityFromAgent()`).
+3. Ask the `CapabilityRouter` to resolve a `(providerId, modelId)` — honors `agent.model` as an override unless it's a `capability:` requirement.
+4. Build a `BaseChatModel` via `registry.buildModel(providerId, modelId, { maxTokens: 4096, temperature: 0.2 })` and call `.bindTools()` with the agent's tool specs.
+5. `await bound.invoke(state.messages, { signal: abortSignal })`.
+6. Extract `usage_metadata` from the returned `AIMessage`; price it via `priceFor()` + `estimateUsd()`; record a `ModelTurn`; update the budget.
+7. On a `rate.?limit|429` error message, return `{ outcome: { kind: 'rate_limited' } }` — never sleep.
+8. On any other error, mark the breaker and return `{ outcome: { kind: 'failed', reason } }`.
+
+**Tools node** (`packages/agent-runtime/src/loop.ts:173-248`):
+
+1. Read `tool_calls` off the last `AIMessage`. If empty, return `{}` (the routing edge will go to END).
+2. For each tool call:
+   - Bump `toolCallsMade`; if it exceeds `maxToolCallsPerStep`, return `tool_call_budget_exhausted`.
+   - Call `policy.check(skillName, input)`. If the decision is hard-blocked, return `gated_reject`. If it's soft-blocked, await `onGateRequired()`; on `'rejected'`, return `gated_reject`.
+   - Execute the skill via `SkillExecutor.execute()`, wrapping any thrown error into `{ error: msg }`.
+   - Persist a `ToolCall` row and emit an `AGENT_TOOL_CALL` timeline event.
+   - Append a `ToolMessage(tool_call_id, content)` to the message list.
+   - If the budget is now exhausted, return `budget_exhausted`.
+
+**Routing**: after the agent node, go to `tools` if the last message had tool calls, else END. After the tools node, go back to `agent` unless an outcome is already set.
+
+The graph is invoked with `recursionLimit: maxIters * 2 + 4` and the run-level abort signal. If the graph ends without an outcome, the last `AIMessage` text is returned as the completed output.
 
 Key properties:
-- **Single-process step.** A step runs to completion within one runner process call. If the runner crashes, the orchestrator re-dispatches the step (idempotent inputs; tool calls are idempotent or write-once).
-- **Rate limits return up.** The runtime never sleeps inside the loop on a 429. It returns `rate_limited` to the orchestrator, which schedules a wake-up. This keeps runners free to serve other tenants.
-- **Fallover is provider-aware.** If the primary provider supports tool use natively but the fallback is a small Ollama model that doesn't, fallover only happens for retryable transport errors, not for capability mismatch.
-- **Skills are sandboxed.** Each skill execution is timed, output-bounded, and validated against its output schema before being fed back to the model.
-- **Policy intercepts tool calls.** Don't-touch patterns, side-effect classes, and sensitive-area heuristics are checked here.
+- **Single-process step.** A step runs to completion within one BullMQ job. If the runner crashes, the orchestrator re-dispatches with idempotent inputs.
+- **Rate limits return up.** The runtime never sleeps on a 429; it returns to the orchestrator, which enqueues a delayed `orchestrator.rate-limit.resume`.
+- **Capability-aware routing.** `CapabilityRouter.resolve()` skips models whose capabilities don't satisfy the agent's needs (tools, vision, longContext, thinking, etc.).
+- **Circuit breaker.** Per `(providerId, modelId)` failure ratios open the breaker for 60s, causing the router to skip that pair on subsequent resolves (`packages/llm/src/circuit-breaker.ts`).
+- **Policy intercepts tool calls.** Hard-blocked paths fail immediately; soft-blocked paths (e.g., `**/auth/**`, `**/billing/**`, `**/migrations/**`, agent do-not-touch globs) escalate to a gate.
+- **Skills are sandboxed.** `SkillExecutor` enforces a timeout and a composed abort signal (`packages/skills/src/executor.ts:42-55`).
 
-## Provider interface
+## Provider integration (LangChain)
+
+Each provider is a thin LangChain `BaseChatModel` constructor in `packages/llm/src/models.ts`:
 
 ```ts
-interface LLMProvider {
-  id: string;                                   // e.g., "anthropic-org-1"
-  modelIds: string[];                           // declared models
-  capabilities(model: string): ModelCapability;
-  chat(req: ChatRequest): Promise<ChatResponse>;        // streams via callback
-  embed(req: EmbedRequest): Promise<EmbedResponse>;
+switch (cfg.kind) {
+  case 'anthropic':  return new ChatAnthropic({ apiKey, model, temperature, maxTokens, thinking? });
+  case 'openai':     return new ChatOpenAI({ apiKey, model, temperature, maxTokens });
+  case 'bedrock':    return new ChatBedrockConverse({ region, model, temperature, maxTokens });
+  case 'ollama':     return new ChatOllama({ baseUrl, model, temperature, numPredict });
 }
-
-type ChatRequest = {
-  model: string;
-  messages: Message[];                          // OpenAI-shape, normalized
-  tools?: ToolSpec[];
-  toolChoice?: 'auto' | 'required' | { name: string };
-  thinking?: { enabled: boolean; budgetTokens?: number };  // Anthropic
-  maxTokens?: number;
-  temperature?: number;
-  stop?: string[];
-  responseFormat?: 'text' | 'json' | { schema: JsonSchema };
-  onChunk?: (chunk: ChatChunk) => void;
-};
-
-type ChatResponse = {
-  text: string;
-  toolCalls: ToolCall[];
-  usage: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; totalTokens: number };
-  stopReason: 'end_turn' | 'tool_use' | 'max_tokens' | 'stop_sequence' | 'safety';
-  raw: unknown;                                 // full provider response for replay
-};
 ```
 
-Implementations:
+Tool specs are passed to LangChain in OpenAI-flavored shape (`{ type: 'function', function: { name, description, parameters } }`); LangChain translates to each provider's native tool format. There is no Mergecrew-specific provider interface — the LangChain `BaseChatModel` is the seam.
 
-- `AnthropicProvider` — uses `@anthropic-ai/sdk`. Native tool use; native streaming; native prompt cache. **For Anthropic agents, Mergecrew uses the Claude Agent SDK as the per-step runtime** when present (it handles a richer agent loop natively, including thinking and prompt caching). The custom loop above is the fallback / non-Anthropic path.
-- `OpenAIProvider` — uses `openai` SDK. Tool calls translated through OpenAI's `function`/`tool_calls` shape. Includes Codex-class coding models.
-- `BedrockProvider` — uses AWS SDK; supports Anthropic, Mistral, Meta models hosted on Bedrock. The Anthropic-on-Bedrock path uses the same prompt as the direct Anthropic path.
-- `OllamaProvider` — HTTP client to a user-supplied Ollama endpoint. Tool use via OpenAI-compatible `/api/chat`. Capability declarations are conservative (most local models don't do reliable tool use).
+The runner builds a fresh `ProviderRegistry` per agent step, so BYOK keys are not retained across requests (`packages/llm/src/registry.ts:9-13`).
 
 ## Capability requirements & routing
 
-Agents declare *capability*, not *model*:
+Agents declare capability or a concrete `ProviderRef`. If `agent.model` starts with `capability:`, the runtime computes `ModelCapability` from the agent kind; otherwise the value is treated as an override `ProviderRef` (e.g., `anthropic/claude-sonnet-4-6`).
 
-```yaml
-backend_engineer:
-  model: capability:reasoning+tools+200k
-```
+`CapabilityRouter.resolve()` (`packages/llm/src/router.ts:28-41`) walks `[override, ...profile.preferenceOrder]`, accepts the first candidate where:
 
-The runtime resolves to a concrete provider+model at step start, in this order:
+- the provider id is registered;
+- the model id is in the provider's allowed list;
+- the model's declared capabilities satisfy the request (`satisfies()` checks `tools`, `parallelTools`, `vision`, `embedding`, `thinking`, `promptCache`, `responseJsonSchema`, `lowLatency`, `longContext` ≥);
+- the circuit breaker is not open for `${providerId}/${modelId}`.
 
-1. If a `modelOverride` is set, use it (subject to the provider being available and capable).
-2. Otherwise, evaluate the org's `LlmProfile` to pick a primary provider/model that satisfies `ModelCapability`.
-3. If primary is unavailable (down, key invalid), pick the next fallback from `agent.fallbacks` or the profile's default fallbacks.
-
-`ModelCapability` is a union flag set: `reasoning`, `tools`, `vision`, `200k`, `1m`, `embedding`, `low-latency`.
+`ModelCapability` is defined in `packages/domain/src/capability.ts`.
 
 ## Skill execution context
 
 ```ts
-type SkillExecutionContext = {
-  agent: AgentDefinition;
-  step: AgentStep;
-  run: DailyRunContext;
-  workspace: Workspace;          // a per-changeset git worktree
-  adapters: {
-    vcs: VcsProvider;
-    deploy: DeployProvider;
-    tracker: TrackerProvider | null;
-    comms: CommsProvider | null;
-  };
-  policy: PolicyEngine;          // do-not-touch, side-effect class, gates
-  eventlog: EventlogClient;      // emit timeline events
-  budget: BudgetTracker;
-  abortSignal: AbortSignal;      // run-level cancellation
-};
+// packages/skills/src/types.ts
+interface SkillExecutionContext {
+  organizationId: string;
+  projectId: string;
+  runId?: string;
+  changesetId?: string;
+  agentStepId?: string;
+  workspacePath?: string;
+  abortSignal: AbortSignal;
+  logger: { info; warn; error };
+  emit?: (kind: string, payload: Record<string, unknown>) => Promise<void>;
+  adapters: { vcs?; deploy?; tracker?; comms? };
+  config?: Record<string, unknown>;
+}
 ```
 
 Skills must:
-- Validate inputs against `inputSchema` *before* doing work.
-- Validate outputs against `outputSchema` *before* returning.
+- Validate inputs against `inputSchema` before doing work.
+- Return a `SkillResult<O>` with a `brief` summary used for timeline events.
+- Respect `abortSignal` — `SkillExecutor` composes the run-level signal with a per-skill timeout.
 - Emit at least one timeline event for any side effect.
-- Respect `abortSignal`.
-- Time out within a per-skill default (most: 60s; deploys: 20m; tests: 10m).
 
 ## Budgets
 
-Three layered budgets:
+Three layered budgets enforced by `BudgetTracker` (`packages/agent-runtime/src/budget.ts`):
 
-- **Per-step.** `maxToolCallsPerStep`, `maxIterationsPerStep`. Enforced in the loop.
-- **Per-changeset.** Optional token/USD cap defined on the agent. Tracked across all of the changeset's steps.
-- **Per-run / per-org.** Hard daily ceilings tracked in BudgetTracker; exceeding pauses further dispatch and notifies.
-
-When a budget would be exceeded, the runtime returns `budget_exhausted` and the orchestrator decides whether to surface as a gated wait (user can raise) or a hard fail.
+- **Per-step.** `maxToolCallsPerStep` (default 8), `maxStepsPerRun` (default 12). Enforced inside the loop.
+- **Per-changeset.** Optional `agent.budget.{tokens,usd}` cap. After every model turn (and every tool call for safety) the tracker is consulted; on exhaustion the loop returns `budget_exhausted`.
+- **Per-run / per-org.** Hard ceilings tracked outside the runtime; the orchestrator pauses dispatch when they are reached.
 
 ## Observability per step
 
-Each `AgentStep` produces:
+Each agent step produces:
 
-- `ModelTurn` rows: one per LLM call (input/output tokens, cached tokens, model id, latency, USD).
-- `ToolCall` rows: one per skill invocation (skill, input hash, output hash, duration, side-effect class).
-- `TimelineEvent`s: streamed and persisted.
-- `transcript.json` blob in object storage: full prompt+response capture for replay.
+- **`ModelTurn` rows** — one per LLM call. `recordModelTurn()` receives `{providerId, modelId, usage, latencyMs, usdEstimate}`. `usage` is extracted from LangChain's `usage_metadata` (input/output/total tokens plus `cache_read` / `cache_creation` from `input_token_details`).
+- **`ToolCall` rows** — one per skill invocation: `{sequence, skillName, input, output, isError, sideEffectClass, startedAt, finishedAt}`.
+- **`TimelineEvent`s** — `AGENT_TOOL_CALL` per tool call; agent-step lifecycle events emitted by the runner.
+- **Transcript blob** — the message array is captured for replay (object storage).
 
 ## Replay
 
-Given a `AgentStep` id, Mergecrew can re-run it offline:
-
-- Reload the prompt and tool specs from the persisted definitions.
-- Substitute the LLM provider with a "replay" provider that returns the recorded responses.
-- Substitute skills with read-only versions that return recorded outputs.
-
-This makes "did the model do something different?" / "what would have happened with model X instead?" a tractable engineering question.
+A persisted `AgentStep` carries enough context (system prompt + initial input + tool specs + recorded outputs) to re-run offline against a stub model that returns recorded responses, with read-only skills. This makes "what would model X have done?" tractable without re-incurring side effects.

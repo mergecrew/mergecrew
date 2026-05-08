@@ -11,22 +11,20 @@ The orchestrator coordinates DailyRuns, WorkflowRuns, and AgentSteps. It is the 
 - **Multi-tenant fair.** Tenant A's slow run does not delay tenant B's fast run.
 - **Observable.** Every transition emits a TimelineEvent.
 
-## V1 implementation: custom durable engine on Postgres + BullMQ
+## Implementation: custom durable engine on Postgres + BullMQ
 
-We don't run Temporal in V1. Reasoning:
+Mergecrew runs a custom durable engine on Postgres + BullMQ — not Temporal. Reasoning:
 
 - Temporal adds an operational footprint (a cluster, a UI, separate auth, another thing to monitor).
 - Mergecrew's workflow set is small and stable enough that a hand-rolled state machine on Postgres is straightforward and well-bounded.
-- Switching to Temporal later is feasible because the public surface (`OrchestratorClient`) is the same.
-
-If the custom engine starts looking like a poor Temporal, V2 migrates.
+- Switching to Temporal later is feasible because the public surface (`OrchestratorClient`) is the same. See "Migration path to Temporal" below.
 
 ## State stores
 
-- **`run_state`** — one row per active `DailyRun`, with the canonical run state.
-- **`step_dispatch`** — work queue of pending step dispatches, claimed by runners. Backed by BullMQ (Redis); rows mirrored into Postgres for audit.
-- **`gate_wait`** — rows for runs paused on human gates.
-- **`rate_limit_wait`** — rows for runs paused on provider rate limits, with `wake_at`.
+- **`daily_runs.status`** — canonical run state via the `daily_run_status` enum (`pending` | `running` | `paused_rate_limit` | `paused_gate` | `done` | `failed` | `cancelled`).
+- **`workflow_runs`** and **`agent_steps`** — per-workflow and per-step status, attempt counters, started/finished timestamps.
+- **BullMQ queues (Redis)** — work distribution: `run.due`, `orchestrator.dispatch`, `orchestrator.rate-limit.resume`, `orchestrator.gate.resume`, `orchestrator.step-reply`, `runner.step`, `webhook.inbound`.
+- **`run_pauses`** — one row per pause, distinguished by `kind` (`rate_limit` | `gate`). Rate-limit rows carry `wake_at`; gate rows carry `approval_request_id`.
 - **`timeline_events`** — append-only log; the source of truth for "what happened."
 
 ## State machine semantics
@@ -37,27 +35,20 @@ A `DailyRun` is a graph of `WorkflowRun`s, themselves graphs of `AgentStep`s. Th
 - Each front is one of:
   - `step_in_flight(step_id)` — dispatched to a runner, awaiting outcome.
   - `step_pending(step_id)` — ready to dispatch, waiting on a runner slot.
-  - `gate_pending(gate_id)` — awaiting a human decision.
-  - `rate_limit_pending(step_id, wake_at)` — paused.
-- Step outcomes are received via the orchestrator's inbox (a queue read).
+  - `gate_pending(approval_request_id)` — awaiting a human decision.
+  - `rate_limit_pending(step_id, wake_at)` — paused on a `run_pauses(kind='rate_limit')` row.
+- Step outcomes are received via the `orchestrator.step-reply` queue.
 
 ## Dispatch loop
 
-```
-loop:
-  receive outcome from runners (blocking up to 1s)
-  for each outcome:
-    persist outcome
-    advance state machine
-    enqueue any new pending steps to BullMQ
-  scan rate_limit_wait where wake_at <= now()
-    move them to step_pending and enqueue
-  emit any new TimelineEvents
-```
+The orchestrator at `apps/orchestrator/src/orchestrator.ts` is event-driven, not a polling loop:
 
-Concurrency control:
-- Per-org concurrency caps applied at enqueue time (not at dispatch).
-- BullMQ priority used to interleave tenants fairly (round-robin across orgs with active runs).
+- `handleRunDue` — a `run.due` job fires (from cron or manual trigger); the orchestrator finds the project's latest lifecycle, creates a `daily_runs` row in `running`, emits `RUN_STARTED`, and starts the first workflow.
+- `startWorkflow` → `dispatchAgentStep` — for each agent in the workflow, the orchestrator inserts a pending `agent_steps` row and enqueues a `runner.step` job.
+- `onStepReply` — runners push outcomes onto `orchestrator.step-reply`. Outcomes are typed: `completed`, `failed`, `rate_limited`, `gated_reject`, `cancelled`, `budget_exhausted`. Each outcome updates the step row, emits a `TimelineEvent`, and (for terminal outcomes) calls `maybeAdvanceWorkflow` to either fan out to the next workflow or complete the run.
+- `resumeRateLimit` / `resumeGate` — wake-up jobs flip the run's status back to `running`, mark the matching `run_pauses` row as resumed, and re-enqueue the same step.
+
+There is no separate "scan the rate-limit table" tick: rate-limit pauses self-schedule a delayed BullMQ job at `now + retryAfterMs + jitter` directly from `onStepReply`.
 
 ## Idempotency
 
@@ -68,17 +59,17 @@ Concurrency control:
 
 ## Crash & restart
 
-- Runner crash mid-step: the orchestrator detects via dispatch timeout (default 15m of no heartbeat) and re-enqueues the same step. The step's prior partial work in the workspace is discarded; the step starts from its persisted input.
-- Orchestrator crash: state is in Postgres; on startup, a leader-elected orchestrator process replays unfinished runs by reading `run_state` and reconstituting active fronts.
+- Runner crash mid-step: BullMQ's job-attempts plus the runner-side retry policy re-deliver the step. The step's prior partial work in the workspace is discarded; the step starts from its persisted input.
+- Orchestrator crash: state is in Postgres and the BullMQ queues. On restart, the orchestrator process re-attaches to the queues and resumes from where the queues left off. The orchestrator runs as a single process — there is no leader election.
 
 ## Rate-limit pause/resume
 
-When a runner returns `rate_limited`:
+When a runner returns `rate_limited` (see `onStepReply` in `orchestrator.ts`):
 
-1. Orchestrator inserts a `rate_limit_wait` row: `(run_id, step_id, provider_id, wake_at)`.
-2. `wake_at = now + max(retryAfter, baseBackoff(attempts)) + jitter(0..30s)`.
-3. Other fronts of the same run continue dispatching (the run as a whole is not paused if other branches don't depend on this step).
-4. At wake time, the orchestrator re-enqueues the step. Same step, same input.
+1. Orchestrator inserts a `run_pauses` row with `kind='rate_limit'`, `step_id`, and `wake_at = now + retryAfterMs + jitter(0..30s)`.
+2. The `daily_runs.status` flips to `paused_rate_limit` and a `RUN_PAUSED_RATE_LIMIT` event is emitted.
+3. A delayed BullMQ job is added to `orchestrator.rate-limit.resume` at the same `wake_at`.
+4. At wake time, `resumeRateLimit` flips the run back to `running`, marks the `run_pauses` row resumed, and re-enqueues the step on `runner.step`.
 
 Backoff: `baseBackoff(attempts) = min(60s * 2^attempts, 30m)`. With `Retry-After`, we use the larger of the two.
 
@@ -86,12 +77,12 @@ Backoff: `baseBackoff(attempts) = min(60s * 2^attempts, 30m)`. With `Retry-After
 
 When a transition with `require-approval` is reached:
 
-1. Orchestrator creates an `ApprovalRequest`.
-2. Inserts a `gate_wait` row.
-3. Notifies the configured human channel (Slack DM, email, inbox).
+1. Orchestrator creates an `approval_requests` row.
+2. Inserts a `run_pauses` row with `kind='gate'`, `approval_request_id` set.
+3. Notifies the configured human channel (inbox; Slack DM and email are Planned).
 4. The run's other fronts continue.
-5. When a user decides, the API writes a `Decision` and signals the orchestrator (`HUMAN_APPROVED` / `HUMAN_REJECTED`).
-6. Orchestrator pops the `gate_wait`, advances the workflow accordingly.
+5. When a user decides, the API enqueues `orchestrator.gate.resume`.
+6. `resumeGate` marks the matching `run_pauses` row resumed and flips the run back to `running` so dispatch can continue.
 
 ## Cancellation
 
@@ -119,22 +110,21 @@ Each Changeset is a sub-graph anchored at a PM-produced spec. Implementation-wis
 
 ## Bounded parallelism
 
-- Run-level: max 4 concurrent changesets per run (configurable per project, default 4).
-- Step-level: max N concurrent agent steps per run (configurable, default 12).
-- Org-level: see multi-tenancy quotas.
+- Worker concurrency is set per BullMQ worker in `apps/orchestrator/src/main.ts` (e.g., `runner.step` and `orchestrator.step-reply` at higher concurrency than `run.due`).
+- Per-org concurrency caps, BullMQ tenant-priority interleaving, and dead-runner heartbeat recovery are not implemented; if and when they're needed they belong in the multi-tenancy quota layer.
 
 ## Why not just BullMQ alone
 
 BullMQ is a queue; it doesn't model workflow state (the graph, the gates, the partial recovery). The orchestrator's job is the graph; BullMQ is its work-distribution mechanism. Postgres holds canonical state; BullMQ's queue is regenerated from Postgres on startup if needed.
 
-## Migration path to Temporal
+## Migration path to Temporal (forward-looking — not implemented)
 
-If V2 chooses Temporal:
+If a future iteration chooses Temporal:
 
 - `DailyRun` becomes a Temporal Workflow.
 - `WorkflowRun` and `Changeset` become child workflows.
 - `AgentStep` becomes an activity.
-- `gate_wait` becomes a `await Workflow.signal('HumanDecision')`.
-- `rate_limit_wait` becomes `Workflow.sleep(retryAfter)`.
+- A gate pause becomes `await Workflow.signal('HumanDecision')`.
+- A rate-limit pause becomes `Workflow.sleep(retryAfter)`.
 
-The current internal abstractions (OrchestratorClient API, AgentStep contract, Runner protocol) are designed to make this swap feasible without API churn for the rest of the system.
+The current internal abstractions (OrchestratorClient API, AgentStep contract, Runner protocol) are designed to make this swap feasible without API churn for the rest of the system. This is a forward-looking note, not a planned migration.

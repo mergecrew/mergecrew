@@ -2,6 +2,8 @@
 
 The timeline is the surface that conveys "Mergecrew is working" without demanding attention. Designing it well is the difference between users feeling reassured and users feeling anxious.
 
+> A few behaviors below — pull-to-refresh re-sync, reduced-motion preference, density-mode toggle persisted in profile — describe intended UX, not the current implementation.
+
 ## Goals
 
 1. **Reassure, don't excite.** A user glancing at the timeline should feel "this is on track," not "I need to read this."

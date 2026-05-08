@@ -1,6 +1,8 @@
 # User journeys
 
-End-to-end flows for the V1 personas. Each journey lists the actor, the steps, and the system surfaces involved.
+End-to-end flows for the personas. Each journey lists the actor, the steps, and the system surfaces involved.
+
+> Some journeys describe target UX that isn't fully implemented yet; check `05-features.md` for current implementation status.
 
 ## J1 — First-run onboarding (Theo, day zero)
 

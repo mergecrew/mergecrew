@@ -5,49 +5,49 @@
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
 │                              Browser (Next.js)                       │
-│  Pages · Server Components · SSE client · React Query · shadcn/ui    │
+│  Pages · Server Components · SSE client · Tailwind · lucide-react    │
 └─────────────────┬────────────────────────────────────────────────────┘
                   │ HTTPS (REST + SSE)
 ┌─────────────────▼────────────────────────────────────────────────────┐
 │                         BFF: Next.js Route Handlers                  │
 │      Auth (NextAuth) · per-org session · SSR data fetching           │
 └─────────────────┬────────────────────────────────────────────────────┘
-                  │ internal mTLS / network ACL
+                  │ HTTP + Bearer JWT (BFF_TRUST_TOKEN exchange)
 ┌─────────────────▼────────────────────────────────────────────────────┐
-│                    Mergecrew API (NestJS, multi-tenant)                  │
+│                    Mergecrew API (NestJS, multi-tenant)              │
 │   Modules: Auth · Org · Project · Lifecycle · Run · Approval ·       │
 │            Changeset · Timeline · Cost · Integration · LLM           │
 └──┬───────────┬───────────────┬──────────────┬─────────────┬──────────┘
    │           │               │              │             │
-   │           │               │              │             │
    ▼           ▼               ▼              ▼             ▼
 ┌──────┐  ┌─────────┐  ┌──────────────┐  ┌────────┐  ┌────────────┐
 │Postg │  │ Redis   │  │  Object      │  │ Vector │  │ Outbound   │
-│res   │  │ (queue, │  │  store       │  │ store  │  │ webhooks   │
-│(RLS) │  │ pubsub, │  │ (artifacts,  │  │(memory │  │ (Slack,    │
-│      │  │ rate    │  │  screenshots,│  │ embed) │  │ email,     │
-│      │  │ buckets)│  │  transcripts)│  │        │  │ analytics) │
+│res   │  │ (BullMQ,│  │  store       │  │ store  │  │ webhooks   │
+│(RLS) │  │ pubsub, │  │ (artifacts,  │  │(pgvec, │  │ (Slack,    │
+│      │  │ rate    │  │  transcripts,│  │ shared │  │ email,     │
+│      │  │ buckets)│  │  diffs)      │  │ w/ PG) │  │ analytics) │
 └──────┘  └─────────┘  └──────────────┘  └────────┘  └────────────┘
 
    ▲                                                  ▲
    │                                                  │
    │              ┌────────────────────────────┐      │
-   └──────────────│  Orchestrator (Temporal or  ├──────┘
-                  │  custom durable engine on   │
-                  │  BullMQ + Postgres)         │
+   └──────────────│  Orchestrator (NestJS-free  ├──────┘
+                  │  BullMQ workers + custom    │
+                  │  durable engine on Postgres)│
                   └─────────┬───────────────────┘
                             │ schedules + dispatches
                             ▼
                   ┌────────────────────────────┐
-                  │   Runner pool (Mergecrew      │
-                  │   Workers, NestJS apps     │
-                  │   on autoscale)            │
+                  │   Runner (BullMQ consumer  │
+                  │   on `runner.step` queue)  │
                   │                            │
-                  │   Each runner hosts:       │
-                  │   - Agent runtime          │
-                  │   - Skill executor sandbox │
-                  │   - LLM provider clients   │
-                  │   - Git workspace          │
+                  │   Each runner step hosts:  │
+                  │   - @mergecrew/agent-      │
+                  │     runtime (LangGraph)    │
+                  │   - @mergecrew/skills      │
+                  │     executor               │
+                  │   - @mergecrew/llm router  │
+                  │   - per-step git workspace │
                   └─────────┬──────────────────┘
                             │ tool calls (network)
                             ▼
@@ -70,17 +70,17 @@ Mergecrew is a layered system. Each layer has a single responsibility and one we
 
 | Layer | Concern | Implementation |
 |---|---|---|
-| **UI** | rendering, input, real-time view | Next.js |
-| **BFF** | session, per-org guarding, SSR data, SSE proxy | Next.js route handlers |
-| **API** | tenant-aware CRUD, business rules, gate evaluation, cost tracking | NestJS modules |
-| **Orchestration** | durable run scheduling, retries, rate-limit pause/resume, idempotency | Temporal *or* a custom engine on BullMQ + Postgres |
-| **Runner** | actually execute agents and skills inside a sandboxed workspace | NestJS worker app |
-| **Agent runtime** | the loop: prompt → model → tool call → observation → … | Common abstraction; for Anthropic the Claude Agent SDK is used as a reference implementation |
-| **LLM abstraction** | provider-agnostic chat / tools / embeddings | Internal NestJS module (`LlmModule`) |
-| **Skill abstraction** | side-effecting capabilities the agent can invoke | Internal NestJS module (`SkillsModule`) |
-| **Adapter layer** | VCS, deploy, tracker, comms | Internal NestJS modules per integration |
+| **UI** | rendering, input, real-time view | Next.js 15 (App Router) + Tailwind + lucide-react |
+| **BFF** | session, per-org guarding, SSR data, SSE proxy | Next.js route handlers; trust-token exchange with API |
+| **API** | tenant-aware CRUD, business rules, gate evaluation, cost tracking | NestJS modules (`apps/api`) |
+| **Orchestration** | durable run scheduling, retries, rate-limit pause/resume, idempotency | Custom engine on BullMQ + Postgres (`apps/orchestrator`) |
+| **Runner** | execute one agent step inside a sandboxed workspace | BullMQ `runner.step` consumer (`apps/runner`) |
+| **Agent runtime** | LangGraph StateGraph: agent node ↔ tools node loop | `@mergecrew/agent-runtime` (`packages/agent-runtime/src/loop.ts`) |
+| **LLM abstraction** | LangChain `BaseChatModel` factory + capability router | `@mergecrew/llm` (`packages/llm`) |
+| **Skill abstraction** | side-effecting capabilities the agent can invoke | `@mergecrew/skills` (`packages/skills`) |
+| **Adapter layer** | VCS, deploy, tracker, comms | One package per family under `packages/adapters-*` |
 
-Layers above can call layers below. Below cannot call above (events bubble up via the event log; not synchronous).
+Layers above can call layers below. Below cannot call above (events bubble up via the eventlog; not synchronous).
 
 ## Repository layout (monorepo)
 
@@ -88,84 +88,81 @@ Layers above can call layers below. Below cannot call above (events bubble up vi
 mergecrew/
   apps/
     web/                  Next.js 15 (App Router)
-    api/                  NestJS (HTTP + websocket)
-    runner/               NestJS worker (consumes orchestrator dispatch)
-    orchestrator/         Temporal worker OR custom durable engine
+    api/                  NestJS HTTP + SSE (port 4000)
+    orchestrator/         BullMQ workers + custom durable engine
+    runner/               BullMQ consumer of `runner.step`
+    worker-cron/          Schedule scanner (enqueues `run.due`)
   packages/
-    domain/               TypeScript domain types & zod schemas
-    llm/                  LLM provider abstraction + impls
-    skills/               Skill catalog + skill SDK
-    adapters-vcs/         GitHubProvider impl
+    domain/               Zod-shaped domain types & enums
+    llm/                  LangChain BaseChatModel factory + CapabilityRouter
+    skills/               Skill SDK + ~25 stock skills
+    agent-runtime/        LangGraph StateGraph (agent + tools nodes)
+    adapters-vcs/         GitHubProvider
     adapters-deploy/      GitHubActionsProvider, VercelProvider
     adapters-tracker/     LinearProvider, GitHubIssuesProvider
     adapters-comms/       SlackProvider, EmailProvider
-    db/                   Prisma schema + migrations
+    db/                   Prisma schema, migrations, RLS, withTenant/withSystem
     eventlog/             Append-only timeline event types & repository
-    agent-runtime/        Provider-agnostic agent loop
     config-yaml/          mergecrew.yaml parser/validator
   infra/
-    aws/                  Terraform / CDK
-    docker/               Dockerfiles for api, runner, orchestrator, web
+    aws/                  Terraform sketch (not yet wired up)
+    docker/               Dockerfiles for api, runner, orchestrator, web, worker-cron
+    sql/                  RLS bootstrap + init scripts
 ```
 
 ## Process model
 
-In production, Mergecrew runs as separate process types so they can scale independently:
+Mergecrew runs as four backend services plus the web app, each independently scalable:
 
-- `web` — stateless, autoscales on request count.
-- `api` — stateless, autoscales on request count.
-- `orchestrator` — singletonish (Temporal cluster, or custom leader-elected). Coordinates schedules.
-- `runner` — autoscales on queue depth. Each runner can hold N concurrent agent steps. The runner is the *only* process that holds an LLM client and a per-run git workspace.
-- `worker-cron` — small scheduler that fires per-project DailyRun events at the configured times.
+- `web` — Next.js, stateless, autoscales on request count. Port 3000.
+- `api` — NestJS HTTP + SSE, stateless, autoscales on request count. Port 4000.
+- `orchestrator` — Six BullMQ workers (`run.due`, `orchestrator.dispatch`, `orchestrator.gate.resume`, `orchestrator.rate-limit.resume`, `webhook.inbound`, `orchestrator.step-reply`). State lives in Postgres; multiple replicas can run in parallel because BullMQ guarantees per-job exclusivity. See `apps/orchestrator/src/main.ts:23-57`.
+- `runner` — BullMQ consumer of `runner.step` (default `RUNNER_CONCURRENCY=4`). The only process that holds an LLM client and a per-step git workspace. See `apps/runner/src/main.ts`.
+- `worker-cron` — Polls `Schedule` rows on an interval (`WORKER_CRON_TICK_MS`, default 60s) and enqueues `run.due` jobs when a project's cron is due. See `apps/worker-cron/src/main.ts`.
 
 ## Data flow: a run, end to end
 
-1. `worker-cron` triggers a DailyRun for a project at the scheduled time.
-2. `orchestrator` instantiates a durable workflow, persists its initial state, and dispatches the first agent step to a `runner` via the queue.
-3. `runner` claims the step, sets up the git workspace (clones the repo, checks out a branch), and executes the agent loop:
-   - Builds the prompt from the agent definition + the step's input.
-   - Calls the LLM through `LlmModule`.
-   - For each tool call the model produces, runs it through `SkillsModule` (which talks to adapters or the workspace).
-   - Streams events to the `eventlog` (which writes to Postgres and pubsubs to Redis).
-4. On step completion, the runner reports back to the orchestrator with the output.
-5. Orchestrator persists the new state, evaluates which step(s) come next, dispatches them.
-6. SSE clients subscribed to the run receive events from Redis pubsub.
-7. On rate-limit (429) or quota error from the LLM:
-   - The runner returns a `RATE_LIMITED` outcome with `retry_after`.
-   - The orchestrator records `RUN_PAUSED_RATE_LIMIT` and schedules a wake-up timer.
-   - At wake-up, the same step is dispatched again.
-8. When a workflow reaches a `require-approval` gate, orchestrator emits `GATE_REACHED`, dispatches an approval-request creation, and stops dispatching this branch until `HUMAN_APPROVED` arrives.
+1. `worker-cron` finds a due `Schedule` and enqueues `run.due` with `{organizationId, projectId}`.
+2. The orchestrator's `run.due` worker creates a `DailyRun` + initial `WorkflowRun` and dispatches the first agent step onto the `runner.step` queue.
+3. `runner` picks up the job, sets up the git workspace, and calls `runAgentStep()` from `@mergecrew/agent-runtime`. This builds a LangGraph `StateGraph` with two nodes:
+   - **agent node**: resolves a `(provider, model)` via `CapabilityRouter`, builds a LangChain `BaseChatModel` (`ChatAnthropic` / `ChatOpenAI` / `ChatBedrockConverse` / `ChatOllama`), binds the agent's tools, and invokes it.
+   - **tools node**: validates each tool call against `PolicyEngine`, executes the matching skill via `SkillExecutor`, appends a `ToolMessage` for the model.
+4. On step completion, the runner enqueues a reply on `orchestrator.step-reply` with the outcome.
+5. The orchestrator persists the new state, evaluates which step(s) come next, and dispatches them.
+6. SSE clients receive timeline events through Redis pubsub (`@mergecrew/eventlog`).
+7. On `rate_limited`, the agent runtime returns up to the orchestrator, which enqueues a delayed job on `orchestrator.rate-limit.resume`. Runners stay free to serve other tenants.
+8. On `gated_reject`, the orchestrator persists a `gate_wait` row and stops dispatching this branch until a human approval (or rejection) arrives.
 9. When all changesets reach the deploy stage, the day's digest is assembled.
 
-## Why Temporal (or an equivalent)
+## Why a custom durable engine
 
-The orchestrator must be **durable** because:
-
-- Runs span hours.
-- Process restarts must not lose state.
-- Rate-limit pauses can be 30+ minutes.
-- Human gates can be days.
-
-Temporal models all of this natively (workflows, activities, signals, timers). The alternative is a hand-rolled state machine on top of Postgres + BullMQ. Both work. V1 picks **a custom durable engine on BullMQ + Postgres** to avoid the operational footprint of running Temporal in V1; V2 reconsiders if the custom engine starts feeling like we're building Temporal poorly. (See `docs/02-architecture/06-workflow-engine.md`.)
+The orchestrator must be **durable** because runs span hours, processes restart, rate-limit pauses can be 30+ minutes, and human gates can be days. We picked a custom engine on BullMQ + Postgres because the workflow set is small and stable, and Temporal's operational footprint isn't justified yet. See `docs/02-architecture/06-workflow-engine.md`.
 
 ## Why NestJS
 
-- The user already runs NestJS in production.
-- Module boundaries map well to the layering above (one Nest module per concern).
-- Built-in DI suits adapter-pattern code (LLM providers, VCS adapters, deploy adapters).
-- Worker apps reuse the same domain code as the API by sharing packages.
+- Module boundaries map cleanly onto the layering above (one Nest module per concern).
+- Built-in DI suits adapter-pattern code (LLM provider configs, VCS/deploy/tracker/comms adapters).
+- The same TypeScript domain code is shared by all four backend apps via workspace packages.
+- It's a familiar idiom for the TypeScript backend community, lowering contributor ramp-up.
 
 ## Why Next.js (App Router)
 
-- Server Components fit the "data-heavy view" surfaces (timeline, digest).
-- Route handlers serve as a tidy BFF, so the browser never talks to NestJS directly.
+- Server Components fit data-heavy view surfaces (timeline, digest, run detail).
+- Route handlers serve as a tidy BFF; the browser never talks to the NestJS API directly.
 - SSE has a clean implementation in route handlers.
-- Mobile-first rendering performance is reasonable on Vercel's edge runtime for read paths.
+- The mobile-first read paths render reasonably on edge runtimes.
+
+## Why LangGraph + LangChain
+
+- LangChain's provider integrations (`@langchain/anthropic`, `@langchain/openai`, `@langchain/aws`, `@langchain/ollama`) absorb the per-provider API drift.
+- LangGraph's `StateGraph` gives us a typed, restartable agent loop without writing one ourselves; the agent ↔ tools cycle is two nodes plus conditional edges (`packages/agent-runtime/src/loop.ts:261-267`).
+- Standard `usage_metadata` on `AIMessage` makes per-call cost accounting uniform across providers.
+- We do not use LangGraph for run-level durability; that's the orchestrator's job.
 
 ## Cross-cutting concerns
 
-- **Tenancy**: every record carries `organization_id`. Postgres RLS enforces isolation. NestJS request context carries the org from the session/JWT and sets the connection's `app.org_id` GUC. See `docs/02-architecture/03-multi-tenancy.md`.
-- **Auth**: NextAuth on the BFF; service-to-service via short-lived signed JWTs.
-- **Secrets**: provider keys live in Postgres encrypted with KMS-derived data keys; never logged; never returned in API responses.
-- **Cost ledger**: every model call writes a `LlmInvocation` row with input/output tokens and price. Aggregation happens off the hot path.
-- **Eventlog**: append-only `timeline_events` table, partitioned by month, with a per-run materialized view for quick reads.
+- **Tenancy**: every record carries `organization_id`. Postgres RLS enforces isolation. `withTenant(orgId, fn)` and `withSystem(fn)` in `@mergecrew/db` set the connection's `app.org_id` GUC. See `docs/02-architecture/03-multi-tenancy.md`.
+- **Auth**: NextAuth on the BFF; the BFF exchanges an authenticated email for a JWT at the API using a shared `BFF_TRUST_TOKEN` header (`apps/api/src/modules/auth/auth.controller.ts:18`).
+- **Secrets**: BYOK provider keys are stored per-tenant in Postgres, envelope-encrypted with `KMS_MASTER_KEY`. They are never logged and never returned in API responses.
+- **Cost ledger**: every model call writes a `ModelTurn` row with input/output/cache tokens, latency, and `usdEstimate` from `priceFor()` (`packages/llm/src/pricing.ts`).
+- **Eventlog**: append-only `timeline_events` table; the canonical source of "what happened." Streamed to SSE clients via Redis pubsub.

@@ -1,6 +1,8 @@
 # Key screens
 
-ASCII wireframes of the screens that carry V1's weight. Each one is annotated with its purpose, primary persona, and key interactions.
+ASCII wireframes of the canonical screens. Each one is annotated with its purpose, primary persona, and key interactions.
+
+> ASCII wireframes describe target UX; current implementation under `apps/web/src/app/` is more list-driven and minimal. Screens flagged below as "not yet implemented" exist only as design intent.
 
 ## S1 — Today (org landing)
 
@@ -35,6 +37,7 @@ ASCII wireframes of the screens that carry V1's weight. Each one is annotated wi
 ## S2 — Daily digest (the most important screen)
 
 **Purpose.** Decide what ships. **Persona.** Theo (mobile), Mira (desktop).
+**Status.** Not yet implemented — described as target UX.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -159,6 +162,7 @@ Notes:
 ## S5 — Approval inbox
 
 **Purpose.** The user's queue of "things that need a human." **Persona.** All.
+**Status.** Not yet implemented in this form — described as target UX.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -203,11 +207,12 @@ A "Review" tap opens an approval-shaped variant of S4: the diff, the agent's rea
 
 - Hover a node → side panel listing the agents at that node, their model, their skills.
 - ★ = hard gate, cannot be relaxed.
-- Edit ↗ opens the underlying `mergecrew.yaml` in GitHub for editing (V1). V2: in-app visual editor with PR generation.
+- Edit ↗ opens the underlying `mergecrew.yaml` in GitHub for editing. An in-app visual editor with PR generation is Planned.
 
 ## S7 — Agent detail
 
 **Purpose.** Inspect and configure one agent. **Persona.** Mira.
+**Status.** Not yet implemented — described as target UX.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -241,11 +246,11 @@ Step 7: schedule first run.
 
 Each step is one screen on mobile, a single page with sections on desktop. Back/forward preserves state.
 
-## Visual language (V1)
+## Visual language
 
 - Typography: system font stack + Inter for headings.
 - Color: muted neutral palette; one accent (deep teal); status colors (green/amber/red) reserved for run state, never for UI chrome.
 - Spacing: 4 / 8 / 16 / 24 / 32 / 48 px scale.
-- Components: built on shadcn/ui + Tailwind. No custom design system in V1.
+- Components: Tailwind + lucide-react; UI primitives in `apps/web/src/components/ui.tsx`. No custom design system.
 - Iconography: Lucide.
 - No anthropomorphic illustrations of agents (no robot avatars). Icons for agents are role-shaped (gear for engineer, magnifying glass for QA, etc.).

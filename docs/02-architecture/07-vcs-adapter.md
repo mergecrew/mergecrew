@@ -1,37 +1,42 @@
 # VCS adapter
 
-Mergecrew's relationship with the user's repository is mediated entirely through the `VcsProvider` interface. V1 ships one implementation: GitHub. V2 may add GitLab/Gitea. Mergecrew does not run its own forge.
+Mergecrew's relationship with the user's repository is mediated entirely through the `VcsProvider` interface. The current implementation is GitHub (`packages/adapters-vcs/src/github.ts`). GitLab/Gitea adapters are Planned. Mergecrew does not run its own forge.
 
 ## Interface
 
+The interface lives in `packages/adapters-vcs/src/types.ts`:
+
 ```ts
 interface VcsProvider {
-  id: 'github' | 'gitlab' | 'gitea';
+  readonly id: 'github' | 'gitlab' | 'gitea';
 
   // Workspace
-  cloneIntoWorkspace(repo: ConnectedRepo, ref: string, dest: WorkspacePath): Promise<void>;
-  fetchUpdate(workspace: WorkspacePath, ref: string): Promise<void>;
+  cloneIntoWorkspace(repo: ConnectedRepoRef, ref: string, dest: string): Promise<void>;
+  fetchUpdate(workspace: string, ref: string): Promise<void>;
 
   // Branches & commits
-  createBranch(workspace: WorkspacePath, name: string, fromRef: string): Promise<void>;
-  commit(workspace: WorkspacePath, opts: { message: string; authorName: string; authorEmail: string; signoff?: boolean }): Promise<{ sha: string }>;
-  push(workspace: WorkspacePath, branch: string): Promise<void>;
+  createBranch(workspace: string, name: string, fromRef: string): Promise<void>;
+  commit(
+    workspace: string,
+    opts: { message: string; authorName: string; authorEmail: string; signoff?: boolean },
+  ): Promise<string>;                    // returns the commit sha
+  push(workspace: string, branch: string): Promise<void>;
 
   // PRs
-  openPullRequest(repo: ConnectedRepo, opts: PullRequestOpts): Promise<PullRequest>;
-  commentOnPullRequest(repo: ConnectedRepo, prNumber: number, body: string): Promise<void>;
-  mergePullRequest(repo: ConnectedRepo, prNumber: number, opts: MergeOpts): Promise<MergeResult>;
-  revertPullRequest(repo: ConnectedRepo, prNumber: number): Promise<{ revertPrNumber: number }>;
-  closePullRequest(repo: ConnectedRepo, prNumber: number): Promise<void>;
+  openPullRequest(repo: ConnectedRepoRef, opts: PullRequestOpts): Promise<PullRequest>;
+  commentOnPullRequest(repo: ConnectedRepoRef, prNumber: number, body: string): Promise<void>;
+  mergePullRequest(repo: ConnectedRepoRef, prNumber: number, opts: MergeOpts): Promise<MergeResult>;
+  revertPullRequest(repo: ConnectedRepoRef, prNumber: number): Promise<{ revertPrNumber: number }>;
+  closePullRequest(repo: ConnectedRepoRef, prNumber: number): Promise<void>;
 
   // Read-only
-  listOpenPullRequests(repo: ConnectedRepo): Promise<PullRequest[]>;
-  getDefaultBranch(repo: ConnectedRepo): Promise<string>;
-  getFileAt(repo: ConnectedRepo, ref: string, path: string): Promise<{ contentBase64: string }>;
+  listOpenPullRequests(repo: ConnectedRepoRef): Promise<PullRequest[]>;
+  getDefaultBranch(repo: ConnectedRepoRef): Promise<string>;
+  getFileAt(repo: ConnectedRepoRef, ref: string, path: string): Promise<{ contentBase64: string }>;
 
   // Webhook ingestion
-  verifyWebhookSignature(headers: Record<string,string>, body: Buffer, secret: string): boolean;
-  parseWebhookEvent(headers: Record<string,string>, body: Buffer): VcsEvent;
+  verifyWebhookSignature(headers: Record<string, string>, body: Buffer, secret: string): Promise<boolean>;
+  parseWebhookEvent(headers: Record<string, string>, body: Buffer): VcsEvent;
 }
 ```
 
@@ -94,7 +99,7 @@ Branch naming: `mergecrew/<cs_id>` (cs_id is the short URL-safe Changeset id). L
 
 ### Commit messages
 
-Mergecrew writes structured commit messages:
+The intended commit-message convention (Planned — not yet stamped by the adapter; `commit()` currently passes the agent-authored message through unchanged):
 
 ```
 <type>(<scope>): <subject>
@@ -107,7 +112,7 @@ Mergecrew-Lifecycle-Node: implementation
 Co-authored-by: <agent-kind> via <provider>/<model>
 ```
 
-`<type>` follows Conventional Commits. The body is written by the agent; the trailers are stamped by the runtime.
+`<type>` follows Conventional Commits. The body is written by the agent; the trailers will be stamped by the runtime once trailer support is implemented.
 
 ### PR body
 
@@ -144,9 +149,9 @@ GitHub API rate limits are real:
 
 ### Errors we handle explicitly
 
-- **Force-pushed base branch.** When the project's base branch moves under us, the orchestrator detects the divergence at PR-open time, rebases the changeset's branch (or, on conflict, opens a "rebase needed" gate).
-- **Concurrent edits to the same file.** Two changesets in the same run editing the same file: the second changeset's branch is rebased on the first's merged result before its PR opens.
 - **Force-deleted branches.** The agent re-pushes; if the user deleted the PR's branch, the changeset is failed with a human-readable explanation.
+
+Force-pushed base-branch rebase and cross-changeset file-conflict resolution are Planned, not implemented.
 
 ## Cross-cutting policies
 
@@ -154,8 +159,8 @@ GitHub API rate limits are real:
 - All git operations run inside the per-step abort signal scope.
 - All operations are logged to the `eventlog` with skill-level grain (no raw secrets, no full diffs at log level).
 
-## V2 considerations
+## Planned extensions
 
 - **GitLab adapter.** Same interface; webhook differences are encapsulated.
 - **Gitea / self-hosted GitHub Enterprise.** Same interface; the runner needs network access to the on-prem URL.
-- **Multi-repo project.** A Project gains `ConnectedRepo[]` instead of a single repo, and changesets carry which repo they target. The agent runtime must reason about cross-repo coordination (e.g., shared types). Deferred.
+- **Multi-repo project.** A Project gains `ConnectedRepoRef[]` instead of a single repo, and changesets carry which repo they target. The agent runtime must reason about cross-repo coordination (e.g., shared types).

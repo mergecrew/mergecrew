@@ -1,33 +1,20 @@
-# Mergecrew — specification
+# Mergecrew — engineering documentation
 
-> Working codename: **Mergecrew**. An autonomous product team in a box: it specifies, designs, builds, deploys, tests, and triages bugs on a SaaS codebase every day, and asks the human only at the moments where judgment is required.
-
-This directory is the full V1 specification: product, design, architecture, infrastructure, roadmap. Read in order for first-time orientation; deeper docs are cross-linked.
-
-## At a glance
-
-- **Stack.** NestJS (`api`, `runner`, `orchestrator`) + Next.js (`web`) in a TypeScript monorepo, on AWS Fargate + Aurora Postgres + Redis + S3, with Vercel for the web tier.
-- **Audience.** Multi-tenant SaaS from day one; dogfooded by us first.
-- **Code surface.** Tenants connect their own GitHub repo; agents open real PRs in real repos.
-- **Deploy surface.** Pluggable adapter; ships with **GitHub Actions** (the bridge to existing AWS pipelines) and **Vercel** (opinionated default for greenfield).
-- **LLM surface.** Provider-agnostic — Anthropic, OpenAI/Codex, AWS Bedrock, Ollama. Capability-routed per agent, per skill.
-- **Loop.** Runs unattended for a full day; pauses on provider rate limits and human gates; resumes on its own.
-- **Promotion model.** Production deploys never happen without an explicit human decision.
+Documentation for contributors and operators of [Mergecrew](https://github.com/mergecrew/mergecrew), the open-source agentic SDLC platform. The user-facing README is at the [project root](../README.md). This directory describes how the product is built, how it behaves, and what invariants it preserves.
 
 ## Reading order
 
 ### 0 — Product
 1. [Vision](00-product/01-vision.md)
-2. [Scope (V1 in/out)](00-product/02-scope.md)
+2. [Scope](00-product/02-scope.md)
 3. [Personas](00-product/03-personas.md)
 4. [User journeys](00-product/04-user-journeys.md)
 5. [Feature breakdown](00-product/05-features.md)
-6. [Success metrics](00-product/06-success-metrics.md)
 
 ### 1 — Design
 1. [Design principles](01-design/01-principles.md)
 2. [Information architecture](01-design/02-information-architecture.md)
-3. [Key screens (with ASCII wireframes)](01-design/03-key-screens.md)
+3. [Key screens](01-design/03-key-screens.md)
 4. [Real-time timeline UX](01-design/04-realtime-timeline.md)
 
 ### 2 — Architecture
@@ -45,43 +32,18 @@ This directory is the full V1 specification: product, design, architecture, infr
 
 ### 3 — Infrastructure
 1. [Infra overview](03-infrastructure/01-overview.md)
-2. [Environments](03-infrastructure/02-environments.md)
-3. [Credit & rate-limit handling](03-infrastructure/03-credit-and-rate-handling.md)
-4. [Observability](03-infrastructure/04-observability.md)
-5. [Disaster recovery](03-infrastructure/05-disaster-recovery.md)
+2. [Credit & rate-limit handling](03-infrastructure/03-credit-and-rate-handling.md)
 
 ### 4 — Roadmap
-- [Phased roadmap (V0 → V3)](04-roadmap.md)
+- [Vision-tier roadmap](04-roadmap.md). Tactical milestones live in [GitHub Issues](https://github.com/mergecrew/mergecrew/issues) and the [project board](https://github.com/orgs/mergecrew/projects).
 
-## Conventions used in this spec
+## Conventions
 
-- **Codenames.** "Mergecrew" is the working name for the platform. Replace globally if branding decides otherwise.
-- **Tense.** "We" = the Mergecrew team. "The user" = the tenant's persona (Theo, Mira, Riley).
-- **MUST / SHOULD / MAY.** Used in their RFC 2119 sense in normative sections (data model invariants, security, multi-tenancy).
-- **Examples.** ASCII wireframes are illustrative. Final pixel-level designs live in Figma.
-- **Code samples.** TypeScript-flavored pseudocode unless otherwise noted. Database snippets are PostgreSQL.
+- **Tense.** These docs describe the system as it is, not as it might be. Forward-looking work belongs in the roadmap or in issues.
+- **MUST / SHOULD / MAY.** Used in their RFC 2119 sense in normative sections (data model, security, multi-tenancy).
+- **Code samples.** TypeScript unless otherwise noted. Database snippets are PostgreSQL.
+- **Cross-linking.** When a doc claims "the runner does X", it should link to the file that does it. A broken link signals a stale claim.
 
-## Boundaries — what this spec does NOT cover
+## Contributing changes
 
-- Pixel-level visual design and Figma source.
-- Marketing site copy.
-- Pricing & billing pages (TBD; V1 ships free with BYOK).
-- Customer support tooling.
-- Internal HR / hiring playbooks.
-- Detailed runbooks (live in the engineering repo under `docs/runbooks/`).
-
-## How this spec evolves
-
-- Treat this directory as living documentation, versioned in the same repo as the product.
-- Significant changes go through a small RFC process: open a PR with the doc edit + a 1-page rationale; require ≥ 1 reviewer.
-- Versioning by milestone: tag the docs at each V0/V1/etc. cut.
-
-## Open questions tracked in V1 planning
-
-These are deliberately deferred and will be resolved during V1 implementation:
-
-1. Custom durable engine vs Temporal — revisited at end of V1.3.
-2. Embedding model default — OpenAI `text-embedding-3-small` vs an open alternative.
-3. Whether to ship a CLI in V1 (helpful for power users; cost is small but non-zero).
-4. Pricing model for V2 (BYOK-only forever vs tiered managed-LLM).
-5. Whether the production-promote hard gate ever softens (proposed: never; revisit after 1 year of data).
+Substantive product or architectural changes pair the doc edit with the code change in the same PR, plus a one-paragraph rationale in the PR description. Bug fixes don't require doc edits unless they invalidate a documented invariant.

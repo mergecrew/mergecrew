@@ -1,6 +1,14 @@
 # Security
 
-This document defines the security model: what we protect, how we protect it, and what we explicitly do not promise in V1.
+This document defines the security model for the Mergecrew project: what the OSS codebase protects out of the box, what is intended for a hosted tier or future work, and what is explicitly not promised. Items flagged "hosted-tier" or "Planned" are not enforced by the code today; operators running Mergecrew themselves should treat them as a checklist for their own deployment, not as guarantees from the project.
+
+Out of scope for the OSS surface — these belong to a hosted tier or to operator-supplied infrastructure:
+
+- MFA (TOTP).
+- Egress allowlist via per-runner network policy.
+- Container read-only root filesystem.
+- Central log filter scrubbing by pattern + registered key prefix.
+- Signed JWT for service-to-service calls.
 
 ## Threat model summary
 
@@ -14,7 +22,7 @@ Attackers we care about, in priority order:
 6. **Prompt injection from external content.** Issue body / customer feedback / documentation contains content that overrides the agent's instructions.
 7. **Standard web app risks.** Auth, session, CSRF, XSS, SQLi, IDOR.
 
-Out of scope for V1 explicit defenses:
+Out of scope for the project's explicit defenses:
 
 - Determined nation-state actors.
 - Post-quantum cryptographic threats.
@@ -27,11 +35,11 @@ Covered fully in `docs/02-architecture/03-multi-tenancy.md`. Five layers (RLS, N
 ## Authentication
 
 - Sessions: NextAuth, JWT-shaped session cookies, 14-day rolling, signed with a rotating key.
-- OAuth providers: Google, GitHub.
-- Email + password: bcrypt-hashed; email verification mandatory before first login.
-- MFA: TOTP, optional in V1, mandatory in V1.x for `owner`/`admin` roles.
-- Login throttling: per-IP and per-email exponential backoff.
-- Account recovery: email-based one-time link; rate-limited; logged in audit log.
+- OAuth providers: GitHub today; Google Planned.
+- Email + password: bcrypt-hashed; email verification (Planned).
+- Login throttling: per-IP and per-email exponential backoff (Planned).
+- Account recovery: email-based one-time link; rate-limited; logged in audit log (Planned).
+- MFA (TOTP): hosted-tier / Planned — not enforced by the OSS codebase.
 
 ## Authorization
 
@@ -47,24 +55,26 @@ Covered fully in `docs/02-architecture/03-multi-tenancy.md`. Five layers (RLS, N
 
 ## Secret handling (BYOK keys, project secrets)
 
-- Storage: envelope encryption. KMS-managed master key encrypts a per-row data key; the data key encrypts the secret.
+- Storage: envelope encryption. The OSS deployment uses a `KMS_MASTER_KEY` (32-byte base64 key in `.env`) as the master key encrypting a per-row data key; the data key encrypts the secret. Operators running in production should swap that for a managed KMS.
 - Retrieval: only by short-lived service requests with explicit `purpose` (e.g., `purpose=llm_call:anthropic`).
 - Decryption point: only on the runner that needs the secret, only for the duration of one outbound call.
-- Logging: secrets are redacted in all logs, error messages, and stack traces. A central log filter scrubs by pattern (e.g., `sk-...`, `xoxb-...`) and by registered key prefix.
 - Rotation: the API exposes a "rotate" action that decrypts the current value, accepts the new value, atomically swaps, audit-logs the rotation. No "show me the key" endpoint.
-- Backup: KMS keys are not backed up to user-readable storage.
+- Logging: hosted-tier / Planned — a central log filter scrubbing by pattern (e.g., `sk-...`, `xoxb-...`) and by registered key prefix is not part of the OSS codebase. Operators should configure their log pipeline to redact provider-specific key prefixes.
 
 ## Code execution sandboxing
 
-The runner executes user-derived workloads (agent-driven file edits, test commands). Containment:
+The runner executes user-derived workloads (agent-driven file edits, test commands). Out of the box the OSS code provides per-changeset workspace isolation, per-step wall-clock and abort-signal handling, and `--ignore-scripts` defaults. Stronger containment is hosted-tier or operator-supplied:
 
-- Each runner process is a Linux container with read-only root filesystem and a writable `/var/mergecrew/work/{run_id}` mount.
+- Per-step wall-clock limit (default 20 minutes) — implemented.
+- Workspace scoped to `/var/mergecrew/work/{run_id}/{cs_id}` and torn down at step end — implemented.
+- `npm install` runs with `--ignore-scripts` by default; the agent must explicitly request scripts to run — implemented.
+
+Hosted-tier / operator-supplied (not enforced by OSS code):
+
+- Linux container with read-only root filesystem and writable `/var/mergecrew/work/...` mount.
 - No host network mount, no Docker socket, no privileged mode.
-- Egress allowlist via a per-runner network policy: GitHub API, configured deploy adapter endpoints, configured LLM endpoints, observability sinks. The `web.fetch_url` skill bypasses with logging and per-changeset rate limiting.
+- Egress allowlist via per-runner network policy: GitHub API, configured deploy adapter endpoints, configured LLM endpoints, observability sinks.
 - Per-step CPU and memory limits (cgroups).
-- Per-step wall-clock limit (default 20 minutes).
-- No persistent filesystem across runs. Workspaces are scrubbed at step end.
-- `npm install` runs with `--ignore-scripts` by default; the agent must explicitly request scripts to run, gated by the policy engine for production-bound builds.
 
 ## Skill abuse defenses
 
@@ -83,10 +93,11 @@ The runner executes user-derived workloads (agent-driven file edits, test comman
 
 ## GitHub App security
 
-- Webhook signatures verified.
-- Installation tokens fetched on demand, used briefly, never stored in the database.
-- App private key stored in KMS; a short-lived JWT is generated per request.
-- Suspicious patterns (unexpected uninstall, unexpected repo removal) are surfaced to org admins.
+- Webhook signatures verified (HMAC SHA-256 over the body, constant-time compare in `packages/adapters-vcs/src/github.ts`).
+- Installation tokens fetched on demand via `@octokit/auth-app`, used briefly, never stored in the database.
+- App private key supplied via env / KMS; a short-lived JWT is generated per request.
+- Service-to-service signed JWT for internal calls is hosted-tier / Planned.
+- Surfacing suspicious patterns (unexpected uninstall, unexpected repo removal) to org admins is Planned.
 
 ## Data retention & purge
 
@@ -105,10 +116,7 @@ The runner executes user-derived workloads (agent-driven file edits, test comman
 
 ## Compliance posture
 
-- V1: SOC 2 Type 2 readiness as a goal, not a claim. We document controls so the readiness assessment is short.
-- V1.x: SOC 2 Type 2 audit started.
-- V2: GDPR Data Processing Agreement available; right-to-be-forgotten covered by the org-deletion path.
-- V3: HIPAA / FedRAMP not promised; if a customer asks, dedicated infrastructure tier required.
+Compliance is a hosted-tier concern. The OSS project documents controls so an operator-led readiness assessment is short. SOC 2, GDPR DPA, HIPAA, FedRAMP, and similar are not promised by the project.
 
 ## Logging & monitoring
 
@@ -124,14 +132,13 @@ The runner executes user-derived workloads (agent-driven file edits, test comman
 
 ## Vulnerability disclosure
 
-- Public security policy: `/.well-known/security.txt` pointing at `security@mergecrew.<domain>`.
-- Bug bounty: V2.
+- Public security policy lives in the repo's `SECURITY.md`. Reports go to the project's security contact published there.
+- A bug bounty is hosted-tier only.
 
-## What we don't promise in V1
+## What the OSS project does not promise
 
 - Customer-managed encryption keys (CMEK).
-- Dedicated VPC.
-- Self-hosted runners.
-- SAML/SCIM SSO (V3).
-- Audit log streaming to a customer SIEM (V2).
+- Dedicated VPC / dedicated infrastructure.
+- SAML/SCIM SSO.
+- Audit log streaming to a customer SIEM.
 - HIPAA / FedRAMP / IL-anything.

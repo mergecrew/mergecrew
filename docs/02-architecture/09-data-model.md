@@ -370,8 +370,7 @@ create table timeline_events (
   actor jsonb not null,                    -- { kind: 'agent' | 'user' | 'system', id }
   payload jsonb not null,
   occurred_at timestamptz not null
-) partition by range (occurred_at);
--- monthly partitions managed by pg_partman.
+);
 
 create index timeline_events_run_idx on timeline_events (daily_run_id, occurred_at desc);
 create index timeline_events_project_idx on timeline_events (project_id, occurred_at desc);
@@ -432,7 +431,9 @@ alter role mergecrew_migrator with bypassrls;
 - `audit_log_entries(organization_id, occurred_at desc)` — settings page.
 - pgvector index on `memory_documents.embedding`.
 
-## Object storage layout
+## Object storage layout (intended pattern — not yet wired up)
+
+The intended object-storage layout for transcripts, raw LLM payloads, screenshots, and diffs is below. No S3 writer code exists in the repo yet; this is the shape the upload paths and `raw_request_blob_url` / `raw_response_blob_url` columns are designed to point at.
 
 ```
 s3://mergecrew-artifacts/
@@ -445,4 +446,4 @@ s3://mergecrew-artifacts/
       diffs/<changeset_id>.patch
 ```
 
-All blobs encrypted with KMS. Lifecycle policy: transcripts 90 days, raw LLM 30 days, screenshots/diffs 180 days; configurable per org for compliance customers.
+Intended controls: blobs encrypted with KMS; lifecycle policy of transcripts 90 days, raw LLM 30 days, screenshots/diffs 180 days; configurable per org for compliance customers.

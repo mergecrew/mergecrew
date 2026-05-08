@@ -1,26 +1,28 @@
 # Deploy adapter
 
-Deploys are pluggable. V1 ships two adapters: **GitHub Actions** (the bridge to existing AWS pipelines) and **Vercel** (the opinionated default for new in-app projects).
+Deploys are pluggable. The current implementations are **GitHub Actions** (the bridge to existing AWS pipelines) at `packages/adapters-deploy/src/github-actions.ts` and **Vercel** (the opinionated default for new in-app projects) at `packages/adapters-deploy/src/vercel.ts`.
 
 ## Interface
 
+The interface lives in `packages/adapters-deploy/src/types.ts`:
+
 ```ts
 interface DeployProvider {
-  id: 'github-actions' | 'vercel' | 'aws-direct' | 'fly' | 'render';
+  readonly id: 'github-actions' | 'vercel';
 
   // Triggering
-  triggerDeploy(target: DeployTarget, opts: DeployOpts): Promise<DeployHandle>;
+  triggerDeploy(target: DeployTargetRef, opts: DeployOpts): Promise<DeployHandle>;
 
   // Polling / waiting
   getStatus(handle: DeployHandle): Promise<DeployStatus>;
   awaitCompletion(handle: DeployHandle, timeoutMs: number, abort: AbortSignal): Promise<DeployResult>;
 
   // URL & logs
-  resolveUrlForRef(target: DeployTarget, ref: string): Promise<string | null>;
+  resolveUrlForRef(target: DeployTargetRef, ref: string): Promise<string | null>;
   fetchLogs(handle: DeployHandle, opts: { sinceMs?: number; tailLines?: number }): Promise<LogChunk[]>;
 
   // Production rollback
-  rollbackProduction(target: DeployTarget, toRef: string): Promise<DeployHandle>;
+  rollbackProduction(target: DeployTargetRef, toRef: string): Promise<DeployHandle>;
 }
 
 type DeployOpts = {
@@ -33,10 +35,12 @@ type DeployOpts = {
 type DeployStatus =
   | { kind: 'queued' }
   | { kind: 'in_progress'; pct?: number; latestStep?: string }
-  | { kind: 'success'; url: string; finishedAt: Date }
-  | { kind: 'failed'; reason: string; url?: string; finishedAt: Date }
+  | { kind: 'success'; url: string; finishedAt: string }
+  | { kind: 'failed'; reason: string; url?: string; finishedAt: string }
   | { kind: 'cancelled' };
 ```
+
+> Adapters for AWS-direct / Fly / Render are Planned, not implemented. The `id` literal in `types.ts` may include them as forward-looking placeholders, but no provider class exists.
 
 ## Adapter 1 — GitHub Actions (the AWS bridge)
 
@@ -105,9 +109,9 @@ The adapter does not stream every line of logs into the timeline (that would be 
 
 When Mergecrew scaffolds a new project, the default deploy is Vercel for the Next.js front-end and either:
 - Vercel Functions for the NestJS back-end (if the back-end fits in serverless), or
-- Render / Fly / Railway (deferred to V2).
+- Render / Fly / Railway (Planned).
 
-For V1 greenfield: Vercel for everything, with a managed Postgres (Neon).
+For greenfield: Vercel for everything, with a managed Postgres (Neon).
 
 ### Configuration
 
@@ -147,7 +151,7 @@ Both modes preserve the invariant that **production state matches `main` HEAD**.
 
 A project can have multiple non-prod targets (dev, staging). Changesets are deployed to dev by default. Promotion can target prod directly or stage through staging-then-prod (configurable per project; default direct dev → prod).
 
-## Adapter authoring rules (for V2 adapters)
+## Adapter authoring rules
 
 When a new adapter is added, it must:
 - Implement the full `DeployProvider` interface.
