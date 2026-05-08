@@ -24,7 +24,7 @@
     "@mergecrew/db": "workspace:*",
     "@mergecrew/domain": "workspace:*",
     "@mergecrew/llm": "workspace:*",
-    "@prisma/client": "^5.22.0",
+    "@prisma/client": "^7.8.0",
     "playwright-core": "^1.48.1",
     "execa": "^9.4.0"
   },
