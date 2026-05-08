@@ -1,0 +1,34 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      langchain:
+        patterns:
+          - "@langchain/*"
+      nest:
+        patterns:
+          - "@nestjs/*"
+      next:
+        patterns:
+          - next
+          - "@next/*"
+          - eslint-config-next
+      types:
+        patterns:
+          - "@types/*"
+      prisma:
+        patterns:
+          - prisma
+          - "@prisma/*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3

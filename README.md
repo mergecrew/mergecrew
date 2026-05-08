@@ -302,7 +302,9 @@ Credentials are envelope-encrypted at rest using `KMS_MASTER_KEY` from `.env`.
 
 ## Contributing
 
-Mergecrew is built in the open and accepts contributions. Start with the [`docs/`](docs/README.md) tree to understand the architecture and product invariants, then check open issues for `good-first-issue`. PRs that change agent behavior, multi-tenant isolation, or the human approval gate require a design note in the PR description.
+Mergecrew is built in the open and accepts contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) for the dev setup and PR flow. Start with the [`docs/`](docs/README.md) tree to understand the architecture and product invariants, then check [open issues](https://github.com/mergecrew/mergecrew/issues) for `good first issue` or `roadmap`. PRs that change agent behavior, multi-tenant isolation, or the human approval gate require a design note in the PR description and ideally a [Discussion](https://github.com/mergecrew/mergecrew/discussions) first.
+
+By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md). Security issues should be reported privately per [SECURITY.md](SECURITY.md).
 
 ## License
 
