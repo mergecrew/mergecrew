@@ -25,7 +25,7 @@ async function runCommand(opts: RunOpts) {
   try {
     const r = await execa(cmd, opts.args, {
       cwd: opts.cwd,
-      cancelSignal: opts.signal,
+      signal: opts.signal,
       timeout: opts.timeoutMs ?? 600_000,
       reject: false,
       env: {
