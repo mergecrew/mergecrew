@@ -9,6 +9,7 @@ import { syncLifecycleFromRepo } from './lifecycle-sync.js';
 import { dispatchSlackDigest } from './digest-slack.js';
 import { dispatchEmailDigest } from './digest-email.js';
 import { handleSlackInteractivity } from './slack-interactivity.js';
+import { handleSentryWebhook } from './sentry-webhook.js';
 
 interface OrchestratorDeps {
   connection: Redis;
@@ -500,6 +501,10 @@ export class Orchestrator {
         eventlog: this.deps.eventlog,
         dispatchQueue: this.dispatchQueue,
       });
+      return;
+    }
+    if (name === 'sentry') {
+      await handleSentryWebhook({ payload: data?.event, logger: this.deps.logger });
       return;
     }
     // Other webhooks feed the Discovery agent's input on the next run.

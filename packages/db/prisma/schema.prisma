@@ -608,17 +608,22 @@ model IntentInboxItem {
   id                 String    @id @default(uuid()) @db.Uuid
   organizationId     String    @map("organization_id") @db.Uuid
   projectId          String    @map("project_id") @db.Uuid
-  submittedByUserId  String    @map("submitted_by_user_id") @db.Uuid
+  /// Nullable for system-originated intents (Sentry webhook, etc.).
+  submittedByUserId  String?   @map("submitted_by_user_id") @db.Uuid
   body               String    @db.Text
   status             String    @default("queued")
+  /// Optional source tag, e.g. `sentry:issue:1234`. Used by webhook
+  /// dedup to suppress duplicate intents within a short window.
+  sourceKey          String?   @map("source_key")
   pickedUpRunId      String?   @map("picked_up_run_id") @db.Uuid
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  user          User      @relation(fields: [submittedByUserId], references: [id])
+  user          User?     @relation(fields: [submittedByUserId], references: [id])
   pickedUpRun   DailyRun? @relation(fields: [pickedUpRunId], references: [id])
 
   @@index([projectId, status, createdAt])
+  @@index([projectId, sourceKey, createdAt])
   @@map("intent_inbox_items")
 }
 
