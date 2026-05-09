@@ -306,6 +306,12 @@ Mergecrew is built in the open and accepts contributions. See [CONTRIBUTING.md](
 
 By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md). Security issues should be reported privately per [SECURITY.md](SECURITY.md).
 
+## Sponsors
+
+Mergecrew runs autonomous LLM workflows daily; even alpha-stage dogfooding burns real money in API credits. The project is looking for backers — Anthropic / OpenAI / Bedrock credits, hosting credits, or recurring sponsorship via GitHub Sponsors. See [SPONSORS.md](SPONSORS.md) for what's needed and how to back the project.
+
+> **Looking for the first sponsor.** Token-credit and cash sponsors are acknowledged in `SPONSORS.md`, in release notes, and on this README.
+
 ## License
 
 [Apache 2.0](LICENSE).

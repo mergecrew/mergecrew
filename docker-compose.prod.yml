@@ -1,0 +1,110 @@
+# Production compose for a single VM with host-installed Postgres and a host-
+# installed reverse proxy (Caddy / nginx / etc). Containers reach Postgres via
+# host.docker.internal; the host reverse-proxies to web:3000 and api:4000 via
+# the localhost port bindings below.
+# Usage: ./scripts/deploy.sh
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: mergecrew-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks: [internal]
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  migrate:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    image: mergecrew/api:latest
+    profiles: [migrate]
+    env_file: .env
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    networks: [internal]
+    command: ["node", "/app/node_modules/.bin/prisma", "migrate", "deploy", "--schema", "/app/packages/db/prisma/schema.prisma"]
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    image: mergecrew/api:latest
+    container_name: mergecrew-api
+    restart: unless-stopped
+    env_file: .env
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    networks: [internal]
+    ports:
+      - '127.0.0.1:4000:4000'
+    depends_on:
+      redis: { condition: service_healthy }
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.orchestrator
+    image: mergecrew/orchestrator:latest
+    container_name: mergecrew-orchestrator
+    restart: unless-stopped
+    env_file: .env
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    networks: [internal]
+    depends_on:
+      redis: { condition: service_healthy }
+
+  runner:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.runner
+    image: mergecrew/runner:latest
+    container_name: mergecrew-runner
+    restart: unless-stopped
+    env_file: .env
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    networks: [internal]
+    depends_on:
+      redis: { condition: service_healthy }
+
+  worker-cron:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.worker-cron
+    image: mergecrew/worker-cron:latest
+    container_name: mergecrew-worker-cron
+    restart: unless-stopped
+    env_file: .env
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    networks: [internal]
+    depends_on:
+      redis: { condition: service_healthy }
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.web
+    image: mergecrew/web:latest
+    container_name: mergecrew-web
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      API_BASE_URL: http://api:4000
+    networks: [internal]
+    ports:
+      - '127.0.0.1:3000:3000'
+    depends_on: [api]
+
+networks:
+  internal:
+
+volumes:
+  redis_data:

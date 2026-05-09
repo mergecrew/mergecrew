@@ -19,3 +19,4 @@ tmp/
 .envrc
 prisma/migrations/dev.db
 .cache/
+.claude/
