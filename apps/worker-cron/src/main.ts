@@ -5,6 +5,7 @@ import { parseExpression } from 'cron-parser';
 import { withSystem, withTenant } from '@mergecrew/db';
 import { digestTick } from './digest-tick.js';
 import { isSkipped, dateInTz } from './skip.js';
+import { auditRetentionTick } from './audit-retention-tick.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
@@ -77,15 +78,30 @@ async function shutdown() {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
+// Audit-log retention runs once per UTC day. The TICK_MS loop just checks
+// the marker; the actual prune is gated. In-process state — restarts
+// re-run, which is harmless because deleteMany is idempotent.
+let lastRetentionDay: string | null = null;
+function maybeRunRetention(): void {
+  const today = new Date().toISOString().slice(0, 10);
+  if (lastRetentionDay === today) return;
+  lastRetentionDay = today;
+  auditRetentionTick({ logger }).catch((err) =>
+    logger.error({ err: String(err?.message ?? err) }, 'audit-retention-tick failed'),
+  );
+}
+
 logger.info({ tickMs: TICK_MS }, 'worker-cron started');
 setInterval(() => {
   tick().catch((err) => logger.error({ err: String(err?.message ?? err) }, 'tick failed'));
   digestTick({ digestQueue, logger }).catch((err) =>
     logger.error({ err: String(err?.message ?? err) }, 'digest-tick failed'),
   );
+  maybeRunRetention();
 }, TICK_MS);
 // First tick at startup
 tick().catch((err) => logger.error({ err: String(err?.message ?? err) }, 'initial tick failed'));
 digestTick({ digestQueue, logger }).catch((err) =>
   logger.error({ err: String(err?.message ?? err) }, 'initial digest-tick failed'),
 );
+maybeRunRetention();
