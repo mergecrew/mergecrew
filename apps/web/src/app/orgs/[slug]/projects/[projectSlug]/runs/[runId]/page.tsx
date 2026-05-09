@@ -1,9 +1,11 @@
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
+import { hasRole } from '@/lib/role';
 import { Card } from '@/components/ui';
 import { DensityToggle } from '@/components/density-toggle';
 import { densityClasses, getDensity } from '@/lib/preferences';
 import { LiveTimeline, ReplayTimeline } from './live-timeline';
+import { ForceCancelButton } from './cancel-button';
 
 interface ToolCall {
   id: string;
@@ -91,6 +93,7 @@ export default async function RunPage({
   const totals = computeTotals(detail);
   const density = await getDensity();
   const dc = densityClasses(density);
+  const canForceCancel = await hasRole(slug, session, 'admin');
 
   return (
     <main className={`mx-auto max-w-4xl ${dc.gapBlock} ${dc.pad}`}>
@@ -113,7 +116,17 @@ export default async function RunPage({
             )}
           </div>
         </div>
-        <DensityToggle revalidate={`/orgs/${slug}/projects/${projectSlug}/runs/${runId}`} />
+        <div className="flex flex-col items-end gap-2">
+          <DensityToggle revalidate={`/orgs/${slug}/projects/${projectSlug}/runs/${runId}`} />
+          {canForceCancel && (
+            <ForceCancelButton
+              slug={slug}
+              projectSlug={projectSlug}
+              runId={runId}
+              status={detail.run.status}
+            />
+          )}
+        </div>
       </header>
 
       <p className="text-sm text-zinc-600 dark:text-zinc-400">
