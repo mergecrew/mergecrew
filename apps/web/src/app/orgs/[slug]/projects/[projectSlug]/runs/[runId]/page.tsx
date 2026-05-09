@@ -3,7 +3,7 @@ import { requireSession } from '@/lib/session';
 import { Card } from '@/components/ui';
 import { DensityToggle } from '@/components/density-toggle';
 import { densityClasses, getDensity } from '@/lib/preferences';
-import { LiveTimeline } from './live-timeline';
+import { LiveTimeline, ReplayTimeline } from './live-timeline';
 
 interface ToolCall {
   id: string;
@@ -69,10 +69,14 @@ interface RunDetail {
 
 export default async function RunPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string; projectSlug: string; runId: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { slug, projectSlug, runId } = await params;
+  const sp = (await searchParams) ?? {};
+  const replayMode = sp.replayMode === '1' || sp.replayMode === 'true';
   const session = await requireSession();
   const detail = await api<RunDetail>(
     `/v1/orgs/${slug}/projects/${projectSlug}/runs/${runId}/full`,
@@ -102,6 +106,11 @@ export default async function RunPage({
             <span>· {totals.steps} agent steps · {totals.turns} model turns · {totals.tools} tool calls</span>
             <span>· {totals.inTok.toLocaleString()} in / {totals.outTok.toLocaleString()} out tokens</span>
             {totals.usd > 0 && <span>· ${totals.usd.toFixed(4)}</span>}
+            {replayMode && (
+              <span className="rounded bg-amber-100 px-1.5 py-0.5 font-mono text-[10px] uppercase text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                replay mode
+              </span>
+            )}
           </div>
         </div>
         <DensityToggle revalidate={`/orgs/${slug}/projects/${projectSlug}/runs/${runId}`} />
@@ -120,10 +129,14 @@ export default async function RunPage({
 
       <details>
         <summary className="cursor-pointer text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">
-          Engine timeline (live) — raw events
+          Engine timeline ({replayMode ? 'replay' : 'live'}) — raw events
         </summary>
         <Card className="mt-2">
-          <LiveTimeline initial={initial.items} streamUrl={streamUrl} />
+          {replayMode ? (
+            <ReplayTimeline events={initial.items} />
+          ) : (
+            <LiveTimeline initial={initial.items} streamUrl={streamUrl} />
+          )}
         </Card>
       </details>
     </main>
