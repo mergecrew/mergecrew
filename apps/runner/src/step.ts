@@ -17,7 +17,7 @@ import {
   priceFor,
   type LlmProfile,
 } from '@mergecrew/llm';
-import { stockSkills, SkillExecutor, type SkillExecutionContext } from '@mergecrew/skills';
+import { stockSkills, buildHttpSkill, SkillExecutor, type SkillExecutionContext } from '@mergecrew/skills';
 import { GitHubProvider, type VcsProvider } from '@mergecrew/adapters-vcs';
 import {
   GitHubActionsProvider,
@@ -162,6 +162,9 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
 
   const skills = new SkillExecutor();
   skills.registerAll(stockSkills);
+  for (const [name, def] of Object.entries(cfg.skills ?? {})) {
+    skills.register(buildHttpSkill(name, def));
+  }
 
   const policy = new PolicyEngine({
     agentDoNotTouch: agentDef.do_not_touch,
