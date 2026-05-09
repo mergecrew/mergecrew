@@ -44,6 +44,8 @@ model Organization {
   workingHoursEnd          String    @default("18:00") @map("working_hours_end")
   defaultLlmProfileId      String?   @map("default_llm_profile_id") @db.Uuid
   defaultGatePolicyId      String?   @map("default_gate_policy_id") @db.Uuid
+  /// Hard daily spend cap across all LLM providers. NULL = unlimited.
+  dailyBudgetUsd           Decimal?  @map("daily_budget_usd") @db.Decimal(10, 2)
   complianceAuditRetention Int       @default(365) @map("compliance_audit_retention_days")
   createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)

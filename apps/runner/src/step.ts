@@ -197,6 +197,32 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     },
   });
 
+  // Hard daily budget gate. If today's org-wide spend already meets or
+  // exceeds the configured cap, refuse the step before any LLM call. The
+  // budget is intentionally checked at step entry (not per-iteration) so
+  // a single step can't be more than one model turn over budget.
+  const budgetGate = await checkDailyBudget(organizationId);
+  if (budgetGate.exceeded) {
+    await eventlog.emit({
+      organizationId,
+      projectId,
+      dailyRunId: runId,
+      workflowRunId,
+      agentStepId: stepId,
+      type: 'AGENT_STEP_FAILED',
+      actor: { kind: 'system' },
+      payload: {
+        reason: 'org_daily_budget_exhausted',
+        spentUsd: budgetGate.spent,
+        budgetUsd: budgetGate.budget,
+      },
+    });
+    return {
+      kind: 'budget_exhausted',
+      reason: `org daily budget exhausted: spent $${budgetGate.spent.toFixed(2)} of $${budgetGate.budget?.toFixed(2)}`,
+    };
+  }
+
   const initialInput = await synthesizeAgentInput(organizationId, projectId, runId, agentRef, cfg);
 
   const outcome = await runAgentStep({
@@ -361,6 +387,29 @@ function decryptDevOnly(blob: Buffer): string {
   dec.setAuthTag(tag);
   const pt = Buffer.concat([dec.update(ct), dec.final()]);
   return pt.toString('utf8');
+}
+
+async function checkDailyBudget(
+  organizationId: string,
+): Promise<{ exceeded: boolean; spent: number; budget: number | null }> {
+  const since = new Date();
+  since.setUTCHours(0, 0, 0, 0);
+  const org = await withTenant(organizationId, (tx) =>
+    tx.organization.findUnique({ where: { id: organizationId } }),
+  );
+  const budget =
+    org?.dailyBudgetUsd === null || org?.dailyBudgetUsd === undefined
+      ? null
+      : Number(org.dailyBudgetUsd);
+  if (budget === null) return { exceeded: false, spent: 0, budget: null };
+  const agg = await withTenant(organizationId, (tx) =>
+    tx.llmInvocation.aggregate({
+      where: { organizationId, occurredAt: { gte: since } },
+      _sum: { usdEstimate: true },
+    }),
+  );
+  const spent = Number(agg._sum.usdEstimate ?? 0);
+  return { exceeded: spent >= budget, spent, budget };
 }
 
 async function nextSequence(kind: 'model' | 'tool', stepId: string): Promise<number> {
