@@ -16,6 +16,7 @@ import type { LifecycleScope } from './scope';
 
 interface AgentDef {
   kind: string;
+  description?: string;
   systemPrompt?: string;
   model?: string;
   fallback: string[];
@@ -28,6 +29,7 @@ interface AgentDef {
 
 interface WorkflowDef {
   id: string;
+  description?: string;
   agents: string[];
   out: string[];
   transitions: { to: string; when: string; gate: 'auto' | 'notify' | 'require-approval' }[];
@@ -268,8 +270,16 @@ function AgentsTab({
                     </Button>
                   </div>
                 </div>
+                {a.description && (
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{a.description}</p>
+                )}
                 {a.systemPrompt && (
-                  <p className="mt-2 whitespace-pre-wrap text-xs text-zinc-600 dark:text-zinc-400">{a.systemPrompt}</p>
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-xs uppercase tracking-wide text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
+                      Model prompt
+                    </summary>
+                    <p className="mt-1 whitespace-pre-wrap text-xs text-zinc-600 dark:text-zinc-400">{a.systemPrompt}</p>
+                  </details>
                 )}
                 {(a.skills ?? []).length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1">
@@ -309,6 +319,7 @@ function AgentForm({
 }) {
   const [ref, setRef] = useState(ref0 ?? '');
   const [kind, setKind] = useState(initial?.kind ?? '');
+  const [description, setDescription] = useState(initial?.description ?? '');
   const [systemPrompt, setSystemPrompt] = useState(initial?.systemPrompt ?? '');
   const [model, setModel] = useState(initial?.model ?? '');
   const initialSkills = (initial?.skills ?? []).map((s) => (typeof s === 'string' ? s : s.name));
@@ -330,6 +341,7 @@ function AgentForm({
     }
     const def: AgentDef = {
       kind: kind.trim(),
+      description: description.trim() || undefined,
       systemPrompt: systemPrompt.trim() || undefined,
       model: model.trim() || undefined,
       fallback: initial?.fallback ?? [],
@@ -384,11 +396,28 @@ function AgentForm({
       </div>
 
       <label className="block text-sm">
-        <span className="block text-zinc-600 dark:text-zinc-400">System prompt (optional)</span>
+        <span className="block text-zinc-600 dark:text-zinc-400">
+          Description{' '}
+          <span className="text-xs text-zinc-400">— one paragraph, shown to humans browsing the project</span>
+        </span>
+        <textarea
+          className="mt-1 w-full rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700"
+          rows={3}
+          placeholder="What this agent does and the value it produces. Distinct from the model prompt below."
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+      </label>
+
+      <label className="block text-sm">
+        <span className="block text-zinc-600 dark:text-zinc-400">
+          System prompt (optional){' '}
+          <span className="text-xs text-zinc-400">— sent to the model on every turn</span>
+        </span>
         <textarea
           className="mt-1 w-full rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700"
           rows={4}
-          placeholder="What this agent does, the rules it follows, and the style of output expected."
+          placeholder="The rules the agent follows and the style of output expected."
           value={systemPrompt}
           onChange={(e) => setSystemPrompt(e.target.value)}
         />
@@ -523,25 +552,28 @@ function WorkflowsTab({
                 onCancel={() => setEditing(null)}
               />
             ) : (
-              <div className="flex items-baseline justify-between">
-                <div>
+              <div>
+                <div className="flex items-baseline justify-between gap-3">
                   <div className="font-mono font-medium">{w.id}</div>
-                  <div className="text-xs text-zinc-500">
-                    agents: {w.agents.join(' · ') || '(none)'} · → {w.out.join(', ') || '(end)'}
+                  <div className="flex gap-2">
+                    <Button onClick={() => setEditing(w.id)} variant="secondary" disabled={pending}>Edit</Button>
+                    <Button
+                      onClick={() => {
+                        if (!confirm(`Delete workflow "${w.id}"? Other workflows pointing at it will be unlinked.`)) return;
+                        wrap(() => deleteWorkflowAction(scope, w.id), `Workflow "${w.id}" deleted.`);
+                      }}
+                      variant="secondary"
+                      disabled={pending}
+                    >
+                      Delete
+                    </Button>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button onClick={() => setEditing(w.id)} variant="secondary" disabled={pending}>Edit</Button>
-                  <Button
-                    onClick={() => {
-                      if (!confirm(`Delete workflow "${w.id}"? Other workflows pointing at it will be unlinked.`)) return;
-                      wrap(() => deleteWorkflowAction(scope, w.id), `Workflow "${w.id}" deleted.`);
-                    }}
-                    variant="secondary"
-                    disabled={pending}
-                  >
-                    Delete
-                  </Button>
+                {w.description && (
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{w.description}</p>
+                )}
+                <div className="mt-1 text-xs text-zinc-500">
+                  agents: {w.agents.join(' · ') || '(none)'} · → {w.out.join(', ') || '(end)'}
                 </div>
               </div>
             )}
@@ -563,6 +595,7 @@ function WorkflowForm({
   onCancel: () => void;
 }) {
   const [id, setId] = useState(initial?.id ?? '');
+  const [description, setDescription] = useState(initial?.description ?? '');
   const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set(initial?.agents ?? []));
   const [outList, setOutList] = useState<Set<string>>(new Set(initial?.out ?? []));
   const [transitionsText, setTransitionsText] = useState(
@@ -585,6 +618,7 @@ function WorkflowForm({
     }
     onSubmit(id, {
       id,
+      description: description.trim() || undefined,
       agents: Array.from(selectedAgents),
       out: Array.from(outList),
       transitions,
@@ -602,6 +636,20 @@ function WorkflowForm({
           value={id}
           onChange={(e) => setId(e.target.value)}
           readOnly={mode === 'edit'}
+        />
+      </label>
+
+      <label className="block text-sm">
+        <span className="block text-zinc-600 dark:text-zinc-400">
+          Description{' '}
+          <span className="text-xs text-zinc-400">— what this workflow produces</span>
+        </span>
+        <textarea
+          className="mt-1 w-full rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700"
+          rows={3}
+          placeholder="One paragraph explaining what runs here and what it outputs."
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
         />
       </label>
 
