@@ -31,7 +31,11 @@ async function bootstrap() {
   const jwt = new JwtService({ secret: process.env.JWT_SECRET ?? 'dev-secret' });
 
   app.use(async (req: Request, res: Response, next: NextFunction) => {
-    if (!/^\/v1\/orgs(\/|$)/.test(req.path)) {
+    // Routes requiring an authenticated user but not necessarily a tenant:
+    // /v1/orgs/* (tenant) and /v1/me/* (user-scoped self-service like MFA).
+    const isOrgPath = /^\/v1\/orgs(\/|$)/.test(req.path);
+    const isMePath = /^\/v1\/me(\/|$)/.test(req.path);
+    if (!isOrgPath && !isMePath) {
       next();
       return;
     }
@@ -54,6 +58,7 @@ async function bootstrap() {
 
     const m = req.path.match(/^\/v1\/orgs\/([^/]+)/);
     if (!m) {
+      // /v1/me/* (or any other user-only route).
       stampUserContextOnRequest(req, { userId });
       next();
       return;

@@ -24,6 +24,15 @@ model User {
   name         String?
   avatarUrl    String?   @map("avatar_url")
   defaultOrgId String?   @map("default_org_id") @db.Uuid
+  /// Confirmed TOTP secret (envelope-encrypted via CryptoService). NULL when
+  /// the user hasn't completed MFA enrollment.
+  mfaSecretCiphertext  Bytes?    @map("mfa_secret_ciphertext")
+  /// Pending (unconfirmed) TOTP secret produced by /mfa/setup. Cleared on
+  /// successful /mfa/verify or on a fresh setup call.
+  mfaPendingCiphertext Bytes?    @map("mfa_pending_ciphertext")
+  /// Set once /mfa/verify accepts the first valid TOTP. NULL means the user
+  /// is not enrolled.
+  mfaEnrolledAt        DateTime? @map("mfa_enrolled_at") @db.Timestamptz(6)
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
