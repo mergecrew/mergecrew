@@ -62,6 +62,12 @@ const digestWorker = new Worker(
   { connection: conn, concurrency: 4 },
 );
 
+const digestSlackWorker = new Worker(
+  'digest.slack',
+  async (job: Job) => orchestrator.handleSlackDigest(job.data),
+  { connection: conn, concurrency: 2 },
+);
+
 logger.info('orchestrator started');
 
 async function shutdown() {
@@ -74,6 +80,7 @@ async function shutdown() {
     webhookWorker.close(),
     stepReplyWorker.close(),
     digestWorker.close(),
+    digestSlackWorker.close(),
     pubsub.close(),
     conn.quit(),
   ]);

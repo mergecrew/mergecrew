@@ -33,4 +33,42 @@ export class SlackClient {
     }
     throw new Error('slack not configured');
   }
+
+  hasBotToken(): boolean {
+    return !!this.cfg.botToken;
+  }
+
+  /**
+   * Resolve a Slack user id from an email. Returns null when the lookup
+   * succeeds but the email is unknown (`users_not_found`); throws on any
+   * other API error so the caller can decide whether to skip or escalate.
+   * Requires `users:read.email` scope.
+   */
+  async lookupUserByEmail(email: string): Promise<string | null> {
+    if (!this.cfg.botToken) throw new Error('slack: bot token required for users.lookupByEmail');
+    const url = `https://slack.com/api/users.lookupByEmail?email=${encodeURIComponent(email)}`;
+    const r = await fetch(url, {
+      headers: { authorization: `Bearer ${this.cfg.botToken}` },
+    });
+    const j = (await r.json()) as any;
+    if (j.ok) return j.user?.id ?? null;
+    if (j.error === 'users_not_found') return null;
+    throw new Error(`slack: users.lookupByEmail ${j.error}`);
+  }
+
+  /** Open (or fetch) a 1:1 DM channel with a user. Requires `im:write` scope. */
+  async openDm(userId: string): Promise<string> {
+    if (!this.cfg.botToken) throw new Error('slack: bot token required for conversations.open');
+    const r = await fetch('https://slack.com/api/conversations.open', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${this.cfg.botToken}`,
+        'content-type': 'application/json; charset=utf-8',
+      },
+      body: JSON.stringify({ users: userId }),
+    });
+    const j = (await r.json()) as any;
+    if (!j.ok) throw new Error(`slack: conversations.open ${j.error}`);
+    return j.channel.id;
+  }
 }

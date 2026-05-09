@@ -6,6 +6,7 @@ import type { Eventlog } from '@mergecrew/eventlog';
 import type { MergecrewConfig } from '@mergecrew/domain';
 import { newRunIdForDate, shortId } from '@mergecrew/domain';
 import { syncLifecycleFromRepo } from './lifecycle-sync.js';
+import { dispatchSlackDigest } from './digest-slack.js';
 
 interface OrchestratorDeps {
   connection: Redis;
@@ -16,10 +17,12 @@ interface OrchestratorDeps {
 export class Orchestrator {
   private runner: Queue;
   private wake: Queue;
+  private digestSlack: Queue;
 
   constructor(private deps: OrchestratorDeps) {
     this.runner = new Queue('runner.step', { connection: deps.connection });
     this.wake = new Queue('orchestrator.rate-limit.resume', { connection: deps.connection });
+    this.digestSlack = new Queue('digest.slack', { connection: deps.connection });
   }
 
   // ─── 1. Run start ───────────────────────────────────────────────────────
@@ -490,20 +493,47 @@ export class Orchestrator {
   // ─── Digest ─────────────────────────────────────────────────────────────
 
   /**
-   * Stub end-of-day digest dispatcher. The worker-cron `digestTick` enqueues
-   * one of these per project at end-of-working-hours; real fan-out to Slack
-   * (#80) and email (#82) lands later. For now we just emit a timeline event
-   * so the UI can show that the digest fired.
+   * End-of-day digest dispatcher. The worker-cron `digestTick` enqueues
+   * one of these per project at end-of-working-hours; we fan-out into the
+   * configured channels. Email (#82) and per-org Slack workspace install
+   * (#93) are still pending — for now Slack uses a global bot token.
    */
   async handleDigestDispatch(data: { organizationId: string; projectId: string; eod: string }): Promise<void> {
     const { organizationId, projectId, eod } = data;
-    this.deps.logger.info({ projectId, eod }, 'digest.dispatch tick');
+    const channels: string[] = [];
+
+    if (process.env.SLACK_BOT_TOKEN) {
+      await this.digestSlack.add(
+        'digest.slack',
+        { organizationId, projectId, eod },
+        { removeOnComplete: 1000, attempts: 3, backoff: { type: 'exponential', delay: 5_000 } },
+      );
+      channels.push('slack');
+    } else {
+      this.deps.logger.info({ projectId }, 'digest.dispatch: SLACK_BOT_TOKEN not set; skipping slack');
+    }
+
     await this.deps.eventlog.emit({
       organizationId,
       projectId,
       type: 'DIGEST_DISPATCHED',
       actor: { kind: 'system' },
-      payload: { eod, channels: [] },
+      payload: { eod, channels },
+    });
+  }
+
+  /**
+   * Slack-channel fan-out. Loads project members + active changesets,
+   * builds a block-kit digest, then DMs each member by email lookup.
+   * Per-recipient errors are logged but don't fail the job — partial
+   * delivery is better than retrying the whole thing.
+   */
+  async handleSlackDigest(data: { organizationId: string; projectId: string; eod: string }): Promise<void> {
+    await dispatchSlackDigest({
+      organizationId: data.organizationId,
+      projectId: data.projectId,
+      eod: new Date(data.eod),
+      logger: this.deps.logger,
     });
   }
 }
