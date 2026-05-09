@@ -2,6 +2,7 @@ import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { BaseMessage, AIMessage } from '@langchain/core/messages';
 import type { ProviderRegistry } from './registry.js';
 import type { Usage } from './types.js';
+import { hasVisionContent } from './vision.js';
 
 /**
  * One chat invocation against a provider/model. Produced after `chat()` runs.
@@ -57,6 +58,18 @@ export type ChatOptions = ChatViaRegistry | ChatViaModel;
  *     (used by tests with a `FakeListChatModel` so we don't need API keys)
  */
 export async function chat(opts: ChatOptions): Promise<ChatResult> {
+  // Preflight: when messages contain an image_url block, ensure the chosen
+  // model is vision-capable. Skipped when the caller supplied a pre-built
+  // `model` (test path) — capability metadata isn't available there.
+  if ('registry' in opts && hasVisionContent(opts.messages)) {
+    const cap = opts.registry.capabilities(opts.providerId, opts.modelId);
+    if (!cap.vision) {
+      throw new Error(
+        `model ${opts.providerId}/${opts.modelId} does not support vision input; pick a vision-capable model`,
+      );
+    }
+  }
+
   const model =
     'model' in opts
       ? opts.model
