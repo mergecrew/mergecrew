@@ -31,6 +31,37 @@ export interface MergeResult {
   merged: boolean;
 }
 
+export type FileChangeStatus = 'added' | 'modified' | 'removed' | 'renamed';
+
+export interface DiffLine {
+  type: 'add' | 'del' | 'context';
+  /** 1-indexed line number in the pre-image (null for added lines). */
+  oldLine: number | null;
+  /** 1-indexed line number in the post-image (null for deleted lines). */
+  newLine: number | null;
+  content: string;
+}
+
+export interface DiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  header: string;
+  lines: DiffLine[];
+}
+
+export interface PullRequestFile {
+  path: string;
+  /** Source path when the file was renamed; null otherwise. */
+  oldPath: string | null;
+  status: FileChangeStatus;
+  additions: number;
+  deletions: number;
+  /** Parsed hunks. Empty array for binary or rename-only files. */
+  hunks: DiffHunk[];
+}
+
 export type VcsEvent =
   | { kind: 'pull_request'; action: string; prNumber: number; repoFullName: string; raw: unknown }
   | { kind: 'workflow_run'; action: string; runId: number; repoFullName: string; raw: unknown }
@@ -60,6 +91,7 @@ export interface VcsProvider {
   listOpenPullRequests(repo: ConnectedRepoRef): Promise<PullRequest[]>;
   getDefaultBranch(repo: ConnectedRepoRef): Promise<string>;
   getFileAt(repo: ConnectedRepoRef, ref: string, path: string): Promise<{ contentBase64: string }>;
+  getPullRequestFiles(repo: ConnectedRepoRef, prNumber: number): Promise<PullRequestFile[]>;
 
   verifyWebhookSignature(headers: Record<string, string>, body: Buffer, secret: string): Promise<boolean>;
   parseWebhookEvent(headers: Record<string, string>, body: Buffer): VcsEvent;
