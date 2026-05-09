@@ -1,12 +1,13 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ChangesetService } from './changeset.service.js';
+import { ChangesetCommentService } from './changeset-comment.service.js';
 import { RequireRole, RoleGuard } from '../../common/role.guard.js';
 import type { DecisionKind } from '@mergecrew/domain';
 
 @Controller('v1/orgs/:slug/projects/:projectSlug')
 @UseGuards(RoleGuard)
 export class ChangesetController {
-  constructor(private cs: ChangesetService) {}
+  constructor(private cs: ChangesetService, private comments: ChangesetCommentService) {}
 
   @Get('changesets')
   async list(
@@ -41,5 +42,37 @@ export class ChangesetController {
     @Body() body: { ids: string[] },
   ) {
     return this.cs.groupPromote(projectSlug, date, body.ids);
+  }
+
+  @Get('changesets/:csId/comments')
+  async listComments(@Param('csId') csId: string) {
+    return { items: await this.comments.list(csId) };
+  }
+
+  @Post('changesets/:csId/comments')
+  async createComment(
+    @Param('csId') csId: string,
+    @Body() body: {
+      filePath: string;
+      lineRange?: { startLine: number; endLine: number };
+      body: string;
+      parentId?: string;
+    },
+  ) {
+    return this.comments.create(csId, body);
+  }
+
+  @Patch('changesets/:csId/comments/:commentId')
+  async updateComment(
+    @Param('commentId') commentId: string,
+    @Body() body: { body?: string; resolved?: boolean },
+  ) {
+    return this.comments.update(commentId, body);
+  }
+
+  @Delete('changesets/:csId/comments/:commentId')
+  async deleteComment(@Param('commentId') commentId: string) {
+    await this.comments.delete(commentId);
+    return { ok: true };
   }
 }
