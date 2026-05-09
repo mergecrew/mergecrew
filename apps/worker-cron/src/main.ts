@@ -3,6 +3,7 @@ import IORedis from 'ioredis';
 import pino from 'pino';
 import { parseExpression } from 'cron-parser';
 import { withSystem, withTenant } from '@mergecrew/db';
+import { digestTick } from './digest-tick.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
@@ -15,6 +16,7 @@ const logger = pino({
 const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
 const conn = new IORedis(url, { maxRetriesPerRequest: null });
 const queue = new Queue('run.due', { connection: conn });
+const digestQueue = new Queue('digest.dispatch', { connection: conn });
 
 const TICK_MS = Number(process.env.WORKER_CRON_TICK_MS ?? 60_000);
 
@@ -53,6 +55,7 @@ async function tick() {
 
 async function shutdown() {
   await queue.close();
+  await digestQueue.close();
   await conn.quit();
   process.exit(0);
 }
@@ -63,6 +66,12 @@ process.on('SIGTERM', shutdown);
 logger.info({ tickMs: TICK_MS }, 'worker-cron started');
 setInterval(() => {
   tick().catch((err) => logger.error({ err: String(err?.message ?? err) }, 'tick failed'));
+  digestTick({ digestQueue, logger }).catch((err) =>
+    logger.error({ err: String(err?.message ?? err) }, 'digest-tick failed'),
+  );
 }, TICK_MS);
 // First tick at startup
 tick().catch((err) => logger.error({ err: String(err?.message ?? err) }, 'initial tick failed'));
+digestTick({ digestQueue, logger }).catch((err) =>
+  logger.error({ err: String(err?.message ?? err) }, 'initial digest-tick failed'),
+);
