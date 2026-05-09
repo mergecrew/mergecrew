@@ -5,6 +5,7 @@ import { ValidationError } from '@mergecrew/domain';
 import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
 import { CryptoService } from '../../common/crypto.service.js';
+import { AuthService } from '../auth/auth.service.js';
 
 const ISSUER = 'Mergecrew';
 const RECOVERY_CODE_COUNT = 10;
@@ -28,6 +29,7 @@ export class MfaService {
     private prisma: PrismaService,
     private tenant: TenantContextService,
     private crypto: CryptoService,
+    private auth: AuthService,
   ) {}
 
   async status() {
@@ -68,10 +70,11 @@ export class MfaService {
    * Confirm a pending secret with a fresh TOTP code. On success, promote it
    * to `mfa_secret_ciphertext`, clear the pending column, set enrolledAt,
    * and issue 10 single-use recovery codes (returned cleartext, hashed at
-   * rest). Calling /mfa/verify again later only accepts a TOTP — the code
-   * here is the 6-digit time-based code from the authenticator.
+   * rest). Also issues a fresh session JWT with `mfa_at` set so the user
+   * can immediately use admin routes without a follow-up /mfa/challenge
+   * round-trip.
    */
-  async verify(input: { code: string }): Promise<{ recoveryCodes: string[] }> {
+  async verify(input: { code: string }): Promise<{ recoveryCodes: string[]; token: string }> {
     const u = await this.requireUser();
     if (!u.mfaPendingCiphertext) {
       throw new ValidationError('no pending MFA setup; call /mfa/setup first');
@@ -96,7 +99,8 @@ export class MfaService {
         data: codes.map((c) => ({ userId: u.id, codeHash: hashCode(c) })),
       });
     });
-    return { recoveryCodes: codes };
+    const token = this.auth.signSessionJwt(u.id, { mfaAt: new Date() });
+    return { recoveryCodes: codes, token };
   }
 
   /**
@@ -128,6 +132,30 @@ export class MfaService {
       return { kind: 'recovery', remaining };
     }
     throw new ValidationError('invalid TOTP or recovery code');
+  }
+
+  /**
+   * Pass a TOTP/recovery challenge for the *current* user and receive a
+   * fresh session JWT that carries an `mfa_at` claim. Admin/owner routes
+   * (#107) require this claim to be ≤ 15 min old.
+   *
+   * Returns the new token plus what kind of credential was consumed and
+   * remaining recovery-code count, so the frontend can show a low-codes
+   * warning when the user is about to run out.
+   */
+  async challenge(input: { code: string }): Promise<{
+    token: string;
+    kind: 'totp' | 'recovery';
+    recoveryCodesRemaining?: number;
+  }> {
+    const userId = this.tenant.requireUser().userId;
+    const result = await this.consume(userId, input.code);
+    const token = this.auth.signSessionJwt(userId, { mfaAt: new Date() });
+    return {
+      token,
+      kind: result.kind,
+      ...(result.kind === 'recovery' ? { recoveryCodesRemaining: result.remaining } : {}),
+    };
   }
 
   /**

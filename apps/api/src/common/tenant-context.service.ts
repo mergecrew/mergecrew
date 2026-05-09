@@ -13,6 +13,13 @@ export interface UserContext {
   userId: string;
   /** Tenant present only when the URL is org-scoped (`/v1/orgs/:slug/...`). */
   tenant?: TenantContext;
+  /**
+   * Last successful MFA challenge timestamp from the JWT's `mfa_at` claim.
+   * Undefined when the session was minted without an MFA step. RoleGuard's
+   * MFA gate (#107) requires this within a 15-minute window for admin/owner
+   * routes when the user is enrolled.
+   */
+  mfaChallengedAt?: Date;
 }
 
 /**

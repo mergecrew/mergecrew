@@ -41,10 +41,14 @@ async function bootstrap() {
     }
     const auth = req.headers.authorization;
     let userId: string | undefined;
+    let mfaChallengedAt: Date | undefined;
     if (auth?.startsWith('Bearer ')) {
       try {
-        const decoded = jwt.verify<{ sub: string }>(auth.slice(7));
+        const decoded = jwt.verify<{ sub: string; mfa_at?: number }>(auth.slice(7));
         userId = decoded.sub;
+        if (typeof decoded.mfa_at === 'number') {
+          mfaChallengedAt = new Date(decoded.mfa_at * 1000);
+        }
       } catch {
         // fall through
       }
@@ -59,7 +63,7 @@ async function bootstrap() {
     const m = req.path.match(/^\/v1\/orgs\/([^/]+)/);
     if (!m) {
       // /v1/me/* (or any other user-only route).
-      stampUserContextOnRequest(req, { userId });
+      stampUserContextOnRequest(req, { userId, mfaChallengedAt });
       next();
       return;
     }
@@ -81,6 +85,7 @@ async function bootstrap() {
       }
       stampUserContextOnRequest(req, {
         userId,
+        mfaChallengedAt,
         tenant: {
           organizationId: org.id,
           organizationSlug: org.slug,

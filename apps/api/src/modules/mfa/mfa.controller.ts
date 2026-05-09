@@ -26,6 +26,11 @@ export class MfaController {
     return { ok: true };
   }
 
+  @Post('challenge')
+  async challenge(@Body() body: { code: string }) {
+    return this.mfa.challenge(body);
+  }
+
   @Post('recovery-codes/regenerate')
   async regenerateRecoveryCodes(@Body() body: { code: string }) {
     return this.mfa.regenerateRecoveryCodes(body);

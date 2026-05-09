@@ -12,11 +12,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const r = exception.getResponse();
+      const objBody = typeof r === 'object' && r !== null ? (r as Record<string, unknown>) : null;
+      // When a guard throws `new ForbiddenException({code, message})`, prefer
+      // that explicit code over the generic class-derived one so the
+      // frontend can distinguish e.g. MFA_REQUIRED_NOT_ENROLLED from the
+      // catch-all FORBIDDEN.
+      const explicitCode = objBody && typeof objBody.code === 'string' ? (objBody.code as string) : null;
       res.status(status).json({
         error: {
-          code: exception.name.replace('Exception', '').toUpperCase(),
-          message: typeof r === 'string' ? r : (r as any)?.message ?? 'error',
-          details: typeof r === 'object' ? r : undefined,
+          code: explicitCode ?? exception.name.replace('Exception', '').toUpperCase(),
+          message: typeof r === 'string' ? r : ((objBody?.message as string | undefined) ?? 'error'),
+          details: objBody ?? undefined,
         },
       });
       return;

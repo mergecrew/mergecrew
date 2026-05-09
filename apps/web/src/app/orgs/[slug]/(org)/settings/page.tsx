@@ -31,14 +31,16 @@ async function setBudgetAction(formData: FormData) {
 export default async function OrgSettingsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const session = await requireSession();
-  const [org, members, providers, profiles, budget, canEdit] = await Promise.all([
+  const [org, members, providers, profiles, budget, canEdit, mfaStatus] = await Promise.all([
     api<any>(`/v1/orgs/${slug}`, { session }),
     api<{ items: any[] }>(`/v1/orgs/${slug}/members`, { session }),
     api<{ items: any[] }>(`/v1/orgs/${slug}/llm/providers`, { session }),
     api<{ items: any[] }>(`/v1/orgs/${slug}/llm/profiles`, { session }),
     api<BudgetInfo>(`/v1/orgs/${slug}/budget`, { session }),
     hasRole(slug, session, 'admin'),
+    api<{ enrolled: boolean }>(`/v1/me/mfa`, { session }).catch(() => ({ enrolled: false })),
   ]);
+  const needsMfaEnrollment = canEdit && !mfaStatus.enrolled;
 
   return (
     <main className="mx-auto max-w-3xl space-y-4 p-6">
@@ -46,6 +48,20 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
         <h1 className="text-xl font-semibold">Settings</h1>
         <p className="text-sm text-zinc-500">Org &nbsp;<code>{org.slug}</code></p>
       </header>
+
+      {needsMfaEnrollment && (
+        <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+          <div className="font-medium">MFA required for your role</div>
+          <p className="mt-1">
+            As an admin or owner, you must enable two-factor authentication before any
+            write actions on this org will succeed. Set it up in{' '}
+            <a className="underline" href="/account/security">
+              account security
+            </a>
+            .
+          </p>
+        </div>
+      )}
 
       <Card>
         <div className="flex items-baseline justify-between">

@@ -22,8 +22,16 @@ export class AuthService {
     );
   }
 
-  signSessionJwt(userId: string): string {
-    return this.jwt.sign({ sub: userId });
+  /**
+   * Mint a session JWT. When `mfaAt` is supplied, the JWT carries an
+   * `mfa_at` claim (Unix seconds) that tenant middleware stamps onto the
+   * UserContext. Admin/owner-required routes consult that claim via the
+   * RoleGuard's MFA gate (#107).
+   */
+  signSessionJwt(userId: string, opts?: { mfaAt?: Date }): string {
+    const payload: Record<string, unknown> = { sub: userId };
+    if (opts?.mfaAt) payload.mfa_at = Math.floor(opts.mfaAt.getTime() / 1000);
+    return this.jwt.sign(payload);
   }
 
   async sessionInfo(userId: string) {
