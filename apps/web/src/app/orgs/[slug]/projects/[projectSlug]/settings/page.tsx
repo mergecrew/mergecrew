@@ -49,6 +49,7 @@ export default async function ProjectSettings({
     cron: string;
     timezone: string;
     enabled: boolean;
+    skipDates: string[];
   } | null>(`/v1/orgs/${slug}/projects/${projectSlug}/schedule`, { session });
   const canEdit = await hasRole(slug, session, 'admin');
 
