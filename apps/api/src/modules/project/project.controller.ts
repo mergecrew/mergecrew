@@ -145,7 +145,7 @@ export class ProjectController {
   @RequireRole('admin')
   async updateSchedule(
     @Param('projectSlug') projectSlug: string,
-    @Body() body: { cron?: string; timezone?: string; enabled?: boolean },
+    @Body() body: { cron?: string; timezone?: string; enabled?: boolean; skipDates?: string[] },
   ) {
     return this.projects.updateSchedule(projectSlug, body);
   }

@@ -638,6 +638,9 @@ model Schedule {
   cron           String   @default("0 8 * * 1-5")
   timezone       String   @default("UTC")
   enabled        Boolean  @default(true)
+  /// Per-project list of `YYYY-MM-DD` dates the scheduler must skip (holidays,
+  /// freezes, etc.). Compared in the schedule's tz by the worker-cron tick.
+  skipDates      String[] @default([]) @map("skip_dates")
   lastFiredAt    DateTime? @map("last_fired_at") @db.Timestamptz(6)
   nextFireAt     DateTime? @map("next_fire_at") @db.Timestamptz(6)
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
