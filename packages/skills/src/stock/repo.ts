@@ -1,8 +1,22 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { execa } from 'execa';
 import { ValidationError } from '@mergecrew/domain';
 import type { AnySkill } from '../types.js';
 import { resolveInWorkspace } from '../workspace.js';
+
+async function currentBranch(workspacePath: string): Promise<string | null> {
+  try {
+    const r = await execa('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd: workspacePath,
+      reject: false,
+    });
+    const s = (r.stdout ?? '').trim();
+    return s && s !== 'HEAD' ? s : null;
+  } catch {
+    return null;
+  }
+}
 
 const repoReadFile: AnySkill = {
   name: 'repo.read_file',
@@ -151,7 +165,11 @@ const repoCommit: AnySkill = {
       authorName: 'Mergecrew Bot',
       authorEmail: `mergecrew@${ctx.organizationId}.mergecrew.dev`,
     });
-    return { output: { sha }, brief: `commit ${sha.slice(0, 7)} ${subject}` };
+    const branch = await currentBranch(ctx.workspacePath);
+    return {
+      output: { sha, branch, message: subject },
+      brief: `commit ${sha.slice(0, 7)} ${subject}`,
+    };
   },
 };
 
