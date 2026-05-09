@@ -75,4 +75,24 @@ export class LlmController {
   ) {
     return this.llm.createProfile(body);
   }
+
+  @Patch('profiles/:profileId')
+  @RequireRole('admin')
+  async updateProfile(
+    @Param('profileId') profileId: string,
+    @Body() body: {
+      name?: string;
+      preferenceOrder?: string[];
+      capabilityRouting?: Record<string, unknown>;
+    },
+  ) {
+    return this.llm.updateProfile(profileId, body);
+  }
+
+  @Delete('profiles/:profileId')
+  @RequireRole('admin')
+  async deleteProfile(@Param('profileId') profileId: string) {
+    await this.llm.deleteProfile(profileId);
+    return { ok: true };
+  }
 }

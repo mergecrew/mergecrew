@@ -236,6 +236,31 @@ export class LlmService {
     );
   }
 
+  async updateProfile(
+    id: string,
+    input: {
+      name?: string;
+      preferenceOrder?: string[];
+      capabilityRouting?: Record<string, unknown>;
+    },
+  ) {
+    const t = this.tenant.require();
+    const data: Record<string, unknown> = {};
+    if (input.name !== undefined) data.name = input.name;
+    if (input.preferenceOrder !== undefined) data.preferenceOrder = input.preferenceOrder as any;
+    if (input.capabilityRouting !== undefined) data.capabilityRouting = input.capabilityRouting as any;
+    return this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.llmProfile.update({ where: { id }, data }),
+    );
+  }
+
+  async deleteProfile(id: string) {
+    const t = this.tenant.require();
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.llmProfile.delete({ where: { id } }),
+    );
+  }
+
   /**
    * Build a registry + router for the given org. Used by the runner / API
    * "probe" calls. The returned router holds in-memory provider instances —
