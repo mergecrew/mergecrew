@@ -40,6 +40,7 @@ model User {
   decisions   Decision[]
   intentItems IntentInboxItem[]
   approvals   ApprovalRequest[] @relation("ApprovalResolvedBy")
+  changesetComments ChangesetComment[]
 
   @@map("users")
 }
@@ -549,6 +550,7 @@ model Changeset {
   decisions      Decision[]
   deploys        Deploy[]
   approvalRequests ApprovalRequest[]
+  comments       ChangesetComment[]
 
   @@index([projectId, status, updatedAt(sort: Desc)])
   @@map("changesets")
@@ -589,6 +591,34 @@ model Decision {
   user      User      @relation(fields: [userId], references: [id])
 
   @@map("decisions")
+}
+
+/// Reviewer comments on a pending changeset, anchored to a file + line
+/// range in the diff. Threaded via parentId self-reference. Resolved
+/// state is per-thread; unresolved comments become reviewer feedback the
+/// implementing agent reads on the next iteration (#111).
+model ChangesetComment {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  changesetId    String    @map("changeset_id")
+  userId         String    @map("user_id") @db.Uuid
+  filePath       String    @map("file_path")
+  /// `{ startLine: number, endLine: number }` — both 1-indexed; null for a
+  /// file-level comment that doesn't anchor to a specific range.
+  lineRange      Json?     @map("line_range")
+  body           String    @db.Text
+  parentId       String?   @map("parent_id") @db.Uuid
+  resolvedAt     DateTime? @map("resolved_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  changeset Changeset          @relation(fields: [changesetId], references: [id], onDelete: Cascade)
+  user      User               @relation(fields: [userId], references: [id])
+  parent    ChangesetComment?  @relation("ChangesetCommentReplies", fields: [parentId], references: [id], onDelete: SetNull)
+  replies   ChangesetComment[] @relation("ChangesetCommentReplies")
+
+  @@index([changesetId, filePath, createdAt])
+  @@map("changeset_comments")
 }
 
 model ApprovalRequest {
