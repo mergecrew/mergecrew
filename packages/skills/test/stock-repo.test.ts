@@ -131,4 +131,10 @@ describe('catalog lookup', () => {
     expect(findStockSkill('repo.read_file')?.name).toBe('repo.read_file');
     expect(findStockSkill('does.not.exist')).toBeUndefined();
   });
+
+  it('exposes repo.git.commit so the runner can detect commit boundaries', () => {
+    const commit = findStockSkill('repo.git.commit');
+    expect(commit).toBeDefined();
+    expect(commit!.capabilities).toContain('git.commit');
+  });
 });

@@ -349,6 +349,19 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
           },
         }),
       );
+      // Materialize a Changeset row when an agent successfully commits.
+      // Subsequent commits on the same branch update the existing row.
+      if (call.skillName === 'repo.git.commit' && !call.isError) {
+        await ensureChangesetForCommit({
+          organizationId,
+          projectId,
+          runId,
+          workflowRunId,
+          input: call.input as { message?: string; type?: string; scope?: string } | null,
+          output: call.output as { sha?: string; branch?: string; message?: string } | null,
+          eventlog,
+        });
+      }
     },
   });
 
@@ -387,6 +400,86 @@ function decryptDevOnly(blob: Buffer): string {
   dec.setAuthTag(tag);
   const pt = Buffer.concat([dec.update(ct), dec.final()]);
   return pt.toString('utf8');
+}
+
+/**
+ * Find or create the Changeset row for this run + branch on a successful
+ * `repo.git.commit`. Subsequent commits on the same branch update
+ * `updatedAt`; a Changeset is keyed on `(dailyRunId, branch)` because a
+ * single run may produce multiple feature branches.
+ *
+ * Title is the commit subject; whyParagraph is the body of a multi-line
+ * commit message (lines after a blank line). Status starts at `proposed`;
+ * downstream tickets advance through `building → testing → pr_open →
+ * dev_deployed`.
+ */
+async function ensureChangesetForCommit(opts: {
+  organizationId: string;
+  projectId: string;
+  runId: string;
+  workflowRunId: string;
+  input: { message?: string; type?: string; scope?: string } | null;
+  output: { sha?: string; branch?: string; message?: string } | null;
+  eventlog: Eventlog;
+}): Promise<void> {
+  const { organizationId, projectId, runId, workflowRunId, input, output, eventlog } = opts;
+  const branch = output?.branch;
+  if (!branch) return; // detached HEAD or branch lookup failed; skip
+
+  const fullMessage = output?.message ?? input?.message ?? '';
+  const { title, whyParagraph } = splitCommitMessage(fullMessage);
+
+  const existing = await withTenant(organizationId, (tx) =>
+    tx.changeset.findFirst({ where: { dailyRunId: runId, branch } }),
+  );
+
+  if (existing) {
+    await withTenant(organizationId, (tx) =>
+      tx.changeset.update({
+        where: { id: existing.id },
+        data: { updatedAt: new Date() },
+      }),
+    );
+    return;
+  }
+
+  const id = `cs-${runId.slice(0, 8)}-${branch.slice(0, 24).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+  const created = await withTenant(organizationId, (tx) =>
+    tx.changeset.create({
+      data: {
+        id,
+        organizationId,
+        projectId,
+        dailyRunId: runId,
+        workflowRunId,
+        branch,
+        title: title || branch,
+        whyParagraph: whyParagraph || null,
+        status: 'proposed',
+      },
+    }),
+  );
+  await eventlog.emit({
+    organizationId,
+    projectId,
+    dailyRunId: runId,
+    workflowRunId,
+    changesetId: created.id,
+    type: 'CHANGESET_OPENED',
+    actor: { kind: 'system' },
+    payload: { branch, sha: output?.sha, title: created.title },
+  });
+}
+
+function splitCommitMessage(msg: string): { title: string; whyParagraph: string } {
+  const trimmed = msg.trim();
+  if (!trimmed) return { title: '', whyParagraph: '' };
+  const blank = trimmed.indexOf('\n\n');
+  if (blank < 0) return { title: trimmed, whyParagraph: '' };
+  return {
+    title: trimmed.slice(0, blank).trim(),
+    whyParagraph: trimmed.slice(blank + 2).trim(),
+  };
 }
 
 async function checkDailyBudget(
