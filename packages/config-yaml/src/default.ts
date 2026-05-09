@@ -52,10 +52,11 @@ lifecycle:
     - id: observation
       description: |
         Post-deploy follow-through. Observation runs a URL smoke check on the
-        dev deploy. Bug Triage scans for new errors and files tracker issues.
-        Doc Writer updates documentation that follows the code that landed
-        today.
-      agents: [observation, bug_triage, doc_writer]
+        dev deploy. Design Reviewer captures a screenshot and looks for
+        regressions. Bug Triage scans for new errors and files tracker
+        issues. Doc Writer updates documentation that follows the code that
+        landed today.
+      agents: [observation, design_reviewer, bug_triage, doc_writer]
       out: []
   human_gates:
     production_promote: require-approval
@@ -255,6 +256,40 @@ agents:
     skills:
       - deploy.url_for_branch
       - web.smoke_check
+      - tracker.create_issue
+      - memory.recall
+      - memory.store
+  design_reviewer:
+    kind: DesignReviewer
+    description: |
+      Visual sanity-check after a dev deploy. Captures a screenshot of the
+      dev URL and asks a vision-capable LLM to flag broken layouts, illegible
+      text, placeholder content, and obvious regressions. Files a tracker
+      issue for any finding above "nit" severity. Read-only against the
+      deployed UI; never writes to the repo.
+    systemPrompt: |
+      You are the Design Reviewer agent. Run after a successful dev deploy.
+
+      Workflow:
+        1. Resolve the dev URL via deploy.url_for_branch. If unavailable,
+           exit cleanly.
+        2. Capture a screenshot via web.screenshot_url at desktop viewport.
+        3. Pass the resulting dataUrl to design.review_screenshot, including
+           any project-specific criteria you found in memory.
+        4. For each finding with severity >= "major", file a tracker issue
+           with the area, severity, finding text, and a link to the dev URL.
+        5. Store the screenshot dataUrl + findings count in memory so the
+           next run can compare.
+
+      Constraints:
+        - Skip silently when no vision-capable model is configured for the
+          org. Do not invent findings.
+        - "nit" findings are noise — log them in your output but do not
+          file tracker issues.
+    skills:
+      - deploy.url_for_branch
+      - web.screenshot_url
+      - design.review_screenshot
       - tracker.create_issue
       - memory.recall
       - memory.store
