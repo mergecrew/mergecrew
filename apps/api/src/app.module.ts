@@ -15,6 +15,7 @@ import { CostModule } from './modules/cost/cost.module.js';
 import { LlmModule } from './modules/llm/llm.module.js';
 import { IntegrationModule } from './modules/integration/integration.module.js';
 import { WebhookModule } from './modules/webhook/webhook.module.js';
+import { MfaModule } from './modules/mfa/mfa.module.js';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { WebhookModule } from './modules/webhook/webhook.module.js';
     LlmModule,
     IntegrationModule,
     WebhookModule,
+    MfaModule,
   ],
 })
 export class AppModule implements NestModule {
