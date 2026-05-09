@@ -3,6 +3,13 @@ import { auth } from '@/auth';
 import type { Session } from './api';
 
 export const SIGNED_OUT_COOKIE = 'mergecrew_signed_out';
+/**
+ * Cookie that overrides the session JWT when set. The MFA enrollment +
+ * challenge flows write to it so the upgraded JWT (which carries `mfa_at`)
+ * is used for subsequent server actions without bouncing through NextAuth
+ * or the dev-mode exchange cache.
+ */
+export const JWT_OVERRIDE_COOKIE = 'mergecrew_jwt';
 
 export function isDevAutoLogin(): boolean {
   const raw =
@@ -53,16 +60,27 @@ async function isManuallySignedOut(): Promise<boolean> {
   return c.get(SIGNED_OUT_COOKIE)?.value === '1';
 }
 
+async function jwtOverride(): Promise<string | null> {
+  const c = await cookies();
+  return c.get(JWT_OVERRIDE_COOKIE)?.value ?? null;
+}
+
 export async function getSession(): Promise<Session | null> {
   if (await isManuallySignedOut()) return null;
-  if (isDevAutoLogin()) return devExchange();
+  const override = await jwtOverride();
+  if (isDevAutoLogin()) {
+    const base = await devExchange();
+    if (!base) return null;
+    return override ? { ...base, jwt: override } : base;
+  }
   const s = await auth();
   if (!s?.user?.email) return null;
+  const baseJwt = (s as any).mergecrewJwt as string | undefined;
   return {
     userId: (s as any).mergecrewUserId,
     email: s.user.email,
     name: s.user.name ?? undefined,
-    jwt: (s as any).mergecrewJwt,
+    jwt: override ?? baseJwt!,
   };
 }
 

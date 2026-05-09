@@ -116,6 +116,16 @@ export function UserMenuDropdown({
             </div>
           )}
 
+          <div className="border-b border-zinc-200 py-1 dark:border-zinc-800">
+            <Link
+              href="/account/security"
+              onClick={() => setOpen(false)}
+              className="block px-4 py-1.5 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            >
+              Account security
+            </Link>
+          </div>
+
           {signOutSlot}
         </div>
       )}
