@@ -7,6 +7,7 @@ import type { MergecrewConfig } from '@mergecrew/domain';
 import { newRunIdForDate, shortId } from '@mergecrew/domain';
 import { syncLifecycleFromRepo } from './lifecycle-sync.js';
 import { dispatchSlackDigest } from './digest-slack.js';
+import { dispatchEmailDigest } from './digest-email.js';
 import { handleSlackInteractivity } from './slack-interactivity.js';
 
 interface OrchestratorDeps {
@@ -19,6 +20,7 @@ export class Orchestrator {
   private runner: Queue;
   private wake: Queue;
   private digestSlack: Queue;
+  private digestEmail: Queue;
 
   private dispatchQueue: Queue;
 
@@ -26,6 +28,7 @@ export class Orchestrator {
     this.runner = new Queue('runner.step', { connection: deps.connection });
     this.wake = new Queue('orchestrator.rate-limit.resume', { connection: deps.connection });
     this.digestSlack = new Queue('digest.slack', { connection: deps.connection });
+    this.digestEmail = new Queue('digest.email', { connection: deps.connection });
     this.dispatchQueue = new Queue('orchestrator.dispatch', { connection: deps.connection });
   }
 
@@ -525,6 +528,19 @@ export class Orchestrator {
       this.deps.logger.info({ projectId }, 'digest.dispatch: SLACK_BOT_TOKEN not set; skipping slack');
     }
 
+    // Email opt-in: SMTP_URL configured in any env, or DIGEST_EMAIL_ENABLED=1
+    // (the latter routes to the dev-mode console-logger inside EmailClient).
+    if (process.env.SMTP_URL || process.env.DIGEST_EMAIL_ENABLED === '1') {
+      await this.digestEmail.add(
+        'digest.email',
+        { organizationId, projectId, eod },
+        { removeOnComplete: 1000, attempts: 3, backoff: { type: 'exponential', delay: 5_000 } },
+      );
+      channels.push('email');
+    } else {
+      this.deps.logger.info({ projectId }, 'digest.dispatch: email not enabled; skipping');
+    }
+
     await this.deps.eventlog.emit({
       organizationId,
       projectId,
@@ -542,6 +558,21 @@ export class Orchestrator {
    */
   async handleSlackDigest(data: { organizationId: string; projectId: string; eod: string }): Promise<void> {
     await dispatchSlackDigest({
+      organizationId: data.organizationId,
+      projectId: data.projectId,
+      eod: new Date(data.eod),
+      logger: this.deps.logger,
+    });
+  }
+
+  /**
+   * Email-channel fan-out. Loads project + active changesets, renders the
+   * HTML digest template, and sends one email to all org members with a
+   * resolvable email. Bounces/rejects are nodemailer's problem; the worker
+   * retries on transport failure.
+   */
+  async handleEmailDigest(data: { organizationId: string; projectId: string; eod: string }): Promise<void> {
+    await dispatchEmailDigest({
       organizationId: data.organizationId,
       projectId: data.projectId,
       eod: new Date(data.eod),
