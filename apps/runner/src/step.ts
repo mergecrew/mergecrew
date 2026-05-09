@@ -15,6 +15,7 @@ import {
   CapabilityRouter,
   CircuitBreaker,
   ProviderRegistry,
+  chat as chatLlm,
   estimateUsd,
   priceFor,
   type LlmProfile,
@@ -221,6 +222,37 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
       // Per-skill / per-step config bag the runner injects.
       adapterConfig: dt?.config ?? {},
       ...(sentryConfig ? { sentry: sentryConfig } : {}),
+      // Provider-routed LLM closure for skills that need to think (summarize,
+      // draft spec, design review, …). The closure resolves a model that
+      // satisfies the optional `requireVision` capability via the existing
+      // CapabilityRouter and forwards messages through `chat()` so the
+      // vision preflight (#112) and BudgetTracker boundaries still apply.
+      llm: {
+        chat: async (req: {
+          messages: any[];
+          maxTokens?: number;
+          temperature?: number;
+          requireVision?: boolean;
+        }) => {
+          const need = req.requireVision ? { vision: true as const } : {};
+          const resolved = router.resolve({ capability: need, profile, agentKind: agentDef.kind });
+          const r = await chatLlm({
+            registry,
+            providerId: resolved.providerId,
+            modelId: resolved.modelId,
+            messages: req.messages as any,
+            maxTokens: req.maxTokens,
+            temperature: req.temperature,
+            signal: abortController.signal,
+          });
+          return {
+            text: r.content,
+            usage: { totalTokens: r.usage.totalTokens ?? 0 },
+            providerId: r.providerId,
+            modelId: r.modelId,
+          };
+        },
+      },
     },
   });
 
