@@ -121,4 +121,89 @@ const webLighthouse: AnySkill = {
   },
 };
 
-export const webSkills: AnySkill[] = [webFetchUrl, webScreenshotUrl, webLighthouse];
+const webSmokeCheck: AnySkill = {
+  name: 'web.smoke_check',
+  description:
+    'Fetch a deployed URL and assert it is healthy: 2xx status, optional keyword presence, optional forbidden-string absence. Read-only; uses fetch (no headless browser).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      url: { type: 'string', format: 'uri' },
+      timeoutMs: { type: 'integer' },
+      mustContain: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Strings the response body must contain (case-sensitive).',
+      },
+      mustNotContain: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          'Strings the response body must NOT contain (e.g. "Internal Server Error").',
+      },
+    },
+    required: ['url'],
+    additionalProperties: false,
+  },
+  sideEffectClass: 'read',
+  capabilities: ['net.outbound'],
+  timeoutMs: 60_000,
+  async execute(input: any, ctx) {
+    const url = String(input.url);
+    const timeoutMs = Number(input.timeoutMs ?? 15_000);
+    const mustContain: string[] = Array.isArray(input.mustContain) ? input.mustContain : [];
+    const mustNotContain: string[] = Array.isArray(input.mustNotContain) ? input.mustNotContain : [];
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    // Bridge the outer abort signal too so abort cascades.
+    const onOuterAbort = () => controller.abort();
+    ctx.abortSignal?.addEventListener('abort', onOuterAbort, { once: true });
+
+    const failures: string[] = [];
+    let status = 0;
+    let elapsedMs = 0;
+    let body = '';
+    const start = Date.now();
+    try {
+      const r = await fetch(url, { signal: controller.signal, redirect: 'follow' });
+      elapsedMs = Date.now() - start;
+      status = r.status;
+      body = await r.text();
+      if (status < 200 || status >= 300) failures.push(`status ${status}`);
+      for (const needle of mustContain) {
+        if (!body.includes(needle)) failures.push(`missing "${truncate(needle, 60)}"`);
+      }
+      for (const needle of mustNotContain) {
+        if (body.includes(needle)) failures.push(`contains forbidden "${truncate(needle, 60)}"`);
+      }
+    } catch (err) {
+      elapsedMs = Date.now() - start;
+      const msg = (err as Error)?.name === 'AbortError' ? `timeout after ${timeoutMs}ms` : String((err as Error)?.message ?? err);
+      failures.push(`fetch failed: ${msg}`);
+    } finally {
+      clearTimeout(timer);
+      ctx.abortSignal?.removeEventListener('abort', onOuterAbort);
+    }
+
+    const ok = failures.length === 0;
+    return {
+      output: {
+        ok,
+        url,
+        status,
+        elapsedMs,
+        bodyLength: body.length,
+        bodyHead: body.slice(0, 400),
+        failures,
+      },
+      brief: ok ? `smoke ok ${url} (${elapsedMs}ms)` : `smoke FAIL ${url}: ${failures.join('; ')}`,
+    };
+  },
+};
+
+function truncate(s: string, n: number): string {
+  return s.length > n ? `${s.slice(0, n)}…` : s;
+}
+
+export const webSkills: AnySkill[] = [webFetchUrl, webScreenshotUrl, webLighthouse, webSmokeCheck];

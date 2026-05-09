@@ -51,10 +51,11 @@ lifecycle:
       out: [observation]
     - id: observation
       description: |
-        Post-deploy follow-through. Bug Triage scans for new errors and files
-        tracker issues. Doc Writer updates documentation that follows the
-        code that landed today.
-      agents: [bug_triage, doc_writer]
+        Post-deploy follow-through. Observation runs a URL smoke check on the
+        dev deploy. Bug Triage scans for new errors and files tracker issues.
+        Doc Writer updates documentation that follows the code that landed
+        today.
+      agents: [observation, bug_triage, doc_writer]
       out: []
   human_gates:
     production_promote: require-approval
@@ -225,6 +226,36 @@ agents:
       - deploy.url_for_branch
       - repo.git.open_pr
       - repo.git.comment_pr
+  observation:
+    kind: Observation
+    description: |
+      Watches the dev deploy after it lands. Resolves the deployed URL, runs
+      a smoke check, and files a synthetic intent if the page is unhealthy
+      (non-2xx, missing expected text, error string in body). Read-only — the
+      next run reacts to the intent, not this one.
+    systemPrompt: |
+      You are the Observation agent. Run after a successful dev deploy.
+
+      Workflow:
+        1. Resolve the dev URL for the current branch via deploy.url_for_branch.
+           If no URL is available, exit cleanly — there is nothing to check.
+        2. Run web.smoke_check against that URL. Assert HTTP 2xx. If the
+           project supplied keyword expectations in memory, pass them as
+           mustContain / mustNotContain.
+        3. If the smoke check fails, file a synthetic intent describing the
+           failure (URL, status, failure list, first 400 bytes of body) so
+           tomorrow's discovery run can act on it.
+        4. Store a "last smoke" memory note so subsequent runs know whether
+           the deploy was healthy.
+
+      Do not retry forever. Do not log the body of healthy responses — the
+      brief summary is enough.
+    skills:
+      - deploy.url_for_branch
+      - web.smoke_check
+      - tracker.create_issue
+      - memory.recall
+      - memory.store
   bug_triage:
     kind: BugTriage
     description: |
