@@ -3,16 +3,28 @@ import IORedis, { type Redis } from 'ioredis';
 export type Subscriber<T> = (msg: T) => void | Promise<void>;
 
 /**
+ * Test seam: pass a factory instead of a URL to inject an ioredis-mock-like
+ * publisher in unit tests. Production paths always pass the URL string.
+ */
+export type RedisFactory = () => Redis;
+
+/**
  * Thin Redis pubsub wrapper. We use one publisher connection (re-usable) and
- * dedicated subscriber connections per topic — IORedis requires a subscriber
- * connection to be exclusively in subscribe mode.
+ * one subscriber connection per channel — IORedis requires a subscriber to
+ * be exclusively in subscribe mode. Multiple handlers on the same channel
+ * SHARE one subscriber connection (refcounted via the handlers Set), which
+ * is the per-process SSE fanout multiplex (#124): N viewers on the same
+ * run open exactly one Redis subscription regardless of N.
  */
 export class RedisPubSub {
   private publisher: Redis;
   private subscribers = new Map<string, { conn: Redis; handlers: Set<Subscriber<unknown>> }>();
 
-  constructor(url: string) {
-    this.publisher = new IORedis(url, { maxRetriesPerRequest: null, lazyConnect: false });
+  constructor(arg: string | RedisFactory) {
+    this.publisher =
+      typeof arg === 'string'
+        ? new IORedis(arg, { maxRetriesPerRequest: null, lazyConnect: false })
+        : arg();
   }
 
   async publish(channel: string, payload: unknown): Promise<void> {
