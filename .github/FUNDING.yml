@@ -1,0 +1,4 @@
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
+# Add `github: [<username>]` here once GitHub Sponsors is enabled for the maintainer or org.
+custom:
+  - https://github.com/mergecrew/mergecrew/blob/main/SPONSORS.md
