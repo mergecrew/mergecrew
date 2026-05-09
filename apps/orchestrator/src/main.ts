@@ -68,6 +68,12 @@ const digestSlackWorker = new Worker(
   { connection: conn, concurrency: 2 },
 );
 
+const digestEmailWorker = new Worker(
+  'digest.email',
+  async (job: Job) => orchestrator.handleEmailDigest(job.data),
+  { connection: conn, concurrency: 2 },
+);
+
 logger.info('orchestrator started');
 
 async function shutdown() {
@@ -81,6 +87,7 @@ async function shutdown() {
     stepReplyWorker.close(),
     digestWorker.close(),
     digestSlackWorker.close(),
+    digestEmailWorker.close(),
     pubsub.close(),
     conn.quit(),
   ]);
