@@ -1,9 +1,19 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import { Camera } from 'lucide-react';
 import { Card, Button } from '@/components/ui';
 
 type Kind = 'anthropic' | 'openai' | 'bedrock' | 'ollama';
+
+interface ModelCapability {
+  vision?: boolean;
+  tools?: boolean;
+  embedding?: boolean;
+  thinking?: boolean;
+  parallelTools?: boolean;
+  longContext?: number;
+}
 
 interface Provider {
   id: string;
@@ -12,6 +22,7 @@ interface Provider {
   endpoint: string | null;
   hasCredential: boolean;
   capabilityOverrides: Record<string, unknown> | null;
+  modelCapabilities?: Record<string, ModelCapability>;
 }
 
 interface SaveResult {
@@ -159,14 +170,24 @@ export function LlmProvidersCard({
                   </div>
                   {modelsOf(p).length > 0 && (
                     <div className="mt-1 flex flex-wrap gap-1">
-                      {modelsOf(p).map((m) => (
-                        <span
-                          key={m}
-                          className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[10px] dark:bg-zinc-800"
-                        >
-                          {m}
-                        </span>
-                      ))}
+                      {modelsOf(p).map((m) => {
+                        const cap = p.modelCapabilities?.[m];
+                        return (
+                          <span
+                            key={m}
+                            className="inline-flex items-center gap-1 rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[10px] dark:bg-zinc-800"
+                          >
+                            {m}
+                            {cap?.vision && (
+                              <Camera
+                                size={10}
+                                aria-label="vision capable"
+                                className="text-emerald-600 dark:text-emerald-400"
+                              />
+                            )}
+                          </span>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

@@ -1,6 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { HumanMessage } from '@langchain/core/messages';
-import { ProviderRegistry, CapabilityRouter, CircuitBreaker, chat, probeOllama } from '@mergecrew/llm';
+import {
+  ProviderRegistry,
+  CapabilityRouter,
+  CircuitBreaker,
+  chat,
+  probeOllama,
+  capabilitiesFor,
+} from '@mergecrew/llm';
+import type { ModelCapability } from '@mergecrew/domain';
 import { NotFoundError, ValidationError } from '@mergecrew/domain';
 import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
@@ -37,6 +45,10 @@ export class LlmService {
       endpoint: r.endpoint,
       hasCredential: r.credentialCiphertext !== null,
       capabilityOverrides: r.capabilityOverrides,
+      // Per-model capability map. The UI uses this to render a vision chip
+      // (and could surface other flags later) without re-deriving from
+      // model id strings client-side.
+      modelCapabilities: capabilityMapFor(r),
       createdAt: r.createdAt,
     }));
   }
@@ -284,4 +296,33 @@ export class LlmService {
     const profiles = await this.listProfiles();
     return { router, profiles };
   }
+}
+
+/**
+ * Map model id → capabilities for a stored LlmProvider row, without needing
+ * the credential. `capabilitiesFor()` is pure on (kind, modelId, overrides),
+ * so we can compute this server-side and ship it to the UI.
+ */
+function capabilityMapFor(row: {
+  kind: string;
+  endpoint: string | null;
+  capabilityOverrides: unknown;
+}): Record<string, ModelCapability> {
+  const overrides = (row.capabilityOverrides ?? {}) as Record<string, unknown>;
+  const models = Array.isArray((overrides as { models?: unknown }).models)
+    ? ((overrides as { models?: string[] }).models ?? [])
+    : [];
+  if (models.length === 0) return {};
+  const cfg = {
+    id: '__capability_only__',
+    kind: row.kind as 'anthropic' | 'openai' | 'bedrock' | 'ollama',
+    endpoint: row.endpoint ?? undefined,
+    models,
+    capabilityOverrides: overrides as Record<string, ModelCapability>,
+  };
+  const out: Record<string, ModelCapability> = {};
+  for (const m of models) {
+    out[m] = capabilitiesFor(cfg, m);
+  }
+  return out;
 }

@@ -6,3 +6,4 @@ export * from './circuit-breaker.js';
 export * from './pricing.js';
 export * from './chat.js';
 export * from './probe.js';
+export * from './vision.js';
