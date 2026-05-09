@@ -10,6 +10,10 @@ const TRACKER_TOKEN_SECRET = 'TRACKER_TOKEN';
 const SUPPORTED_TRACKERS = ['github-issues', 'linear'] as const;
 type TrackerAdapterId = (typeof SUPPORTED_TRACKERS)[number];
 
+const ERROR_TRACKER_TOKEN_SECRET = 'ERROR_TRACKER_TOKEN';
+const SUPPORTED_ERROR_TRACKERS = ['sentry'] as const;
+type ErrorTrackerAdapterId = (typeof SUPPORTED_ERROR_TRACKERS)[number];
+
 function isPlausibleCron(s: string): boolean {
   const parts = s.trim().split(/\s+/);
   return parts.length === 5 || parts.length === 6;
@@ -317,6 +321,91 @@ export class ProjectService {
       return new GitHubIssuesProvider({ installationToken: token, repoFullName });
     }
     return null;
+  }
+
+  // ── Error tracker (Sentry, etc.) ─────────────────────────────────────────
+
+  async getErrorTarget(slug: string) {
+    const project = await this.detail(slug);
+    const target = await this.prisma.withTenant(project.organizationId, (tx) =>
+      tx.errorTarget.findUnique({ where: { projectId: project.id } }),
+    );
+    if (!target) return null;
+    const tokenSecret = await this.prisma.withTenant(project.organizationId, (tx) =>
+      tx.projectSecret.findFirst({
+        where: { projectId: project.id, name: ERROR_TRACKER_TOKEN_SECRET },
+      }),
+    );
+    return {
+      id: target.id,
+      adapterId: target.adapterId,
+      config: target.config,
+      hasToken: tokenSecret !== null,
+      createdAt: target.createdAt,
+      updatedAt: target.updatedAt,
+    };
+  }
+
+  async upsertErrorTarget(slug: string, input: {
+    adapterId: string;
+    config: Record<string, unknown>;
+    token?: string;
+  }) {
+    if (!SUPPORTED_ERROR_TRACKERS.includes(input.adapterId as ErrorTrackerAdapterId)) {
+      throw new ValidationError(`unsupported error tracker adapter: ${input.adapterId}`);
+    }
+    if (input.adapterId === 'sentry') {
+      const org = (input.config?.org as string | undefined) ?? '';
+      const proj = (input.config?.project as string | undefined) ?? '';
+      if (!org || !proj) {
+        throw new ValidationError('sentry requires config.org and config.project slugs');
+      }
+    }
+    const project = await this.detail(slug);
+    const target = await this.prisma.withTenant(project.organizationId, (tx) =>
+      tx.errorTarget.upsert({
+        where: { projectId: project.id },
+        update: { adapterId: input.adapterId, config: input.config as any },
+        create: {
+          organizationId: project.organizationId,
+          projectId: project.id,
+          adapterId: input.adapterId,
+          config: input.config as any,
+        },
+      }),
+    );
+    if (input.token && input.token.length > 0) {
+      await this.setSecret(slug, ERROR_TRACKER_TOKEN_SECRET, input.token);
+    }
+    return target;
+  }
+
+  async deleteErrorTarget(slug: string) {
+    const project = await this.detail(slug);
+    await this.prisma.withTenant(project.organizationId, (tx) =>
+      tx.errorTarget.deleteMany({ where: { projectId: project.id } }),
+    );
+    await this.prisma.withTenant(project.organizationId, (tx) =>
+      tx.projectSecret.deleteMany({
+        where: { projectId: project.id, name: ERROR_TRACKER_TOKEN_SECRET },
+      }),
+    );
+  }
+
+  /** Resolve {target, token} for runner-side ctx injection, or null if not configured. */
+  async getErrorTargetForRunner(projectId: string): Promise<{
+    adapterId: string;
+    config: Record<string, unknown>;
+    token: string;
+  } | null> {
+    const t = this.tenant.require();
+    const target = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.errorTarget.findUnique({ where: { projectId } }),
+    );
+    if (!target) return null;
+    const token = await this.getSecretPlaintext(projectId, ERROR_TRACKER_TOKEN_SECRET);
+    if (!token) return null;
+    return { adapterId: target.adapterId, config: target.config as any, token };
   }
 
   async getSchedule(slug: string) {
