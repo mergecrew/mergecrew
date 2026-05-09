@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { HumanMessage } from '@langchain/core/messages';
-import { ProviderRegistry, CapabilityRouter, CircuitBreaker, chat } from '@mergecrew/llm';
+import { ProviderRegistry, CapabilityRouter, CircuitBreaker, chat, probeOllama } from '@mergecrew/llm';
 import { NotFoundError, ValidationError } from '@mergecrew/domain';
 import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
@@ -52,6 +52,20 @@ export class LlmService {
     if (!['anthropic', 'openai', 'bedrock', 'ollama'].includes(input.kind))
       throw new ValidationError('unknown provider kind');
     const ciphertext = input.apiKey ? this.crypto.encrypt(input.apiKey) : null;
+    let overrides = (input.capabilityOverrides ?? null) as Record<string, unknown> | null;
+
+    // Auto-populate ollama models when admin didn't provide any. Explicit
+    // user input always wins; probe failures are silent (endpoint may not
+    // be reachable from the API host yet).
+    const declaredModels = (overrides as { models?: unknown } | null)?.models;
+    const hasModels = Array.isArray(declaredModels) && declaredModels.length > 0;
+    if (input.kind === 'ollama' && input.endpoint && !hasModels) {
+      const r = await probeOllama(input.endpoint);
+      if (r.ok && r.models.length > 0) {
+        overrides = { ...(overrides ?? {}), models: r.models };
+      }
+    }
+
     return this.prisma.withTenant(t.organizationId, (tx) =>
       tx.llmProvider.create({
         data: {
@@ -60,7 +74,7 @@ export class LlmService {
           label: input.label,
           endpoint: input.endpoint ?? null,
           credentialCiphertext: ciphertext,
-          capabilityOverrides: (input.capabilityOverrides ?? null) as any,
+          capabilityOverrides: overrides as any,
         },
       }),
     );
@@ -95,6 +109,40 @@ export class LlmService {
     await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.llmProvider.delete({ where: { id } }),
     );
+  }
+
+  /**
+   * Probe an Ollama provider's endpoint and persist the discovered models
+   * into `capabilityOverrides.models`. Existing override fields besides
+   * `models` are preserved. Non-ollama providers and providers without an
+   * endpoint return an error rather than silently doing nothing.
+   */
+  async probeProvider(
+    id: string,
+  ): Promise<{ ok: true; models: string[] } | { ok: false; error: string }> {
+    const t = this.tenant.require();
+    const row = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.llmProvider.findFirst({ where: { id, organizationId: t.organizationId } }),
+    );
+    if (!row) throw new NotFoundError();
+    if (row.kind !== 'ollama') {
+      return { ok: false, error: `probe is only supported for ollama providers (got ${row.kind})` };
+    }
+    if (!row.endpoint) {
+      return { ok: false, error: 'provider has no endpoint configured' };
+    }
+    const r = await probeOllama(row.endpoint);
+    if (!r.ok) return { ok: false, error: r.error };
+
+    const existing = (row.capabilityOverrides as Record<string, unknown> | null) ?? {};
+    const merged = { ...existing, models: r.models };
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.llmProvider.update({
+        where: { id },
+        data: { capabilityOverrides: merged as any },
+      }),
+    );
+    return { ok: true, models: r.models };
   }
 
   /**

@@ -43,9 +43,18 @@ interface Props {
   ) => Promise<SaveResult>;
   onDelete: (id: string) => Promise<SaveResult>;
   onTest: (id: string) => Promise<TestResult>;
+  onProbe: (id: string) => Promise<{ ok: boolean; models?: string[]; error?: string }>;
 }
 
-export function LlmProvidersCard({ providers, canEdit, onCreate, onUpdate, onDelete, onTest }: Props) {
+export function LlmProvidersCard({
+  providers,
+  canEdit,
+  onCreate,
+  onUpdate,
+  onDelete,
+  onTest,
+  onProbe,
+}: Props) {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -57,6 +66,15 @@ export function LlmProvidersCard({ providers, canEdit, onCreate, onUpdate, onDel
     startTransition(async () => {
       const r = await onTest(id);
       setTestResults((prev) => ({ ...prev, [id]: r }));
+    });
+  };
+
+  const runProbe = (id: string) => {
+    setError(null);
+    startTransition(async () => {
+      const r = await onProbe(id);
+      if (!r.ok) setError(r.error ?? 'Probe failed.');
+      else setError(`Probe found ${r.models?.length ?? 0} models. Reload to see them.`);
     });
   };
 
@@ -161,6 +179,15 @@ export function LlmProvidersCard({ providers, canEdit, onCreate, onUpdate, onDel
                     >
                       Test
                     </Button>
+                    {p.kind === 'ollama' && p.endpoint && (
+                      <Button
+                        variant="secondary"
+                        disabled={pending}
+                        onClick={() => runProbe(p.id)}
+                      >
+                        Probe
+                      </Button>
+                    )}
                     <Button
                       variant="secondary"
                       disabled={pending}
