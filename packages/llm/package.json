@@ -19,11 +19,11 @@
   "dependencies": {
     "@mergecrew/db": "workspace:*",
     "@mergecrew/domain": "workspace:*",
-    "@langchain/anthropic": "^0.3.11",
-    "@langchain/aws": "^0.1.2",
-    "@langchain/core": "^0.3.27",
-    "@langchain/ollama": "^0.1.4",
-    "@langchain/openai": "^0.3.16",
+    "@langchain/anthropic": "^1.3.29",
+    "@langchain/aws": "^1.3.7",
+    "@langchain/core": "^1.1.45",
+    "@langchain/ollama": "^1.2.7",
+    "@langchain/openai": "^1.4.5",
     "@prisma/client": "^5.22.0"
   },
   "devDependencies": {
