@@ -82,9 +82,24 @@ export class Eventlog {
     afterEventId?: string,
   ): Promise<TimelineEvent[]> {
     return withTenant(organizationId, async (tx) => {
+      // Resolve the marker's autoincrement id (BIGINT PK) so the where can
+      // use a strict `id > marker` range — this is what SSE clients actually
+      // mean by "Last-Event-ID". A previous version used `{ eventId: { not:
+      // afterEventId } }` which returned the entire run minus the marker.
+      let afterPk: bigint | null = null;
+      if (afterEventId) {
+        const marker = await tx.timelineEvent.findUnique({
+          where: { eventId: afterEventId },
+          select: { id: true },
+        });
+        if (marker) afterPk = marker.id;
+      }
       const rows = await tx.timelineEvent.findMany({
-        where: { dailyRunId, ...(afterEventId ? { eventId: { not: afterEventId } } : {}) },
-        orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
+        where: {
+          dailyRunId,
+          ...(afterPk !== null ? { id: { gt: afterPk } } : {}),
+        },
+        orderBy: { id: 'asc' },
         take: 5000,
       });
       return rows.map((r) => ({
