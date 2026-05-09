@@ -11,6 +11,7 @@ interface SkillRow {
 
 interface AgentRow {
   kind?: string;
+  description?: string;
   systemPrompt?: string;
   model?: string;
   skills?: Array<string | { name: string; config?: unknown }>;
@@ -21,8 +22,8 @@ interface AgentRow {
   fallback?: string[];
 }
 
-const DEFAULT_DESCRIPTION =
-  'Uses the runtime default system prompt: receives a task, plans it, executes it via the bound skills, and grounds every decision in the repository state.';
+const FALLBACK_DESCRIPTION =
+  'No description set. The runtime default system prompt applies: receive a task, plan it, execute via bound skills, ground decisions in the repository state.';
 
 export default async function AgentsPage({
   params,
@@ -77,9 +78,22 @@ export default async function AgentsPage({
                         Description
                       </h3>
                       <p className="mt-1 whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-200">
-                        {a.systemPrompt?.trim() || DEFAULT_DESCRIPTION}
+                        {a.description?.trim() || FALLBACK_DESCRIPTION}
                       </p>
                     </section>
+
+                    {a.systemPrompt?.trim() && (
+                      <section>
+                        <details>
+                          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
+                            Model prompt
+                          </summary>
+                          <pre className="mt-2 whitespace-pre-wrap rounded bg-zinc-50 p-2 text-xs text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                            {a.systemPrompt}
+                          </pre>
+                        </details>
+                      </section>
+                    )}
 
                     <section>
                       <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">

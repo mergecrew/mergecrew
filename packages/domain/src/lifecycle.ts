@@ -13,6 +13,8 @@ export type TransitionDef = z.infer<typeof TransitionDef>;
 
 export const WorkflowDef = z.object({
   id: z.string(),
+  /** Human-facing summary shown in the lifecycle editor and run timeline. */
+  description: z.string().optional(),
   agents: z.array(z.string()),
   out: z.array(z.string()).default([]),
   transitions: z.array(TransitionDef).default([]),
@@ -35,6 +37,12 @@ export const SkillBindingDef = z.union([
 
 export const AgentDefinition = z.object({
   kind: z.string(),
+  /**
+   * One-paragraph human-facing summary of what the agent does and the value
+   * it produces. Distinct from `systemPrompt` (which is sent to the model);
+   * this is for humans browsing the project.
+   */
+  description: z.string().optional(),
   systemPrompt: z.string().optional(),
   model: z.string().optional(),
   fallback: z.array(ProviderRef).default([]),
