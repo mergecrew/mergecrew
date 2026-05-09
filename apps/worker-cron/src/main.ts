@@ -4,6 +4,7 @@ import pino from 'pino';
 import { parseExpression } from 'cron-parser';
 import { withSystem, withTenant } from '@mergecrew/db';
 import { digestTick } from './digest-tick.js';
+import { isSkipped, dateInTz } from './skip.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
@@ -37,6 +38,19 @@ async function tick() {
       continue;
     }
     if (!due) continue;
+
+    if (isSkipped(s.skipDates ?? [], s.timezone, now)) {
+      // Bump lastFiredAt so the cron iterator doesn't think we're permanently
+      // overdue — next firing will be tomorrow's normal cron occurrence.
+      await withTenant(s.organizationId, (tx) =>
+        tx.schedule.update({ where: { id: s.id }, data: { lastFiredAt: now } }),
+      );
+      logger.info(
+        { projectId: s.projectId, today: dateInTz(now, s.timezone) },
+        'skipping run.due: today is in schedule.skipDates',
+      );
+      continue;
+    }
 
     await queue.add(
       'run.due',
