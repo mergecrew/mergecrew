@@ -29,6 +29,7 @@ import {
 import { LinearProvider, GitHubIssuesProvider, type TrackerProvider } from '@mergecrew/adapters-tracker';
 
 const TRACKER_TOKEN_SECRET = 'TRACKER_TOKEN';
+const ERROR_TRACKER_TOKEN_SECRET = 'ERROR_TRACKER_TOKEN';
 import { CompositeCommsProvider } from '@mergecrew/adapters-comms';
 import { runAgentStep, BudgetTracker, PolicyEngine } from '@mergecrew/agent-runtime';
 
@@ -162,6 +163,29 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     email: { from: process.env.MERGECREW_EMAIL_FROM ?? 'noreply@mergecrew.dev', smtpUrl: process.env.SMTP_URL },
   });
 
+  // Error-tracker config — per-project. Reads error_targets + the encrypted
+  // ERROR_TRACKER_TOKEN secret. Plumbed into ctx.config.sentry so the
+  // `errors.list_recent` skill can call the upstream API. Missing rows are
+  // soft-failed: the skill returns `{issues: []}` when not configured.
+  let sentryConfig: { token: string; org: string; project: string } | undefined;
+  const errorTarget = await withTenant(organizationId, (tx) =>
+    tx.errorTarget.findUnique({ where: { projectId } }),
+  );
+  if (errorTarget) {
+    const tokenRow = await withTenant(organizationId, (tx) =>
+      tx.projectSecret.findFirst({
+        where: { projectId, name: ERROR_TRACKER_TOKEN_SECRET },
+      }),
+    );
+    if (tokenRow && errorTarget.adapterId === 'sentry') {
+      const token = decryptDevOnly(tokenRow.ciphertext);
+      const cfg = errorTarget.config as { org?: string; project?: string };
+      if (cfg.org && cfg.project) {
+        sentryConfig = { token, org: cfg.org, project: cfg.project };
+      }
+    }
+  }
+
   const skills = new SkillExecutor();
   skills.registerAll(stockSkills);
   for (const [name, def] of Object.entries(cfg.skills ?? {})) {
@@ -196,6 +220,7 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     config: {
       // Per-skill / per-step config bag the runner injects.
       adapterConfig: dt?.config ?? {},
+      ...(sentryConfig ? { sentry: sentryConfig } : {}),
     },
   });
 

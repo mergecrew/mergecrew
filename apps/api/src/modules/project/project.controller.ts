@@ -115,6 +115,27 @@ export class ProjectController {
     return this.projects.testTracker(projectSlug);
   }
 
+  @Get(':projectSlug/error-target')
+  async getErrorTarget(@Param('projectSlug') projectSlug: string) {
+    return this.projects.getErrorTarget(projectSlug);
+  }
+
+  @Patch(':projectSlug/error-target')
+  @RequireRole('admin')
+  async upsertErrorTarget(
+    @Param('projectSlug') projectSlug: string,
+    @Body() body: { adapterId: string; config: Record<string, unknown>; token?: string },
+  ) {
+    return this.projects.upsertErrorTarget(projectSlug, body);
+  }
+
+  @Delete(':projectSlug/error-target')
+  @RequireRole('admin')
+  async deleteErrorTarget(@Param('projectSlug') projectSlug: string) {
+    await this.projects.deleteErrorTarget(projectSlug);
+    return { ok: true };
+  }
+
   @Get(':projectSlug/schedule')
   async getSchedule(@Param('projectSlug') projectSlug: string) {
     return this.projects.getSchedule(projectSlug);

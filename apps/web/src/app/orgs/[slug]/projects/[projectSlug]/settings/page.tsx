@@ -6,6 +6,7 @@ import { Card } from '@/components/ui';
 import { GeneralForm } from './general-form';
 import { RepoForm } from './repo-form';
 import { TrackerForm } from './tracker-form';
+import { ErrorTargetForm } from './error-target-form';
 import { ScheduleForm } from './schedule-form';
 
 export default async function ProjectSettings({
@@ -38,6 +39,12 @@ export default async function ProjectSettings({
     config: Record<string, unknown>;
     hasToken: boolean;
   } | null>(`/v1/orgs/${slug}/projects/${projectSlug}/tracker`, { session });
+  const errorTarget = await api<{
+    id: string;
+    adapterId: string;
+    config: Record<string, unknown>;
+    hasToken: boolean;
+  } | null>(`/v1/orgs/${slug}/projects/${projectSlug}/error-target`, { session });
   const schedule = await api<{
     cron: string;
     timezone: string;
@@ -85,6 +92,17 @@ export default async function ProjectSettings({
             slug={slug}
             projectSlug={projectSlug}
             initial={tracker ?? null}
+          />
+        </Subsection>
+
+        <Subsection
+          title="Error tracker"
+          description="Lets the Observation agent read recent crash and exception data. The token is encrypted at rest as the project secret ERROR_TRACKER_TOKEN."
+        >
+          <ErrorTargetForm
+            slug={slug}
+            projectSlug={projectSlug}
+            initial={errorTarget ?? null}
           />
         </Subsection>
       </Section>

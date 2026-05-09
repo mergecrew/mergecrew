@@ -137,6 +137,7 @@ model Project {
   connectedRepo     ConnectedRepo?
   deployTargets     DeployTarget[]
   trackerTarget     TrackerTarget?
+  errorTarget       ErrorTarget?
   secrets           ProjectSecret[]
   lifecycles        Lifecycle[]
   gatePolicies      GatePolicy[]
@@ -206,6 +207,23 @@ model TrackerTarget {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@map("tracker_targets")
+}
+
+/// One row per project. Stores the error-tracker (Sentry, etc.) the
+/// Observation agent reads via the `errors.list_recent` skill. Token
+/// goes into `project_secrets` under name `ERROR_TRACKER_TOKEN`.
+model ErrorTarget {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  projectId      String   @unique @map("project_id") @db.Uuid
+  adapterId      String   @map("adapter_id")
+  config         Json
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("error_targets")
 }
 
 model ProjectSecret {
