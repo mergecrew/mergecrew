@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@mergecrew/db": "workspace:*",
+    "@mergecrew/eventlog": "workspace:*",
     "@prisma/client": "^5.22.0",
     "bullmq": "^5.21.0",
     "cron-parser": "^4.9.0",

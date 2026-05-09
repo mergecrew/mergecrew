@@ -3,9 +3,11 @@ import IORedis from 'ioredis';
 import pino from 'pino';
 import { parseExpression } from 'cron-parser';
 import { withSystem, withTenant } from '@mergecrew/db';
+import { Eventlog, RedisPubSub } from '@mergecrew/eventlog';
 import { digestTick } from './digest-tick.js';
 import { isSkipped, dateInTz } from './skip.js';
 import { auditRetentionTick } from './audit-retention-tick.js';
+import { stuckRunWatchdog } from './stuck-run-watchdog.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
@@ -19,6 +21,8 @@ const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
 const conn = new IORedis(url, { maxRetriesPerRequest: null });
 const queue = new Queue('run.due', { connection: conn });
 const digestQueue = new Queue('digest.dispatch', { connection: conn });
+const pubsub = new RedisPubSub(url);
+const eventlog = new Eventlog(pubsub);
 
 const TICK_MS = Number(process.env.WORKER_CRON_TICK_MS ?? 60_000);
 
@@ -71,6 +75,7 @@ async function tick() {
 async function shutdown() {
   await queue.close();
   await digestQueue.close();
+  await pubsub.close();
   await conn.quit();
   process.exit(0);
 }
@@ -97,11 +102,17 @@ setInterval(() => {
   digestTick({ digestQueue, logger }).catch((err) =>
     logger.error({ err: String(err?.message ?? err) }, 'digest-tick failed'),
   );
+  stuckRunWatchdog({ eventlog, logger }).catch((err) =>
+    logger.error({ err: String(err?.message ?? err) }, 'stuck-run-watchdog failed'),
+  );
   maybeRunRetention();
 }, TICK_MS);
 // First tick at startup
 tick().catch((err) => logger.error({ err: String(err?.message ?? err) }, 'initial tick failed'));
 digestTick({ digestQueue, logger }).catch((err) =>
   logger.error({ err: String(err?.message ?? err) }, 'initial digest-tick failed'),
+);
+stuckRunWatchdog({ eventlog, logger }).catch((err) =>
+  logger.error({ err: String(err?.message ?? err) }, 'initial stuck-run-watchdog failed'),
 );
 maybeRunRetention();
