@@ -2,12 +2,22 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-interface Ev {
+export interface Ev {
   id: string;
   type: string;
   occurredAt: string;
   payload?: any;
   actor?: any;
+}
+
+/**
+ * Static, no-SSE timeline renderer. Used by `?replayMode=1` to assert
+ * that the live + replay views render the same data without diverging
+ * because of streaming-only state. Shares the same row markup as
+ * LiveTimeline so any visual delta is a real bug.
+ */
+export function ReplayTimeline({ events }: { events: Ev[] }) {
+  return <TimelineRows events={events} />;
 }
 
 export function LiveTimeline({ initial, streamUrl }: { initial: Ev[]; streamUrl: string }) {
@@ -33,6 +43,10 @@ export function LiveTimeline({ initial, streamUrl }: { initial: Ev[]; streamUrl:
     };
   }, [streamUrl]);
 
+  return <TimelineRows events={events} />;
+}
+
+function TimelineRows({ events }: { events: Ev[] }) {
   return (
     <ol className="space-y-1">
       {events.map((e) => (
