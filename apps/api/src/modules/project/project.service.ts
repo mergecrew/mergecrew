@@ -418,16 +418,27 @@ export class ProjectService {
 
   async updateSchedule(
     slug: string,
-    input: { cron?: string; timezone?: string; enabled?: boolean },
+    input: { cron?: string; timezone?: string; enabled?: boolean; skipDates?: string[] },
   ) {
     const project = await this.detail(slug);
     if (input.cron !== undefined && !isPlausibleCron(input.cron)) {
       throw new ValidationError('cron must have 5 or 6 space-separated fields');
     }
+    if (input.skipDates !== undefined) {
+      if (!Array.isArray(input.skipDates)) {
+        throw new ValidationError('skipDates must be an array of YYYY-MM-DD strings');
+      }
+      for (const d of input.skipDates) {
+        if (typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+          throw new ValidationError(`skipDates entry not in YYYY-MM-DD format: ${String(d)}`);
+        }
+      }
+    }
     const data: Record<string, unknown> = {};
     if (input.cron !== undefined) data.cron = input.cron;
     if (input.timezone !== undefined) data.timezone = input.timezone;
     if (input.enabled !== undefined) data.enabled = input.enabled;
+    if (input.skipDates !== undefined) data.skipDates = input.skipDates;
     return this.prisma.withTenant(project.organizationId, (tx) =>
       tx.schedule.upsert({
         where: { projectId: project.id },
@@ -438,6 +449,7 @@ export class ProjectService {
           cron: input.cron ?? '0 8 * * 1-5',
           timezone: input.timezone ?? 'UTC',
           enabled: input.enabled ?? true,
+          skipDates: input.skipDates ?? [],
         },
       }),
     );
