@@ -32,7 +32,7 @@ jobs:
       KMS_MASTER_KEY: base64:0000000000000000000000000000000000000000000=
     steps:
       - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
