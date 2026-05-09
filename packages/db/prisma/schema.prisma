@@ -373,6 +373,10 @@ model DailyRun {
   intentsPicked IntentInboxItem[]
 
   @@index([projectId, scheduledAt(sort: Desc)])
+  /// Inflight check (orchestrator.handleRunDue): "is there a non-terminal run
+  /// for this project right now?" Pre-existing index didn't cover the status
+  /// filter — added so the predicate hits an index-only scan.
+  @@index([projectId, status, scheduledAt(sort: Desc)])
   @@map("daily_runs")
 }
 
@@ -707,6 +711,10 @@ model Schedule {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([nextFireAt])
+  /// worker-cron tick scans `where: { enabled: true }` every minute. Once
+  /// disabled rows accumulate, the partial-style filter benefits from an
+  /// index seek on enabled.
+  @@index([enabled])
   @@map("schedules")
 }
 
@@ -733,6 +741,11 @@ model TimelineEvent {
 
   @@index([dailyRunId, occurredAt(sort: Desc)])
   @@index([projectId, occurredAt(sort: Desc)])
+  /// SSE replay path: `where: { dailyRunId, id > marker } orderBy: id asc`.
+  /// The PK already covers the order; this composite lets the planner seek
+  /// directly to the marker without scanning the run's whole history when
+  /// the run gets long.
+  @@index([dailyRunId, id])
   @@map("timeline_events")
 }
 
