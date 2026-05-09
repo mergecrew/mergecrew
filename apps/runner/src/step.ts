@@ -880,5 +880,81 @@ async function synthesizeAgentInput(
   if (agentRef === 'pm') {
     return { runId, instruction: 'Translate discovery output into 1–3 prioritized intents with one-paragraph specs.' };
   }
-  return { runId, instruction: `You are the ${agentRef} agent. Plan and execute your scoped task.` };
+
+  // Implementing agents on a tests_failed loop or PR review pass should see
+  // the open reviewer comments so they can address them directly. Looks at
+  // the most-recently-updated active changeset in this run; resolved
+  // comments are filtered out so the list shrinks as work progresses.
+  const reviewerFeedback = await loadReviewerFeedback(organizationId, projectId, runId, agentRef);
+  return {
+    runId,
+    instruction: `You are the ${agentRef} agent. Plan and execute your scoped task.`,
+    ...(reviewerFeedback ? { reviewerFeedback } : {}),
+  };
+}
+
+async function loadReviewerFeedback(
+  organizationId: string,
+  projectId: string,
+  runId: string,
+  agentRef: string,
+): Promise<{
+  changesetId: string;
+  instruction: string;
+  comments: Array<{
+    id: string;
+    parentId: string | null;
+    filePath: string;
+    lineRange: { startLine: number; endLine: number } | null;
+    body: string;
+    author: string;
+    createdAt: string;
+  }>;
+} | null> {
+  // Only the engineer / qa loop benefits from inline reviewer feedback —
+  // discovery and PM run before any changeset exists, sre's brief is the
+  // deploy not the diff, and downstream observation agents work post-merge.
+  const consumers = new Set([
+    'backend_engineer',
+    'frontend_engineer',
+    'qa',
+  ]);
+  if (!consumers.has(agentRef)) return null;
+
+  const cs = await withTenant(organizationId, (tx) =>
+    tx.changeset.findFirst({
+      where: {
+        projectId,
+        dailyRunId: runId,
+        status: { in: ['proposed', 'building', 'testing', 'tests_failed', 'pr_open'] },
+      },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true },
+    }),
+  );
+  if (!cs) return null;
+
+  const rows = await withTenant(organizationId, (tx) =>
+    tx.changesetComment.findMany({
+      where: { changesetId: cs.id, resolvedAt: null },
+      orderBy: { createdAt: 'asc' },
+      include: { user: { select: { email: true, name: true } } },
+    }),
+  );
+  if (rows.length === 0) return null;
+
+  return {
+    changesetId: cs.id,
+    instruction:
+      'Reviewer comments below are open on the current changeset. Address each one and call `changeset.resolve_comment` with its id once handled. If a comment is out of scope, leave it open and explain why in your output.',
+    comments: rows.map((r) => ({
+      id: r.id,
+      parentId: r.parentId,
+      filePath: r.filePath,
+      lineRange: (r.lineRange as { startLine: number; endLine: number } | null) ?? null,
+      body: r.body,
+      author: r.user.name ?? r.user.email,
+      createdAt: r.createdAt.toISOString(),
+    })),
+  };
 }

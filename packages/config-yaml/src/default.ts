@@ -142,6 +142,7 @@ agents:
       - build.run_unit_tests
       - repo.git.commit
       - repo.git.create_branch
+      - changeset.resolve_comment
   frontend_engineer:
     kind: FrontendEngineer
     description: |
@@ -172,6 +173,7 @@ agents:
       - build.run_unit_tests
       - repo.git.commit
       - repo.git.create_branch
+      - changeset.resolve_comment
   qa:
     kind: QA
     description: |

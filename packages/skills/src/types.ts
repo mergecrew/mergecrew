@@ -15,7 +15,8 @@ export type SkillCapability =
   | 'comms.write'
   | 'memory.read'
   | 'memory.write'
-  | 'llm.chat';
+  | 'llm.chat'
+  | 'changeset.write';
 
 export interface SkillExecutionContext {
   organizationId: string;

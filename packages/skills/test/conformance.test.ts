@@ -13,6 +13,7 @@ const ALLOWED_CAPABILITIES = new Set([
   'comms.write',
   'memory.read', 'memory.write',
   'llm.chat',
+  'changeset.write',
 ]);
 
 /**
