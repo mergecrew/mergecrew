@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { NotFoundError } from '@mergecrew/domain';
+import { NotFoundError, ValidationError } from '@mergecrew/domain';
 import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
+
+function startOfUtcDay(d: Date): Date {
+  const r = new Date(d);
+  r.setUTCHours(0, 0, 0, 0);
+  return r;
+}
 
 @Injectable()
 export class OrgService {
@@ -46,6 +52,35 @@ export class OrgService {
     );
     if (!org) throw new NotFoundError();
     return org;
+  }
+
+  /**
+   * Sum of `usd_estimate` for the current org's LLM invocations since
+   * UTC midnight today. Used to enforce `dailyBudgetUsd`.
+   */
+  async todaysSpendUsd(): Promise<number> {
+    const t = this.tenant.require();
+    const since = startOfUtcDay(new Date());
+    const rows = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.llmInvocation.aggregate({
+        where: { organizationId: t.organizationId, occurredAt: { gte: since } },
+        _sum: { usdEstimate: true },
+      }),
+    );
+    return Number(rows._sum.usdEstimate ?? 0);
+  }
+
+  async updateBudget(dailyBudgetUsd: number | null) {
+    const t = this.tenant.require();
+    if (dailyBudgetUsd !== null && (!Number.isFinite(dailyBudgetUsd) || dailyBudgetUsd < 0)) {
+      throw new ValidationError('dailyBudgetUsd must be null or a non-negative number');
+    }
+    return this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.organization.update({
+        where: { id: t.organizationId },
+        data: { dailyBudgetUsd: dailyBudgetUsd as any },
+      }),
+    );
   }
 
   async listMembers() {
