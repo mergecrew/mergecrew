@@ -4,6 +4,7 @@ import { requireSession } from '@/lib/session';
 import { hasRole } from '@/lib/role';
 import { Card, Button } from '@/components/ui';
 import { LlmProvidersCard } from '@/components/llm-providers-card';
+import { LlmProfilesCard } from '@/components/llm-profiles-card';
 
 interface BudgetInfo {
   dailyBudgetUsd: number | null;
@@ -30,10 +31,11 @@ async function setBudgetAction(formData: FormData) {
 export default async function OrgSettingsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const session = await requireSession();
-  const [org, members, providers, budget, canEdit] = await Promise.all([
+  const [org, members, providers, profiles, budget, canEdit] = await Promise.all([
     api<any>(`/v1/orgs/${slug}`, { session }),
     api<{ items: any[] }>(`/v1/orgs/${slug}/members`, { session }),
     api<{ items: any[] }>(`/v1/orgs/${slug}/llm/providers`, { session }),
+    api<{ items: any[] }>(`/v1/orgs/${slug}/llm/profiles`, { session }),
     api<BudgetInfo>(`/v1/orgs/${slug}/budget`, { session }),
     hasRole(slug, session, 'admin'),
   ]);
@@ -193,6 +195,52 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
             });
             revalidatePath(`/orgs/${slug}/settings`);
             return r;
+          } catch (e: any) {
+            return { ok: false, error: String(e?.message ?? e) };
+          }
+        }}
+      />
+
+      <LlmProfilesCard
+        profiles={profiles.items as any}
+        canEdit={canEdit}
+        onCreate={async (input) => {
+          'use server';
+          try {
+            await api(`/v1/orgs/${slug}/llm/profiles`, {
+              method: 'POST',
+              body: JSON.stringify(input),
+              session: await requireSession(),
+            });
+            revalidatePath(`/orgs/${slug}/settings`);
+            return { ok: true };
+          } catch (e: any) {
+            return { ok: false, error: String(e?.message ?? e) };
+          }
+        }}
+        onUpdate={async (id, input) => {
+          'use server';
+          try {
+            await api(`/v1/orgs/${slug}/llm/profiles/${id}`, {
+              method: 'PATCH',
+              body: JSON.stringify(input),
+              session: await requireSession(),
+            });
+            revalidatePath(`/orgs/${slug}/settings`);
+            return { ok: true };
+          } catch (e: any) {
+            return { ok: false, error: String(e?.message ?? e) };
+          }
+        }}
+        onDelete={async (id) => {
+          'use server';
+          try {
+            await api(`/v1/orgs/${slug}/llm/profiles/${id}`, {
+              method: 'DELETE',
+              session: await requireSession(),
+            });
+            revalidatePath(`/orgs/${slug}/settings`);
+            return { ok: true };
           } catch (e: any) {
             return { ok: false, error: String(e?.message ?? e) };
           }
