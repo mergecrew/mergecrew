@@ -16,6 +16,7 @@ import { LlmModule } from './modules/llm/llm.module.js';
 import { IntegrationModule } from './modules/integration/integration.module.js';
 import { WebhookModule } from './modules/webhook/webhook.module.js';
 import { MfaModule } from './modules/mfa/mfa.module.js';
+import { AdminModule } from './modules/admin/admin.module.js';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { MfaModule } from './modules/mfa/mfa.module.js';
     IntegrationModule,
     WebhookModule,
     MfaModule,
+    AdminModule,
   ],
 })
 export class AppModule implements NestModule {
