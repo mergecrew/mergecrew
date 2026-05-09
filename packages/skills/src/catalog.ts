@@ -7,6 +7,7 @@ import { trackerSkills } from './stock/tracker.js';
 import { commsSkills } from './stock/comms.js';
 import { memorySkills } from './stock/memory.js';
 import { llmSkills } from './stock/llm.js';
+import { changesetSkills } from './stock/changeset.js';
 import type { AnySkill } from './types.js';
 
 export const stockSkills: AnySkill[] = [
@@ -19,6 +20,7 @@ export const stockSkills: AnySkill[] = [
   ...commsSkills,
   ...memorySkills,
   ...llmSkills,
+  ...changesetSkills,
 ];
 
 export function findStockSkill(name: string): AnySkill | undefined {
