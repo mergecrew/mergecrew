@@ -131,7 +131,7 @@ The seed creates:
 - User `demo@mergecrew.local` with role `owner`
 - Project `acme` with a default lifecycle (`mergecrew.yaml`) and ~8 agents
 
-> **Note:** the migrate command needs `DATABASE_MIGRATE_URL` exported. The repo's `pnpm db:migrate` script reads it from `.env`. If you run `prisma migrate deploy` directly, run `set -a; source .env; set +a` first.
+> The `pnpm db:*` and `pnpm dev` scripts auto-load `.env` via `dotenv-cli`. If you invoke `prisma` directly outside pnpm, prefix with `pnpm exec dotenv -e .env -- prisma …` so the connection URLs are visible.
 
 ### 5. Start a local LLM (Ollama)
 
@@ -288,7 +288,7 @@ Credentials are envelope-encrypted at rest using `KMS_MASTER_KEY` from `.env`.
   `psql "$DATABASE_URL" -c "select id, email from users;"`
 - **Run fails with `no provider available`** — register an LLM provider for the org (step 8 above).
 - **Ollama model not found** — `ollama pull qwen3:0.6b`.
-- **`prisma migrate deploy` complains about `DATABASE_MIGRATE_URL`** — `set -a && source .env && set +a` first, or use `pnpm db:migrate`.
+- **`prisma migrate deploy` complains about `DATABASE_MIGRATE_URL`** — you ran Prisma directly. Use `pnpm db:migrate` (which auto-loads `.env`), or prefix with `pnpm exec dotenv -e .env -- prisma migrate deploy`.
 - **Port 5432 / 6379 already in use** — you have a local Postgres/Redis already running. Either stop it or change the port mapping in `docker-compose.yml`.
 
 ---
