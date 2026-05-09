@@ -396,6 +396,21 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     });
   }
 
+  // After PRs are open: trigger the dev-target deploy for each changeset
+  // that doesn't already have one. Same best-effort posture as PR opening.
+  if (deploy && dt && outcome.kind !== 'failed' && outcome.kind !== 'budget_exhausted') {
+    await triggerPendingDevDeploys({
+      organizationId,
+      projectId,
+      runId,
+      workflowRunId,
+      deploy,
+      deployTarget: dt,
+      eventlog,
+      logger,
+    });
+  }
+
   // Cleanup workspace.
   await fs.rm(workspacePath, { recursive: true, force: true }).catch(() => {});
 
@@ -579,6 +594,102 @@ async function openPendingChangesetPrs(opts: {
       logger.warn(
         { changesetId: cs.id, err: e?.message ?? e },
         'auto-open-pr: failed; leaving changeset as-is',
+      );
+    }
+  }
+}
+
+/**
+ * Trigger the configured dev DeployTarget for each changeset whose PR is
+ * open and doesn't yet have a Deploy row. Persists Deploy + sets
+ * `Changeset.devDeployId` and status `dev_deployed` (optimistic — we
+ * record the trigger; webhooks/poller flip the status if it fails).
+ */
+async function triggerPendingDevDeploys(opts: {
+  organizationId: string;
+  projectId: string;
+  runId: string;
+  workflowRunId: string;
+  deploy: DeployProvider;
+  deployTarget: { id: string; kind: string; adapterId: string; config: unknown };
+  eventlog: Eventlog;
+  logger: Logger;
+}): Promise<void> {
+  const { organizationId, projectId, runId, workflowRunId, deploy, deployTarget, eventlog, logger } = opts;
+
+  const changesets = await withTenant(organizationId, (tx) =>
+    tx.changeset.findMany({
+      where: {
+        dailyRunId: runId,
+        prNumber: { not: null },
+        devDeployId: null,
+        status: { in: ['pr_open', 'tests_failed'] },
+      },
+    }),
+  );
+  if (changesets.length === 0) return;
+
+  const targetRef = {
+    id: deployTarget.id,
+    kind: deployTarget.kind as 'dev' | 'staging' | 'prod',
+    adapterId: deployTarget.adapterId,
+    config: (deployTarget.config ?? {}) as Record<string, unknown>,
+  };
+
+  for (const cs of changesets) {
+    const correlationId = `${cs.id}-${Date.now()}`;
+    try {
+      const handle = await deploy.triggerDeploy(targetRef, {
+        ref: cs.branch,
+        branch: cs.branch,
+        correlationId,
+      });
+      const url = await deploy
+        .resolveUrlForRef(targetRef, cs.branch)
+        .catch(() => null);
+
+      const dep = await withTenant(organizationId, (tx) =>
+        tx.deploy.create({
+          data: {
+            organizationId,
+            projectId,
+            changesetId: cs.id,
+            deployTargetId: deployTarget.id,
+            ref: cs.branch,
+            correlationId,
+            externalRunId: handle.externalRunId,
+            url: url ?? null,
+            status: 'queued',
+            startedAt: new Date(),
+          },
+        }),
+      );
+
+      await withTenant(organizationId, (tx) =>
+        tx.changeset.update({
+          where: { id: cs.id },
+          data: {
+            devDeployId: dep.id,
+            status: cs.status === 'tests_failed' ? cs.status : 'dev_deployed',
+            updatedAt: new Date(),
+          },
+        }),
+      );
+
+      await eventlog.emit({
+        organizationId,
+        projectId,
+        dailyRunId: runId,
+        workflowRunId,
+        changesetId: cs.id,
+        type: 'CHANGESET_DEV_DEPLOYED',
+        actor: { kind: 'system' },
+        payload: { deployId: dep.id, externalRunId: handle.externalRunId, url, correlationId },
+      });
+    } catch (e: any) {
+      logger.warn(
+        { changesetId: cs.id, err: e?.message ?? e },
+        'auto-deploy-dev: failed; leaving changeset as-is',
       );
     }
   }
