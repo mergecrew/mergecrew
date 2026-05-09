@@ -486,6 +486,26 @@ export class Orchestrator {
     this.deps.logger.info({ name }, 'webhook received');
     // V1: webhook events feed Discovery agent's input on next run.
   }
+
+  // ─── Digest ─────────────────────────────────────────────────────────────
+
+  /**
+   * Stub end-of-day digest dispatcher. The worker-cron `digestTick` enqueues
+   * one of these per project at end-of-working-hours; real fan-out to Slack
+   * (#80) and email (#82) lands later. For now we just emit a timeline event
+   * so the UI can show that the digest fired.
+   */
+  async handleDigestDispatch(data: { organizationId: string; projectId: string; eod: string }): Promise<void> {
+    const { organizationId, projectId, eod } = data;
+    this.deps.logger.info({ projectId, eod }, 'digest.dispatch tick');
+    await this.deps.eventlog.emit({
+      organizationId,
+      projectId,
+      type: 'DIGEST_DISPATCHED',
+      actor: { kind: 'system' },
+      payload: { eod, channels: [] },
+    });
+  }
 }
 
 function stableUuid(s: string): string {

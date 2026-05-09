@@ -125,6 +125,10 @@ model Project {
   name           String
   description    String?
   archivedAt     DateTime? @map("archived_at") @db.Timestamptz(6)
+  /// Timestamp of the most recent end-of-day digest fan-out. Used by
+  /// the worker-cron digest tick to dedup so a flaky tick doesn't
+  /// send the same digest twice.
+  lastDigestAt   DateTime? @map("last_digest_at") @db.Timestamptz(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)

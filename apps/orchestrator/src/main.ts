@@ -56,6 +56,12 @@ const stepReplyWorker = new Worker(
   { connection: conn, concurrency: 16 },
 );
 
+const digestWorker = new Worker(
+  'digest.dispatch',
+  async (job: Job) => orchestrator.handleDigestDispatch(job.data),
+  { connection: conn, concurrency: 4 },
+);
+
 logger.info('orchestrator started');
 
 async function shutdown() {
@@ -67,6 +73,7 @@ async function shutdown() {
     rateWorker.close(),
     webhookWorker.close(),
     stepReplyWorker.close(),
+    digestWorker.close(),
     pubsub.close(),
     conn.quit(),
   ]);

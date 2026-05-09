@@ -31,6 +31,8 @@ export const TimelineEventType = z.enum([
   'GATE_REACHED',
   'HUMAN_APPROVED',
   'HUMAN_REJECTED',
+  // digest
+  'DIGEST_DISPATCHED',
 ]);
 export type TimelineEventType = z.infer<typeof TimelineEventType>;
 
