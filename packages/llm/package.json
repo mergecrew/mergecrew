@@ -14,7 +14,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "tsc -p tsconfig.test.json && vitest run"
   },
   "dependencies": {
     "@mergecrew/db": "workspace:*",
