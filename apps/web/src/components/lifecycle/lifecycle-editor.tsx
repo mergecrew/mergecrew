@@ -322,6 +322,7 @@ function AgentForm({
   const [description, setDescription] = useState(initial?.description ?? '');
   const [systemPrompt, setSystemPrompt] = useState(initial?.systemPrompt ?? '');
   const [model, setModel] = useState(initial?.model ?? '');
+  const [fallback, setFallback] = useState((initial?.fallback ?? []).join('\n'));
   const initialSkills = (initial?.skills ?? []).map((s) => (typeof s === 'string' ? s : s.name));
   const [selected, setSelected] = useState<Set<string>>(new Set(initialSkills));
   const [doNotTouch, setDoNotTouch] = useState((initial?.do_not_touch ?? []).join('\n'));
@@ -344,7 +345,7 @@ function AgentForm({
       description: description.trim() || undefined,
       systemPrompt: systemPrompt.trim() || undefined,
       model: model.trim() || undefined,
-      fallback: initial?.fallback ?? [],
+      fallback: fallback.split('\n').map((l) => l.trim()).filter(Boolean),
       skills: Array.from(selected),
       do_not_touch: doNotTouch.split('\n').map((l) => l.trim()).filter(Boolean),
       maxStepsPerRun: Number(maxStepsPerRun) || 12,
@@ -431,6 +432,19 @@ function AgentForm({
           className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
           value={model}
           onChange={(e) => setModel(e.target.value)}
+        />
+      </label>
+
+      <label className="block text-sm">
+        <span className="block text-zinc-600 dark:text-zinc-400">
+          Fallbacks (optional, one <code>providerKind/modelId</code> per line)
+        </span>
+        <textarea
+          className="mt-1 w-full rounded border px-2 py-1 font-mono text-xs dark:bg-zinc-900 dark:border-zinc-700"
+          rows={3}
+          placeholder="anthropic/claude-3-5-sonnet-20241022&#10;openai/gpt-4o-mini"
+          value={fallback}
+          onChange={(e) => setFallback(e.target.value)}
         />
       </label>
 

@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { parseMergecrewYaml, stringifyMergecrewConfig, defaultConfig, DEFAULT_MERGECREW_YAML } from '@mergecrew/config-yaml';
+import {
+  parseMergecrewYaml,
+  stringifyMergecrewConfig,
+  defaultConfig,
+  DEFAULT_MERGECREW_YAML,
+  mergeWithDefault,
+} from '@mergecrew/config-yaml';
 import {
   AgentDefinition,
   CustomSkillDef,
@@ -55,7 +61,8 @@ export class LifecycleService {
 
   async upsertFromYaml(projectSlug: string, yaml: string) {
     const { parsed } = parseMergecrewYaml(yaml);
-    return this.writeNewVersion(projectSlug, parsed, yaml);
+    const merged = mergeWithDefault(parsed);
+    return this.writeNewVersion(projectSlug, merged, yaml);
   }
 
   /** Apply an org-level template as a new version of the project's lifecycle. */

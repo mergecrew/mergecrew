@@ -5,6 +5,7 @@ import { withTenant } from '@mergecrew/db';
 import type { Eventlog } from '@mergecrew/eventlog';
 import type { MergecrewConfig } from '@mergecrew/domain';
 import { newRunIdForDate, shortId } from '@mergecrew/domain';
+import { syncLifecycleFromRepo } from './lifecycle-sync.js';
 
 interface OrchestratorDeps {
   connection: Redis;
@@ -25,6 +26,18 @@ export class Orchestrator {
 
   async handleRunDue(data: { organizationId: string; projectId: string; manual?: boolean }): Promise<void> {
     const { organizationId, projectId } = data;
+
+    // Pull the project's mergecrew.yaml from its repo and persist a new
+    // Lifecycle version if it changed. Best-effort — failures fall through
+    // to whatever lifecycle version is already in the DB.
+    await syncLifecycleFromRepo({
+      organizationId,
+      projectId,
+      logger: this.deps.logger,
+    }).catch((err) => {
+      this.deps.logger.warn({ err: err?.message ?? err, projectId }, 'lifecycle-sync: unexpected error');
+    });
+
     const lc = await withTenant(organizationId, (tx) =>
       tx.lifecycle.findFirst({ where: { projectId }, orderBy: { version: 'desc' } }),
     );
