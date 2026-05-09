@@ -33,6 +33,10 @@ model User {
   /// Set once /mfa/verify accepts the first valid TOTP. NULL means the user
   /// is not enrolled.
   mfaEnrolledAt        DateTime? @map("mfa_enrolled_at") @db.Timestamptz(6)
+  /// One row per remaining single-use recovery code (sha256 hashed). On
+  /// consumption the matching row is deleted, not flipped — keeps the table
+  /// honest about how many codes remain.
+  mfaRecoveryCodes     UserMfaRecoveryCode[]
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -591,6 +595,21 @@ model Decision {
   user      User      @relation(fields: [userId], references: [id])
 
   @@map("decisions")
+}
+
+/// One row per active single-use recovery code. SHA-256 of the code, so
+/// the cleartext only exists in the response that issues them. Consuming
+/// a code deletes the row.
+model UserMfaRecoveryCode {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  codeHash    String   @unique @map("code_hash")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_mfa_recovery_codes")
 }
 
 /// Reviewer comments on a pending changeset, anchored to a file + line

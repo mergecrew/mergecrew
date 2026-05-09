@@ -17,13 +17,17 @@ export class MfaController {
 
   @Post('verify')
   async verify(@Body() body: { code: string }) {
-    await this.mfa.verify(body);
-    return { ok: true };
+    return this.mfa.verify(body);
   }
 
   @Post('disable')
   async disable(@Body() body: { code: string }) {
     await this.mfa.disable(body);
     return { ok: true };
+  }
+
+  @Post('recovery-codes/regenerate')
+  async regenerateRecoveryCodes(@Body() body: { code: string }) {
+    return this.mfa.regenerateRecoveryCodes(body);
   }
 }
