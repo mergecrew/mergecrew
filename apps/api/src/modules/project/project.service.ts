@@ -10,6 +10,11 @@ const TRACKER_TOKEN_SECRET = 'TRACKER_TOKEN';
 const SUPPORTED_TRACKERS = ['github-issues', 'linear'] as const;
 type TrackerAdapterId = (typeof SUPPORTED_TRACKERS)[number];
 
+function isPlausibleCron(s: string): boolean {
+  const parts = s.trim().split(/\s+/);
+  return parts.length === 5 || parts.length === 6;
+}
+
 @Injectable()
 export class ProjectService {
   constructor(
@@ -312,6 +317,41 @@ export class ProjectService {
       return new GitHubIssuesProvider({ installationToken: token, repoFullName });
     }
     return null;
+  }
+
+  async getSchedule(slug: string) {
+    const project = await this.detail(slug);
+    const schedule = await this.prisma.withTenant(project.organizationId, (tx) =>
+      tx.schedule.findUnique({ where: { projectId: project.id } }),
+    );
+    return schedule;
+  }
+
+  async updateSchedule(
+    slug: string,
+    input: { cron?: string; timezone?: string; enabled?: boolean },
+  ) {
+    const project = await this.detail(slug);
+    if (input.cron !== undefined && !isPlausibleCron(input.cron)) {
+      throw new ValidationError('cron must have 5 or 6 space-separated fields');
+    }
+    const data: Record<string, unknown> = {};
+    if (input.cron !== undefined) data.cron = input.cron;
+    if (input.timezone !== undefined) data.timezone = input.timezone;
+    if (input.enabled !== undefined) data.enabled = input.enabled;
+    return this.prisma.withTenant(project.organizationId, (tx) =>
+      tx.schedule.upsert({
+        where: { projectId: project.id },
+        update: data,
+        create: {
+          organizationId: project.organizationId,
+          projectId: project.id,
+          cron: input.cron ?? '0 8 * * 1-5',
+          timezone: input.timezone ?? 'UTC',
+          enabled: input.enabled ?? true,
+        },
+      }),
+    );
   }
 
   async testTracker(slug: string): Promise<{ ok: boolean; sample?: unknown; error?: string }> {

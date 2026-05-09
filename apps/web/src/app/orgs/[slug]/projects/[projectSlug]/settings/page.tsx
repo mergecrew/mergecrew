@@ -1,9 +1,12 @@
+import { revalidatePath } from 'next/cache';
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
+import { hasRole } from '@/lib/role';
 import { Card } from '@/components/ui';
 import { GeneralForm } from './general-form';
 import { RepoForm } from './repo-form';
 import { TrackerForm } from './tracker-form';
+import { ScheduleForm } from './schedule-form';
 
 export default async function ProjectSettings({
   params,
@@ -35,6 +38,12 @@ export default async function ProjectSettings({
     config: Record<string, unknown>;
     hasToken: boolean;
   } | null>(`/v1/orgs/${slug}/projects/${projectSlug}/tracker`, { session });
+  const schedule = await api<{
+    cron: string;
+    timezone: string;
+    enabled: boolean;
+  } | null>(`/v1/orgs/${slug}/projects/${projectSlug}/schedule`, { session });
+  const canEdit = await hasRole(slug, session, 'admin');
 
   return (
     <main className="mx-auto max-w-3xl space-y-6 p-6">
@@ -104,12 +113,26 @@ export default async function ProjectSettings({
 
       <Section
         title="Schedule"
-        description="When the project's daily run is triggered."
+        description="When the project's daily run fires. Cron is evaluated in the configured timezone by the worker-cron tick."
       >
-        <p className="text-sm text-zinc-500">
-          Default: every weekday at 08:00 (project timezone). Editor coming soon — change via API
-          for now.
-        </p>
+        <ScheduleForm
+          initial={schedule}
+          canEdit={canEdit}
+          onSave={async (input) => {
+            'use server';
+            try {
+              await api(`/v1/orgs/${slug}/projects/${projectSlug}/schedule`, {
+                method: 'PATCH',
+                body: JSON.stringify(input),
+                session: await requireSession(),
+              });
+              revalidatePath(`/orgs/${slug}/projects/${projectSlug}/settings`);
+              return { ok: true };
+            } catch (e: any) {
+              return { ok: false, error: String(e?.message ?? e) };
+            }
+          }}
+        />
       </Section>
     </main>
   );
