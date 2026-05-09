@@ -165,6 +165,22 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
             return { ok: false, error: String(e?.message ?? e) };
           }
         }}
+        onTest={async (id) => {
+          'use server';
+          try {
+            const r = await api<
+              | { ok: true; modelId: string; latencyMs: number; reply: string }
+              | { ok: false; error: string }
+            >(`/v1/orgs/${slug}/llm/providers/${id}/test`, {
+              method: 'POST',
+              body: '{}',
+              session: await requireSession(),
+            });
+            return r;
+          } catch (e: any) {
+            return { ok: false, error: String(e?.message ?? e) };
+          }
+        }}
       />
     </main>
   );

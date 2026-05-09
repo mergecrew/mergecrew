@@ -19,6 +19,14 @@ interface SaveResult {
   error?: string;
 }
 
+interface TestResult {
+  ok: boolean;
+  modelId?: string;
+  latencyMs?: number;
+  reply?: string;
+  error?: string;
+}
+
 interface Props {
   providers: Provider[];
   canEdit: boolean;
@@ -34,13 +42,23 @@ interface Props {
     input: { label: string; endpoint: string | null; apiKey: string | null; models: string[] | null },
   ) => Promise<SaveResult>;
   onDelete: (id: string) => Promise<SaveResult>;
+  onTest: (id: string) => Promise<TestResult>;
 }
 
-export function LlmProvidersCard({ providers, canEdit, onCreate, onUpdate, onDelete }: Props) {
+export function LlmProvidersCard({ providers, canEdit, onCreate, onUpdate, onDelete, onTest }: Props) {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, TestResult | 'pending'>>({});
+
+  const runTest = (id: string) => {
+    setTestResults((prev) => ({ ...prev, [id]: 'pending' }));
+    startTransition(async () => {
+      const r = await onTest(id);
+      setTestResults((prev) => ({ ...prev, [id]: r }));
+    });
+  };
 
   const wrap = (fn: () => Promise<SaveResult>) => {
     setError(null);
@@ -139,6 +157,13 @@ export function LlmProvidersCard({ providers, canEdit, onCreate, onUpdate, onDel
                     <Button
                       variant="secondary"
                       disabled={pending}
+                      onClick={() => runTest(p.id)}
+                    >
+                      Test
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      disabled={pending}
                       onClick={() => {
                         setEditing(p.id);
                         setCreating(false);
@@ -160,6 +185,9 @@ export function LlmProvidersCard({ providers, canEdit, onCreate, onUpdate, onDel
                 )}
               </div>
             )}
+            {testResults[p.id] && editing !== p.id && (
+              <TestResultBadge result={testResults[p.id]!} />
+            )}
           </li>
         ))}
         {providers.length === 0 && !creating && (
@@ -170,6 +198,28 @@ export function LlmProvidersCard({ providers, canEdit, onCreate, onUpdate, onDel
         )}
       </ul>
     </Card>
+  );
+}
+
+function TestResultBadge({ result }: { result: TestResult | 'pending' }) {
+  if (result === 'pending') {
+    return (
+      <div className="mt-2 rounded bg-zinc-100 px-2 py-1 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+        Pinging…
+      </div>
+    );
+  }
+  if (result.ok) {
+    return (
+      <div className="mt-2 rounded bg-emerald-50 px-2 py-1 text-xs text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300">
+        ok · <span className="font-mono">{result.modelId}</span> · {result.latencyMs}ms
+      </div>
+    );
+  }
+  return (
+    <div className="mt-2 rounded bg-rose-50 px-2 py-1 text-xs text-rose-800 dark:bg-rose-900/30 dark:text-rose-300">
+      failed: {result.error}
+    </div>
   );
 }
 

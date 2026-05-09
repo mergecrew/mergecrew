@@ -1,9 +1,21 @@
 import { Injectable } from '@nestjs/common';
-import { ProviderRegistry, CapabilityRouter, CircuitBreaker } from '@mergecrew/llm';
-import { ValidationError } from '@mergecrew/domain';
+import { HumanMessage } from '@langchain/core/messages';
+import { ProviderRegistry, CapabilityRouter, CircuitBreaker, chat } from '@mergecrew/llm';
+import { NotFoundError, ValidationError } from '@mergecrew/domain';
 import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
 import { CryptoService } from '../../common/crypto.service.js';
+
+function defaultProbeModel(kind: string): string | undefined {
+  // Cheap, widely-available models for connectivity checks. Customers can
+  // still override via the request body if these aren't available on
+  // their account.
+  if (kind === 'anthropic') return 'claude-3-5-haiku-20241022';
+  if (kind === 'openai') return 'gpt-4o-mini';
+  if (kind === 'bedrock') return 'anthropic.claude-3-haiku-20240307-v1:0';
+  if (kind === 'ollama') return 'qwen3:4b';
+  return undefined;
+}
 
 @Injectable()
 export class LlmService {
@@ -83,6 +95,72 @@ export class LlmService {
     await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.llmProvider.delete({ where: { id } }),
     );
+  }
+
+  /**
+   * One-shot probe of a provider: build the model, send "ping", measure
+   * the round-trip. 5s ceiling. Returns a small, UI-displayable shape.
+   * The optional `modelId` overrides the first declared model on the
+   * provider (useful when models[] is not populated).
+   */
+  async testProvider(
+    id: string,
+    opts: { modelId?: string } = {},
+  ): Promise<
+    | { ok: true; modelId: string; latencyMs: number; reply: string }
+    | { ok: false; error: string }
+  > {
+    const t = this.tenant.require();
+    const row = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.llmProvider.findFirst({ where: { id, organizationId: t.organizationId } }),
+    );
+    if (!row) throw new NotFoundError();
+
+    const declared = ((row.capabilityOverrides as any)?.models ?? []) as string[];
+    const modelId = opts.modelId ?? declared[0] ?? defaultProbeModel(row.kind);
+    if (!modelId) {
+      return {
+        ok: false,
+        error: 'No model id declared on the provider and no default available for this kind.',
+      };
+    }
+
+    const registry = new ProviderRegistry([
+      {
+        id: row.id,
+        kind: row.kind as any,
+        apiKey: row.credentialCiphertext ? this.crypto.decrypt(row.credentialCiphertext) : '',
+        endpoint: row.endpoint ?? undefined,
+        awsRegion: process.env.BEDROCK_REGION ?? process.env.AWS_REGION ?? 'us-east-1',
+        models: declared,
+      },
+    ]);
+
+    const ac = new AbortController();
+    const timeout = setTimeout(() => ac.abort(), 5_000);
+    try {
+      const r = await chat({
+        registry,
+        providerId: row.id,
+        modelId,
+        messages: [new HumanMessage('ping')],
+        signal: ac.signal,
+        maxTokens: 16,
+        temperature: 0,
+      });
+      return {
+        ok: true,
+        modelId,
+        latencyMs: r.latencyMs,
+        reply: r.content.slice(0, 240),
+      };
+    } catch (e: any) {
+      const msg = String(e?.message ?? e);
+      const reason = ac.signal.aborted ? 'timeout after 5s' : msg;
+      return { ok: false, error: reason };
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   async listProfiles() {

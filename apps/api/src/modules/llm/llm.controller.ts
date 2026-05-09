@@ -48,6 +48,15 @@ export class LlmController {
     return { ok: true };
   }
 
+  @Post('providers/:providerId/test')
+  @RequireRole('admin')
+  async testProvider(
+    @Param('providerId') providerId: string,
+    @Body() body: { modelId?: string } = {},
+  ) {
+    return this.llm.testProvider(providerId, { modelId: body.modelId });
+  }
+
   @Get('profiles')
   async listProfiles() {
     return { items: await this.llm.listProfiles() };
