@@ -7,7 +7,9 @@ import {
   type MergecrewConfig,
   type ModelCapability,
   type StepOutcome,
+  type TestSummary,
 } from '@mergecrew/domain';
+import { parseTestOutput, mergeIntoSummary } from './test-summary.js';
 import { Eventlog } from '@mergecrew/eventlog';
 import {
   CapabilityRouter,
@@ -362,6 +364,19 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
           eventlog,
         });
       }
+      // Capture build/test output into the active Changeset's testSummary.
+      if (BUILD_TEST_SKILLS.has(call.skillName)) {
+        await recordBuildResult({
+          organizationId,
+          projectId,
+          runId,
+          workflowRunId,
+          skillName: call.skillName,
+          output: call.output as { stdout?: string; stderr?: string; exitCode?: number } | null,
+          isError: call.isError,
+          eventlog,
+        });
+      }
     },
   });
 
@@ -468,6 +483,68 @@ async function ensureChangesetForCommit(opts: {
     type: 'CHANGESET_OPENED',
     actor: { kind: 'system' },
     payload: { branch, sha: output?.sha, title: created.title },
+  });
+}
+
+const BUILD_TEST_SKILLS = new Set([
+  'build.run_typecheck',
+  'build.run_lint',
+  'build.run_unit_tests',
+  'build.run_integration_tests',
+]);
+
+/**
+ * Update the active Changeset's testSummary after a build/test skill runs.
+ * Status transitions:
+ *   - on entry from `proposed`: → `building` (a build has started)
+ *   - if skill failed or output indicates failures: → `tests_failed`
+ *   - if skill succeeded: → `testing` (PR-open will advance to pr_open)
+ * The "active" changeset is the most recent non-terminal one for this run.
+ */
+async function recordBuildResult(opts: {
+  organizationId: string;
+  projectId: string;
+  runId: string;
+  workflowRunId: string;
+  skillName: string;
+  output: { stdout?: string; stderr?: string; exitCode?: number } | null;
+  isError: boolean;
+  eventlog: Eventlog;
+}): Promise<void> {
+  const { organizationId, projectId, runId, workflowRunId, skillName, output, isError, eventlog } = opts;
+  const cs = await withTenant(organizationId, (tx) =>
+    tx.changeset.findFirst({
+      where: {
+        dailyRunId: runId,
+        status: { in: ['proposed', 'building', 'testing', 'tests_failed'] },
+      },
+      orderBy: { updatedAt: 'desc' },
+    }),
+  );
+  if (!cs) return; // no active changeset yet (build ran before any commit)
+
+  const counts = parseTestOutput(skillName, output?.stdout ?? '', output?.stderr ?? '');
+  const failed = isError || (output?.exitCode !== undefined && output.exitCode !== 0) || counts.failed > 0;
+  const merged = mergeIntoSummary(cs.testSummary as TestSummary | null, skillName, counts);
+
+  const nextStatus = failed ? 'tests_failed' : cs.status === 'tests_failed' ? cs.status : 'testing';
+
+  await withTenant(organizationId, (tx) =>
+    tx.changeset.update({
+      where: { id: cs.id },
+      data: { testSummary: merged as any, status: nextStatus, updatedAt: new Date() },
+    }),
+  );
+
+  await eventlog.emit({
+    organizationId,
+    projectId,
+    dailyRunId: runId,
+    workflowRunId,
+    changesetId: cs.id,
+    type: failed ? 'CHANGESET_TESTS_FAILED' : 'CHANGESET_TESTS_PASSED',
+    actor: { kind: 'system' },
+    payload: { skillName, counts },
   });
 }
 
