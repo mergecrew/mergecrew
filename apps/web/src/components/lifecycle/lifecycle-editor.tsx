@@ -73,12 +73,15 @@ export function LifecycleEditor({
   sourceYaml,
   catalog,
   showApplyTemplate = false,
+  readOnly = false,
 }: {
   scope: LifecycleScope;
   parsed: ParsedConfig;
   sourceYaml: string;
   catalog: SkillCatalogEntry[];
   showApplyTemplate?: boolean;
+  /** When true, all create/edit/delete affordances are hidden. Data still renders. */
+  readOnly?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>('agents');
   const [pending, startTransition] = useTransition();
@@ -116,7 +119,12 @@ export function LifecycleEditor({
           </button>
         ))}
         <span className="ml-auto text-xs text-zinc-500">v{parsed.version ?? 1}</span>
-        {showApplyTemplate && scope.kind === 'project' && (
+        {readOnly && (
+          <span className="rounded bg-zinc-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+            read-only
+          </span>
+        )}
+        {showApplyTemplate && scope.kind === 'project' && !readOnly && (
           <Button
             variant="secondary"
             disabled={pending}
@@ -148,6 +156,7 @@ export function LifecycleEditor({
           customSkills={Object.keys(parsed.skills ?? {})}
           pending={pending}
           wrap={wrap}
+          readOnly={readOnly}
         />
       )}
       {tab === 'workflows' && (
@@ -157,6 +166,7 @@ export function LifecycleEditor({
           agents={Object.keys(parsed.agents ?? {})}
           pending={pending}
           wrap={wrap}
+          readOnly={readOnly}
         />
       )}
       {tab === 'skills' && (
@@ -166,6 +176,7 @@ export function LifecycleEditor({
           catalog={catalog}
           pending={pending}
           wrap={wrap}
+          readOnly={readOnly}
         />
       )}
       {tab === 'gates' && (
@@ -174,6 +185,7 @@ export function LifecycleEditor({
           gates={parsed.lifecycle.human_gates}
           pending={pending}
           wrap={wrap}
+          readOnly={readOnly}
         />
       )}
       {tab === 'source' && (
@@ -194,6 +206,7 @@ function AgentsTab({
   customSkills,
   pending,
   wrap,
+  readOnly,
 }: {
   scope: LifecycleScope;
   agents: Record<string, AgentDef>;
@@ -201,6 +214,7 @@ function AgentsTab({
   customSkills: string[];
   pending: boolean;
   wrap: (run: () => Promise<unknown>, ok?: string) => void;
+  readOnly: boolean;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -213,9 +227,11 @@ function AgentsTab({
           {Object.keys(agents).length} agents. Each agent is bound to a set of skills and runs as
           part of a workflow.
         </p>
-        <Button onClick={() => { setCreating(true); setEditing(null); }} variant="primary" disabled={pending}>
-          New agent
-        </Button>
+        {!readOnly && (
+          <Button onClick={() => { setCreating(true); setEditing(null); }} variant="primary" disabled={pending}>
+            New agent
+          </Button>
+        )}
       </div>
 
       {creating && (
@@ -256,19 +272,21 @@ function AgentsTab({
                     <div className="font-medium">{a.kind}</div>
                     <div className="text-xs text-zinc-500">/{ref} · {(a.skills ?? []).length} skill(s)</div>
                   </div>
-                  <div className="flex gap-2">
-                    <Button onClick={() => setEditing(ref)} variant="secondary" disabled={pending}>Edit</Button>
-                    <Button
-                      onClick={() => {
-                        if (!confirm(`Delete agent "${ref}"? It will also be removed from any workflow.`)) return;
-                        wrap(() => deleteAgentAction(scope, ref), `Agent "${ref}" deleted.`);
-                      }}
-                      variant="secondary"
-                      disabled={pending}
-                    >
-                      Delete
-                    </Button>
-                  </div>
+                  {!readOnly && (
+                    <div className="flex gap-2">
+                      <Button onClick={() => setEditing(ref)} variant="secondary" disabled={pending}>Edit</Button>
+                      <Button
+                        onClick={() => {
+                          if (!confirm(`Delete agent "${ref}"? It will also be removed from any workflow.`)) return;
+                          wrap(() => deleteAgentAction(scope, ref), `Agent "${ref}" deleted.`);
+                        }}
+                        variant="secondary"
+                        disabled={pending}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  )}
                 </div>
                 {a.description && (
                   <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{a.description}</p>
@@ -515,12 +533,14 @@ function WorkflowsTab({
   agents,
   pending,
   wrap,
+  readOnly,
 }: {
   scope: LifecycleScope;
   workflows: WorkflowDef[];
   agents: string[];
   pending: boolean;
   wrap: (run: () => Promise<unknown>, ok?: string) => void;
+  readOnly: boolean;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -532,9 +552,11 @@ function WorkflowsTab({
         <p className="text-sm text-zinc-500">
           {workflows.length} workflows. Each runs the listed agents and transitions to others when its conditions match.
         </p>
-        <Button onClick={() => { setCreating(true); setEditing(null); }} variant="primary" disabled={pending}>
-          New workflow
-        </Button>
+        {!readOnly && (
+          <Button onClick={() => { setCreating(true); setEditing(null); }} variant="primary" disabled={pending}>
+            New workflow
+          </Button>
+        )}
       </div>
 
       {creating && (
@@ -569,19 +591,21 @@ function WorkflowsTab({
               <div>
                 <div className="flex items-baseline justify-between gap-3">
                   <div className="font-mono font-medium">{w.id}</div>
-                  <div className="flex gap-2">
-                    <Button onClick={() => setEditing(w.id)} variant="secondary" disabled={pending}>Edit</Button>
-                    <Button
-                      onClick={() => {
-                        if (!confirm(`Delete workflow "${w.id}"? Other workflows pointing at it will be unlinked.`)) return;
-                        wrap(() => deleteWorkflowAction(scope, w.id), `Workflow "${w.id}" deleted.`);
-                      }}
-                      variant="secondary"
-                      disabled={pending}
-                    >
-                      Delete
-                    </Button>
-                  </div>
+                  {!readOnly && (
+                    <div className="flex gap-2">
+                      <Button onClick={() => setEditing(w.id)} variant="secondary" disabled={pending}>Edit</Button>
+                      <Button
+                        onClick={() => {
+                          if (!confirm(`Delete workflow "${w.id}"? Other workflows pointing at it will be unlinked.`)) return;
+                          wrap(() => deleteWorkflowAction(scope, w.id), `Workflow "${w.id}" deleted.`);
+                        }}
+                        variant="secondary"
+                        disabled={pending}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  )}
                 </div>
                 {w.description && (
                   <p className="mt-1 whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{w.description}</p>
@@ -739,13 +763,14 @@ function CheckboxList({
 // ─────────────── Skills tab ───────────────
 
 function SkillsTab({
-  scope, skills, catalog, pending, wrap,
+  scope, skills, catalog, pending, wrap, readOnly,
 }: {
   scope: LifecycleScope;
   skills: Record<string, CustomSkillDef>;
   catalog: SkillCatalogEntry[];
   pending: boolean;
   wrap: (run: () => Promise<unknown>, ok?: string) => void;
+  readOnly: boolean;
 }) {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
@@ -776,9 +801,11 @@ function SkillsTab({
               Project-defined skills. Overlay the stock catalog. {Object.keys(skills).length} defined.
             </p>
           </div>
-          <Button onClick={() => { setCreating(true); setEditing(null); }} variant="primary" disabled={pending}>
-            New custom skill
-          </Button>
+          {!readOnly && (
+            <Button onClick={() => { setCreating(true); setEditing(null); }} variant="primary" disabled={pending}>
+              New custom skill
+            </Button>
+          )}
         </div>
 
         {creating && (
@@ -820,19 +847,21 @@ function SkillsTab({
                       ) : null}
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Button onClick={() => setEditing(name)} variant="secondary" disabled={pending}>Edit</Button>
-                    <Button
-                      onClick={() => {
-                        if (!confirm(`Delete custom skill "${name}"?`)) return;
-                        wrap(() => deleteCustomSkillAction(scope, name), `Custom skill "${name}" deleted.`);
-                      }}
-                      variant="secondary"
-                      disabled={pending}
-                    >
-                      Delete
-                    </Button>
-                  </div>
+                  {!readOnly && (
+                    <div className="flex gap-2">
+                      <Button onClick={() => setEditing(name)} variant="secondary" disabled={pending}>Edit</Button>
+                      <Button
+                        onClick={() => {
+                          if (!confirm(`Delete custom skill "${name}"?`)) return;
+                          wrap(() => deleteCustomSkillAction(scope, name), `Custom skill "${name}" deleted.`);
+                        }}
+                        variant="secondary"
+                        disabled={pending}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </li>
@@ -988,12 +1017,13 @@ function SkillForm({
 // ─────────────── Gates tab ───────────────
 
 function GatesTab({
-  scope, gates, pending, wrap,
+  scope, gates, pending, wrap, readOnly,
 }: {
   scope: LifecycleScope;
   gates?: HumanGatesDef;
   pending: boolean;
   wrap: (run: () => Promise<unknown>, ok?: string) => void;
+  readOnly: boolean;
 }) {
   const [promote, setPromote] = useState<HumanGatesDef['production_promote']>(
     gates?.production_promote ?? 'require-approval',
@@ -1013,9 +1043,10 @@ function GatesTab({
       <label className="block text-sm">
         <span className="block text-zinc-600 dark:text-zinc-400">Production promote</span>
         <select
-          className="mt-1 w-full rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700"
+          className="mt-1 w-full rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700 disabled:opacity-60"
           value={promote}
           onChange={(e) => setPromote(e.target.value as any)}
+          disabled={readOnly}
         >
           <option value="auto">auto</option>
           <option value="notify">notify</option>
@@ -1028,16 +1059,19 @@ function GatesTab({
       <label className="block text-sm">
         <span className="block text-zinc-600 dark:text-zinc-400">Sensitive path patterns (one per line, glob)</span>
         <textarea
-          className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+          className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700 disabled:opacity-60"
           rows={5}
           value={patternsText}
           onChange={(e) => setPatternsText(e.target.value)}
+          readOnly={readOnly}
         />
         <span className="mt-1 block text-xs text-zinc-500">
           Tool calls that touch a matching path raise a gate that requires human approval.
         </span>
       </label>
-      <Button onClick={submit} disabled={pending} variant="primary">Save gates</Button>
+      {!readOnly && (
+        <Button onClick={submit} disabled={pending} variant="primary">Save gates</Button>
+      )}
     </div>
   );
 }

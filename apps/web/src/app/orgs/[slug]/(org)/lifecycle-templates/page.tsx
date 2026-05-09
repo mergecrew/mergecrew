@@ -1,5 +1,6 @@
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
+import { hasRole } from '@/lib/role';
 import { Card } from '@/components/ui';
 import {
   LifecycleEditor,
@@ -20,11 +21,14 @@ export default async function OrgLifecycleTemplatePage({
 }) {
   const { slug } = await params;
   const session = await requireSession();
-  const tpl = await api<{ name: string; sourceYaml: string; parsed: ParsedConfig } | null>(
-    `/v1/orgs/${slug}/lifecycle-templates/default`,
-    { session },
-  );
-  const catalog = await api<{ items: SkillRow[] }>('/v1/skills', { session });
+  const [tpl, catalog, canEdit] = await Promise.all([
+    api<{ name: string; sourceYaml: string; parsed: ParsedConfig } | null>(
+      `/v1/orgs/${slug}/lifecycle-templates/default`,
+      { session },
+    ),
+    api<{ items: SkillRow[] }>('/v1/skills', { session }),
+    hasRole(slug, session, 'admin'),
+  ]);
 
   if (!tpl) {
     return (
@@ -54,6 +58,7 @@ export default async function OrgLifecycleTemplatePage({
           parsed={{ ...tpl.parsed, version: 1 }}
           sourceYaml={tpl.sourceYaml ?? ''}
           catalog={catalog.items}
+          readOnly={!canEdit}
         />
       </Card>
     </main>
