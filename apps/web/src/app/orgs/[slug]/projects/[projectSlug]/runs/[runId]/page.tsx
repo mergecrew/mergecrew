@@ -1,6 +1,8 @@
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { Card } from '@/components/ui';
+import { DensityToggle } from '@/components/density-toggle';
+import { densityClasses, getDensity } from '@/lib/preferences';
 import { LiveTimeline } from './live-timeline';
 
 interface ToolCall {
@@ -83,21 +85,26 @@ export default async function RunPage({
 
   const streamUrl = `/api/v1/orgs/${slug}/projects/${projectSlug}/runs/${runId}/timeline/stream`;
   const totals = computeTotals(detail);
+  const density = await getDensity();
+  const dc = densityClasses(density);
 
   return (
-    <main className="mx-auto max-w-4xl space-y-4 p-6">
-      <header>
-        <h1 className="text-xl font-semibold">Run</h1>
-        <div className="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm text-zinc-500">
-          <StatusPill status={detail.run.status} />
-          <span>started {detail.run.startedAt ? new Date(detail.run.startedAt).toLocaleString() : '—'}</span>
-          {detail.run.finishedAt && (
-            <span>· duration {fmtDuration(detail.run.startedAt, detail.run.finishedAt)}</span>
-          )}
-          <span>· {totals.steps} agent steps · {totals.turns} model turns · {totals.tools} tool calls</span>
-          <span>· {totals.inTok.toLocaleString()} in / {totals.outTok.toLocaleString()} out tokens</span>
-          {totals.usd > 0 && <span>· ${totals.usd.toFixed(4)}</span>}
+    <main className={`mx-auto max-w-4xl ${dc.gapBlock} ${dc.pad}`}>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">Run</h1>
+          <div className={`mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1 ${dc.text} text-zinc-500`}>
+            <StatusPill status={detail.run.status} />
+            <span>started {detail.run.startedAt ? new Date(detail.run.startedAt).toLocaleString() : '—'}</span>
+            {detail.run.finishedAt && (
+              <span>· duration {fmtDuration(detail.run.startedAt, detail.run.finishedAt)}</span>
+            )}
+            <span>· {totals.steps} agent steps · {totals.turns} model turns · {totals.tools} tool calls</span>
+            <span>· {totals.inTok.toLocaleString()} in / {totals.outTok.toLocaleString()} out tokens</span>
+            {totals.usd > 0 && <span>· ${totals.usd.toFixed(4)}</span>}
+          </div>
         </div>
+        <DensityToggle revalidate={`/orgs/${slug}/projects/${projectSlug}/runs/${runId}`} />
       </header>
 
       <p className="text-sm text-zinc-600 dark:text-zinc-400">
