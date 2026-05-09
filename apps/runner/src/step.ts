@@ -380,6 +380,22 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     },
   });
 
+  // After the loop: open PRs for any active changesets that don't have one
+  // yet. Best-effort — failures log + leave the changeset in its current
+  // status so a follow-up step or human can retry.
+  if (vcs && outcome.kind !== 'failed' && outcome.kind !== 'budget_exhausted') {
+    await openPendingChangesetPrs({
+      organizationId,
+      projectId,
+      runId,
+      workflowRunId,
+      vcs,
+      workspacePath,
+      eventlog,
+      logger,
+    });
+  }
+
   // Cleanup workspace.
   await fs.rm(workspacePath, { recursive: true, force: true }).catch(() => {});
 
@@ -484,6 +500,119 @@ async function ensureChangesetForCommit(opts: {
     actor: { kind: 'system' },
     payload: { branch, sha: output?.sha, title: created.title },
   });
+}
+
+/**
+ * After an agent step completes, push every still-open changeset's branch
+ * and open a PR for it. Idempotent — changesets that already have
+ * `prNumber` are skipped. Failures are logged and don't abort the rest of
+ * the run.
+ */
+async function openPendingChangesetPrs(opts: {
+  organizationId: string;
+  projectId: string;
+  runId: string;
+  workflowRunId: string;
+  vcs: VcsProvider;
+  workspacePath: string;
+  eventlog: Eventlog;
+  logger: Logger;
+}): Promise<void> {
+  const { organizationId, projectId, runId, workflowRunId, vcs, workspacePath, eventlog, logger } = opts;
+
+  const repo = await withTenant(organizationId, (tx) =>
+    tx.connectedRepo.findUnique({ where: { projectId } }),
+  );
+  if (!repo) return;
+
+  const changesets = await withTenant(organizationId, (tx) =>
+    tx.changeset.findMany({
+      where: {
+        dailyRunId: runId,
+        prNumber: null,
+        status: { in: ['proposed', 'building', 'testing', 'tests_failed'] },
+      },
+    }),
+  );
+  if (changesets.length === 0) return;
+
+  const repoRef = {
+    installationId: repo.installationId,
+    repoId: repo.repoId ?? undefined,
+    repoFullName: repo.repoFullName,
+    defaultBranch: repo.defaultBranch,
+  };
+
+  for (const cs of changesets) {
+    try {
+      await vcs.push(workspacePath, cs.branch);
+      const body = buildPrBody(cs);
+      const pr = await vcs.openPullRequest(repoRef, {
+        head: cs.branch,
+        base: repo.defaultBranch,
+        title: cs.title,
+        body,
+        draft: cs.status === 'tests_failed',
+      });
+      await withTenant(organizationId, (tx) =>
+        tx.changeset.update({
+          where: { id: cs.id },
+          data: {
+            prNumber: pr.number,
+            prUrl: pr.url,
+            status: cs.status === 'tests_failed' ? cs.status : 'pr_open',
+            updatedAt: new Date(),
+          },
+        }),
+      );
+      await eventlog.emit({
+        organizationId,
+        projectId,
+        dailyRunId: runId,
+        workflowRunId,
+        changesetId: cs.id,
+        type: 'CHANGESET_OPENED',
+        actor: { kind: 'system' },
+        payload: { prNumber: pr.number, prUrl: pr.url, branch: cs.branch },
+      });
+    } catch (e: any) {
+      logger.warn(
+        { changesetId: cs.id, err: e?.message ?? e },
+        'auto-open-pr: failed; leaving changeset as-is',
+      );
+    }
+  }
+}
+
+function buildPrBody(cs: { title: string; whyParagraph: string | null; testSummary: unknown; id: string }): string {
+  const lines: string[] = [];
+  lines.push(`<!-- Mergecrew changeset ${cs.id} -->`);
+  lines.push('');
+  lines.push(`## ${cs.title}`);
+  lines.push('');
+  if (cs.whyParagraph) {
+    lines.push('### Why');
+    lines.push('');
+    lines.push(cs.whyParagraph);
+    lines.push('');
+  }
+  if (cs.testSummary) {
+    const ts = cs.testSummary as { passed?: number; failed?: number; suites?: Array<{ name: string; passed: number; failed: number }> };
+    lines.push('### Tests');
+    lines.push('');
+    lines.push(`Total: ${ts.passed ?? 0} passed, ${ts.failed ?? 0} failed`);
+    if (ts.suites && ts.suites.length > 0) {
+      lines.push('');
+      for (const s of ts.suites) {
+        lines.push(`- \`${s.name}\` — ${s.passed} passed, ${s.failed} failed`);
+      }
+    }
+    lines.push('');
+  }
+  lines.push('---');
+  lines.push('');
+  lines.push('_Authored by a Mergecrew agent. Review and promote, defer, or rollback in the daily digest._');
+  return lines.join('\n');
 }
 
 const BUILD_TEST_SKILLS = new Set([
