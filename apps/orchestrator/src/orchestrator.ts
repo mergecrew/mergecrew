@@ -7,6 +7,7 @@ import type { MergecrewConfig } from '@mergecrew/domain';
 import { newRunIdForDate, shortId } from '@mergecrew/domain';
 import { syncLifecycleFromRepo } from './lifecycle-sync.js';
 import { dispatchSlackDigest } from './digest-slack.js';
+import { handleSlackInteractivity } from './slack-interactivity.js';
 
 interface OrchestratorDeps {
   connection: Redis;
@@ -19,10 +20,13 @@ export class Orchestrator {
   private wake: Queue;
   private digestSlack: Queue;
 
+  private dispatchQueue: Queue;
+
   constructor(private deps: OrchestratorDeps) {
     this.runner = new Queue('runner.step', { connection: deps.connection });
     this.wake = new Queue('orchestrator.rate-limit.resume', { connection: deps.connection });
     this.digestSlack = new Queue('digest.slack', { connection: deps.connection });
+    this.dispatchQueue = new Queue('orchestrator.dispatch', { connection: deps.connection });
   }
 
   // ─── 1. Run start ───────────────────────────────────────────────────────
@@ -485,9 +489,17 @@ export class Orchestrator {
     }
   }
 
-  async handleWebhook(name: string, _data: any): Promise<void> {
+  async handleWebhook(name: string, data: any): Promise<void> {
     this.deps.logger.info({ name }, 'webhook received');
-    // V1: webhook events feed Discovery agent's input on next run.
+    if (name === 'slack') {
+      await handleSlackInteractivity(data?.event, {
+        logger: this.deps.logger,
+        eventlog: this.deps.eventlog,
+        dispatchQueue: this.dispatchQueue,
+      });
+      return;
+    }
+    // Other webhooks feed the Discovery agent's input on the next run.
   }
 
   // ─── Digest ─────────────────────────────────────────────────────────────
