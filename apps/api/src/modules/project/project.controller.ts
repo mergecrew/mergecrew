@@ -114,4 +114,18 @@ export class ProjectController {
   async testTracker(@Param('projectSlug') projectSlug: string) {
     return this.projects.testTracker(projectSlug);
   }
+
+  @Get(':projectSlug/schedule')
+  async getSchedule(@Param('projectSlug') projectSlug: string) {
+    return this.projects.getSchedule(projectSlug);
+  }
+
+  @Patch(':projectSlug/schedule')
+  @RequireRole('admin')
+  async updateSchedule(
+    @Param('projectSlug') projectSlug: string,
+    @Body() body: { cron?: string; timezone?: string; enabled?: boolean },
+  ) {
+    return this.projects.updateSchedule(projectSlug, body);
+  }
 }
