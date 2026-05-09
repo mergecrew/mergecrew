@@ -3,6 +3,7 @@ import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { hasRole } from '@/lib/role';
 import { Card, Button } from '@/components/ui';
+import { LlmProvidersCard } from '@/components/llm-providers-card';
 
 interface BudgetInfo {
   dailyBudgetUsd: number | null;
@@ -108,20 +109,63 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
           ))}
         </ul>
       </Card>
-      <Card>
-        <h2 className="font-medium">LLM providers</h2>
-        <ul className="mt-2 space-y-1 text-sm">
-          {providers.items.map((p: any) => (
-            <li key={p.id} className="flex items-baseline justify-between">
-              <span>{p.label}</span>
-              <span className="text-zinc-500">{p.kind}{p.endpoint ? ` · ${p.endpoint}` : ''}</span>
-            </li>
-          ))}
-          {providers.items.length === 0 && (
-            <li className="text-zinc-500">None configured. Add one via the API: <code>POST /v1/orgs/{slug}/llm/providers</code></li>
-          )}
-        </ul>
-      </Card>
+      <LlmProvidersCard
+        providers={providers.items as any}
+        canEdit={canEdit}
+        onCreate={async (input) => {
+          'use server';
+          try {
+            await api(`/v1/orgs/${slug}/llm/providers`, {
+              method: 'POST',
+              body: JSON.stringify({
+                kind: input.kind,
+                label: input.label,
+                apiKey: input.apiKey || undefined,
+                endpoint: input.endpoint || undefined,
+                capabilityOverrides: input.models.length > 0 ? { models: input.models } : undefined,
+              }),
+              session: await requireSession(),
+            });
+            revalidatePath(`/orgs/${slug}/settings`);
+            return { ok: true };
+          } catch (e: any) {
+            return { ok: false, error: String(e?.message ?? e) };
+          }
+        }}
+        onUpdate={async (id, input) => {
+          'use server';
+          try {
+            await api(`/v1/orgs/${slug}/llm/providers/${id}`, {
+              method: 'PATCH',
+              body: JSON.stringify({
+                label: input.label,
+                endpoint: input.endpoint,
+                apiKey: input.apiKey,
+                capabilityOverrides:
+                  input.models === null ? null : { models: input.models },
+              }),
+              session: await requireSession(),
+            });
+            revalidatePath(`/orgs/${slug}/settings`);
+            return { ok: true };
+          } catch (e: any) {
+            return { ok: false, error: String(e?.message ?? e) };
+          }
+        }}
+        onDelete={async (id) => {
+          'use server';
+          try {
+            await api(`/v1/orgs/${slug}/llm/providers/${id}`, {
+              method: 'DELETE',
+              session: await requireSession(),
+            });
+            revalidatePath(`/orgs/${slug}/settings`);
+            return { ok: true };
+          } catch (e: any) {
+            return { ok: false, error: String(e?.message ?? e) };
+          }
+        }}
+      />
     </main>
   );
 }
