@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { AppBar } from '@/components/app-bar';
+import { UserMenu } from '@/components/user-menu';
 
 export default async function OrgChromeLayout({
   children,
@@ -11,7 +12,7 @@ export default async function OrgChromeLayout({
   const { slug } = await params;
   return (
     <>
-      <AppBar orgSlug={slug} />
+      <AppBar orgSlug={slug} userMenu={<UserMenu currentOrgSlug={slug} />} />
       <div className="flex-1">{children}</div>
     </>
   );

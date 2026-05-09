@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { AppBar } from '@/components/app-bar';
+import { UserMenu } from '@/components/user-menu';
 
 export default async function ProjectLayout({
   children,
@@ -23,6 +24,7 @@ export default async function ProjectLayout({
       <AppBar
         orgSlug={slug}
         project={{ slug: projectSlug, name: project?.name ?? projectSlug }}
+        userMenu={<UserMenu currentOrgSlug={slug} />}
       />
       <div className="flex-1">{children}</div>
     </>

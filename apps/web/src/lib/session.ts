@@ -1,5 +1,8 @@
+import { cookies } from 'next/headers';
 import { auth } from '@/auth';
 import type { Session } from './api';
+
+export const SIGNED_OUT_COOKIE = 'mergecrew_signed_out';
 
 export function isDevAutoLogin(): boolean {
   const raw =
@@ -45,7 +48,13 @@ async function devExchange(): Promise<Session | null> {
   }
 }
 
+async function isManuallySignedOut(): Promise<boolean> {
+  const c = await cookies();
+  return c.get(SIGNED_OUT_COOKIE)?.value === '1';
+}
+
 export async function getSession(): Promise<Session | null> {
+  if (await isManuallySignedOut()) return null;
   if (isDevAutoLogin()) return devExchange();
   const s = await auth();
   if (!s?.user?.email) return null;

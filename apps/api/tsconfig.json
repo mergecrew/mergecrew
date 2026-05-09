@@ -3,6 +3,7 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
     "module": "CommonJS",
     "moduleResolution": "Node",
     "experimentalDecorators": true,

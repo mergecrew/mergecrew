@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ArrowLeft, ChevronRight } from 'lucide-react';
@@ -28,9 +29,11 @@ const PROJECT_ITEMS = [
 export function AppBar({
   orgSlug,
   project,
+  userMenu,
 }: {
   orgSlug: string;
   project?: { slug: string; name: string };
+  userMenu?: ReactNode;
 }) {
   const pathname = usePathname();
   const inProject = !!project;
@@ -48,7 +51,7 @@ export function AppBar({
           <ArrowLeft size={14} />
         </Link>
       )}
-      <Link href="/" className="font-semibold hover:opacity-80">
+      <Link href={`/orgs/${orgSlug}`} className="font-semibold hover:opacity-80">
         Mergecrew
       </Link>
       <span className="text-zinc-400">·</span>
@@ -85,6 +88,7 @@ export function AppBar({
           </Link>
         );
       })}
+      {userMenu && <div className="ml-auto">{userMenu}</div>}
     </nav>
   );
 }
