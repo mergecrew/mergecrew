@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { LlmService } from './llm.service.js';
 import { RequireRole, RoleGuard } from '../../common/role.guard.js';
 
@@ -24,6 +24,28 @@ export class LlmController {
     },
   ) {
     return this.llm.createProvider(body);
+  }
+
+  @Patch('providers/:providerId')
+  @RequireRole('admin')
+  async updateProvider(
+    @Param('providerId') providerId: string,
+    @Body()
+    body: {
+      label?: string;
+      endpoint?: string | null;
+      apiKey?: string | null;
+      capabilityOverrides?: Record<string, unknown> | null;
+    },
+  ) {
+    return this.llm.updateProvider(providerId, body);
+  }
+
+  @Delete('providers/:providerId')
+  @RequireRole('admin')
+  async deleteProvider(@Param('providerId') providerId: string) {
+    await this.llm.deleteProvider(providerId);
+    return { ok: true };
   }
 
   @Get('profiles')

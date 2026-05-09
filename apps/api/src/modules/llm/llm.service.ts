@@ -54,6 +54,37 @@ export class LlmService {
     );
   }
 
+  async updateProvider(
+    id: string,
+    input: {
+      label?: string;
+      endpoint?: string | null;
+      apiKey?: string | null;
+      capabilityOverrides?: Record<string, unknown> | null;
+    },
+  ) {
+    const t = this.tenant.require();
+    const data: Record<string, unknown> = {};
+    if (input.label !== undefined) data.label = input.label;
+    if (input.endpoint !== undefined) data.endpoint = input.endpoint;
+    if (input.apiKey !== undefined) {
+      data.credentialCiphertext = input.apiKey === null ? null : this.crypto.encrypt(input.apiKey);
+    }
+    if (input.capabilityOverrides !== undefined) {
+      data.capabilityOverrides = input.capabilityOverrides as any;
+    }
+    return this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.llmProvider.update({ where: { id }, data }),
+    );
+  }
+
+  async deleteProvider(id: string) {
+    const t = this.tenant.require();
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.llmProvider.delete({ where: { id } }),
+    );
+  }
+
   async listProfiles() {
     const t = this.tenant.require();
     return this.prisma.withTenant(t.organizationId, (tx) =>
