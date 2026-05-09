@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { NotFoundError, GateRequiredError, type DecisionKind } from '@mergecrew/domain';
+import { NotFoundError, GateRequiredError, ValidationError, type DecisionKind } from '@mergecrew/domain';
+import { GitHubProvider, type PullRequestFile } from '@mergecrew/adapters-vcs';
 import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
 import { QueueService } from '../../common/queue.service.js';
@@ -126,6 +127,39 @@ export class ChangesetService {
     });
 
     return decision;
+  }
+
+  async getDiff(csId: string): Promise<{ prNumber: number; files: PullRequestFile[] }> {
+    const t = this.tenant.require();
+    const cs = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.changeset.findFirst({ where: { id: csId, organizationId: t.organizationId } }),
+    );
+    if (!cs) throw new NotFoundError();
+    if (!cs.prNumber) {
+      throw new ValidationError('changeset has no open PR — diff is not available yet');
+    }
+    const repo = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.connectedRepo.findUnique({ where: { projectId: cs.projectId } }),
+    );
+    if (!repo) {
+      throw new ValidationError('project has no connected repo — cannot fetch diff');
+    }
+    if (!process.env.GITHUB_APP_ID || !process.env.GITHUB_APP_PRIVATE_KEY) {
+      throw new ValidationError('GitHub App not configured on this server');
+    }
+    const provider = new GitHubProvider({
+      appId: process.env.GITHUB_APP_ID,
+      privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
+    });
+    const files = await provider.getPullRequestFiles(
+      {
+        installationId: repo.installationId,
+        repoFullName: repo.repoFullName,
+        defaultBranch: repo.defaultBranch,
+      },
+      cs.prNumber,
+    );
+    return { prNumber: cs.prNumber, files };
   }
 
   async groupPromote(projectSlug: string, dateISO: string, ids: string[]) {

@@ -6,13 +6,16 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type {
   ConnectedRepoRef,
+  FileChangeStatus,
   MergeOpts,
   MergeResult,
   PullRequest,
+  PullRequestFile,
   PullRequestOpts,
   VcsEvent,
   VcsProvider,
 } from './types.js';
+import { parseUnifiedPatch } from './parse-patch.js';
 
 interface GitHubProviderConfig {
   appId: string;
@@ -222,6 +225,29 @@ export class GitHubProvider implements VcsProvider {
     return { contentBase64: data.content };
   }
 
+  async getPullRequestFiles(
+    repo: ConnectedRepoRef,
+    prNumber: number,
+  ): Promise<PullRequestFile[]> {
+    const kit = await this.kit(repo.installationId);
+    const { owner, name } = parseRepo(repo.repoFullName);
+    // Paginate — large PRs return >100 files.
+    const files = await kit.paginate(kit.pulls.listFiles, {
+      owner,
+      repo: name,
+      pull_number: prNumber,
+      per_page: 100,
+    });
+    return files.map((f) => ({
+      path: f.filename,
+      oldPath: f.previous_filename ?? null,
+      status: mapStatus(f.status),
+      additions: f.additions,
+      deletions: f.deletions,
+      hunks: parseUnifiedPatch(f.patch),
+    }));
+  }
+
   // ─── webhooks ───────────────────────────────────────────────────────────
 
   async verifyWebhookSignature(
@@ -302,4 +328,14 @@ function parseRepo(full: string): { owner: string; name: string } {
 
 function shortSha(sha: string): string {
   return sha.slice(0, 7);
+}
+
+function mapStatus(s: string): FileChangeStatus {
+  // GitHub's `files[].status` covers added / removed / modified / renamed /
+  // copied / changed / unchanged. We collapse copied into added and changed
+  // and unchanged into modified — they don't carry distinct review intent.
+  if (s === 'added' || s === 'copied') return 'added';
+  if (s === 'removed') return 'removed';
+  if (s === 'renamed') return 'renamed';
+  return 'modified';
 }

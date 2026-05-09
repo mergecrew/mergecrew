@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { Card, Chip } from '@/components/ui';
@@ -12,9 +13,19 @@ export default async function ChangesetDetail({
   const cs = await api<any>(`/v1/orgs/${slug}/projects/${projectSlug}/changesets/${csId}`, { session });
   return (
     <main className="mx-auto max-w-3xl p-6 space-y-4">
-      <header>
-        <h1 className="text-xl font-semibold">{cs.title}</h1>
-        <p className="text-sm font-mono text-zinc-500">{cs.id} · <Chip>{cs.status}</Chip></p>
+      <header className="flex items-baseline justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">{cs.title}</h1>
+          <p className="text-sm font-mono text-zinc-500">{cs.id} · <Chip>{cs.status}</Chip></p>
+        </div>
+        {cs.prNumber && (
+          <Link
+            href={`/orgs/${slug}/projects/${projectSlug}/changesets/${csId}/diff`}
+            className="rounded border px-3 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800"
+          >
+            View diff
+          </Link>
+        )}
       </header>
       {cs.whyParagraph && (
         <Card>

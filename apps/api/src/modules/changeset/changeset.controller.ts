@@ -23,6 +23,11 @@ export class ChangesetController {
     return this.cs.get(csId);
   }
 
+  @Get('changesets/:csId/diff')
+  async diff(@Param('csId') csId: string) {
+    return this.cs.getDiff(csId);
+  }
+
   @Post('changesets/:csId/decisions')
   @RequireRole('operator')
   async decide(@Param('csId') csId: string, @Body() body: { kind: DecisionKind; comment?: string }) {
