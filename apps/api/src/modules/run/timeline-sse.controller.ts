@@ -1,4 +1,4 @@
-import { Controller, Param, Req, Res, Get } from '@nestjs/common';
+import { Controller, Param, Query, Req, Res, Get } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { RunService } from './run.service.js';
 import { EventlogService } from '../../common/eventlog.service.js';
@@ -8,7 +8,12 @@ export class TimelineSseController {
   constructor(private runs: RunService, private elSvc: EventlogService) {}
 
   @Get('stream')
-  async stream(@Param('runId') runId: string, @Req() req: Request, @Res() res: Response) {
+  async stream(
+    @Param('runId') runId: string,
+    @Query('lastEventId') lastEventIdQuery: string | undefined,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
     res.set({
       'content-type': 'text/event-stream',
       'cache-control': 'no-cache, no-transform',
@@ -17,7 +22,10 @@ export class TimelineSseController {
     });
     res.flushHeaders?.();
 
-    const lastEventId = req.header('last-event-id') ?? undefined;
+    // Prefer the standard SSE header that browsers set on auto-reconnect;
+    // accept a query param fallback for clients (Node test scripts, native
+    // EventSource without header support) that can't set the header.
+    const lastEventId = req.header('last-event-id') ?? lastEventIdQuery ?? undefined;
 
     // 1. Backfill from durable log up to "now".
     const backfill = await this.runs.timeline(runId, lastEventId);
