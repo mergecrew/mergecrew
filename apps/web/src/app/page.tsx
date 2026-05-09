@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/session';
 import { api } from '@/lib/api';
 import { LinkButton } from '@/components/ui';
@@ -14,7 +14,9 @@ export default async function RootPage() {
     orgs = { items: [] };
   }
 
-  if (orgs.items.length === 0) {
+  const firstSlug = orgs.items[0]?.slug;
+
+  if (!firstSlug) {
     return (
       <main className="mx-auto max-w-2xl p-12">
         <h1 className="text-2xl font-semibold">Welcome to Mergecrew</h1>
@@ -26,24 +28,7 @@ export default async function RootPage() {
     );
   }
 
-  return (
-    <main className="mx-auto max-w-2xl p-8">
-      <h1 className="mb-4 text-xl font-semibold">Your organizations</h1>
-      <ul className="space-y-2">
-        {orgs.items.map((o) => (
-          <li key={o.slug}>
-            <Link
-              className="block rounded border px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-900"
-              href={`/orgs/${o.slug}`}
-            >
-              <div className="font-medium">{o.name}</div>
-              <div className="text-sm text-zinc-500">/{o.slug}</div>
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </main>
-  );
+  redirect(`/orgs/${firstSlug}`);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
