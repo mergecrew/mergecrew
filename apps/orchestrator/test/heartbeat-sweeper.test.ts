@@ -205,4 +205,59 @@ describe('HeartbeatSweeper', () => {
     const step = await prisma.agentStep.findUnique({ where: { id: seed.stepId } });
     expect(step?.status).toBe('running');
   });
+
+  it('per-attempt backoff: skips a stale step on attempt 2 when within the doubled window', async () => {
+    // attempt=2 ⇒ threshold = 90s × 2 = 180s. Heartbeat 120s old is past
+    // the base 90s SQL filter (so the sweeper sees it) but inside the
+    // attempt-2 backoff window — must NOT re-dispatch yet.
+    const seed = await seedRunningStep({
+      slug: 'bo-skip',
+      attempt: 2,
+      heartbeatAgeMs: 120_000,
+    });
+    seeds.push(seed);
+
+    const sweeper = new HeartbeatSweeper({
+      runnerQueue,
+      eventlog: eventlogStub,
+      logger: pino({ level: 'silent' }),
+    });
+
+    const beforeWaiting = await runnerQueue.getWaitingCount();
+    await (sweeper as any).tick();
+    const afterWaiting = await runnerQueue.getWaitingCount();
+
+    const step = await prisma.agentStep.findUnique({ where: { id: seed.stepId } });
+    // Status untouched, heartbeat untouched (no refresh), no new queue job.
+    expect(step?.status).toBe('running');
+    expect(afterWaiting).toBe(beforeWaiting);
+  });
+
+  it('per-attempt backoff: re-dispatches once the attempt-2 window elapses', async () => {
+    // attempt=2 ⇒ threshold = 180s. Heartbeat 200s old is past it.
+    const seed = await seedRunningStep({
+      slug: 'bo-fire',
+      attempt: 2,
+      heartbeatAgeMs: 200_000,
+    });
+    seeds.push(seed);
+
+    const events = new QueueEvents('runner.step', { connection: conn.duplicate() });
+    await events.waitUntilReady();
+    let added = 0;
+    events.on('added', (job) => {
+      if (job.name === 'step') added++;
+    });
+
+    const sweeper = new HeartbeatSweeper({
+      runnerQueue,
+      eventlog: eventlogStub,
+      logger: pino({ level: 'silent' }),
+    });
+    await (sweeper as any).tick();
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(added).toBeGreaterThanOrEqual(1);
+    await events.close();
+  });
 });

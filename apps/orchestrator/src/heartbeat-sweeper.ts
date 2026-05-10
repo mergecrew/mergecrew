@@ -17,6 +17,15 @@ import type { Eventlog } from '@mergecrew/eventlog';
  * Beyond it the step is marked `failed` with reason `runner_dead` so a
  * loop in the user's code or a poison pill input doesn't spin forever.
  *
+ * **Per-attempt exponential backoff (#189).** A poison-pill input would
+ * otherwise burn through `maxAttempts` re-dispatches in `staleAfterMs *
+ * maxAttempts` time (~4.5 min at defaults). To slow that down, each
+ * subsequent attempt waits 2× longer than the previous before being
+ * re-dispatched: 90s, 180s, 360s, … capped at one hour. The cap-reached
+ * path (mark failed at maxAttempts) still fires at the base threshold so
+ * operators don't have to wait for the longest backoff to learn a step
+ * gave up.
+ *
  * The scan itself runs from a single orchestrator instance; if multiple
  * orchestrators are running, BullMQ's job-level locks on the
  * `runner.step` queue still keep each step single-flighted, so duplicate
@@ -66,6 +75,17 @@ export class HeartbeatSweeper {
       clearInterval(this.timer);
       this.timer = undefined;
     }
+  }
+
+  /**
+   * Per-attempt staleness threshold. Doubles each attempt (90s → 180s →
+   * 360s at defaults) so a poison-pill input doesn't churn the
+   * `maxAttempts` budget in a few minutes. Capped at one hour to keep
+   * unbounded attempts from sleeping forever.
+   */
+  private staleThresholdFor(attempt: number): number {
+    const exp = Math.max(0, attempt - 1);
+    return Math.min(this.staleAfterMs * Math.pow(2, exp), 3_600_000);
   }
 
   private async tick(): Promise<void> {
@@ -127,7 +147,9 @@ export class HeartbeatSweeper {
 
     if (attempt >= this.maxAttempts) {
       // Cap reached. Mark failed so the workflow advances rather than
-      // stalling on a step nobody will pick up.
+      // stalling on a step nobody will pick up. Cap-reached fires at
+      // the base threshold (no backoff) so operators don't wait an
+      // hour to learn a poison-pill step gave up.
       await withTenant(organizationId, (tx) =>
         tx.agentStep.updateMany({
           where: { id: stepId, status: 'running' },
@@ -156,6 +178,21 @@ export class HeartbeatSweeper {
       this.deps.logger.warn(
         { stepId, attempt, staleSeconds },
         'sweeper: step exceeded max attempts, marked failed',
+      );
+      return;
+    }
+
+    // Per-attempt exponential backoff before re-dispatch (#189). The SQL
+    // filter picks up anything past the base threshold; once attempt >=
+    // 2, hold off until the attempt-specific window has elapsed so a
+    // poison-pill doesn't burn the whole budget in a few minutes.
+    const ageMs =
+      step.heartbeatAt ? Date.now() - step.heartbeatAt.getTime() : Number.POSITIVE_INFINITY;
+    const threshold = this.staleThresholdFor(attempt);
+    if (ageMs < threshold) {
+      this.deps.logger.debug(
+        { stepId, attempt, ageMs, threshold },
+        'sweeper: still in per-attempt backoff window, skipping re-dispatch',
       );
       return;
     }
