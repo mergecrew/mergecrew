@@ -181,6 +181,16 @@ export class Orchestrator {
       );
       return;
     }
+    if (run?.status === 'paused_gate' || run?.status === 'paused_rate_limit') {
+      // A different step in the same run is paused on a gate or rate-limit.
+      // Don't pile new steps onto an already-paused run; the resume path
+      // re-dispatches what's needed.
+      this.deps.logger.info(
+        { runId, agentRef, status: run.status },
+        'dispatch: skipping step — run is paused',
+      );
+      return;
+    }
 
     // Per-org concurrency cap (V1.3, #9). If the org has more in-flight
     // (pending or running) steps than its cap, defer this dispatch by
@@ -281,10 +291,37 @@ export class Orchestrator {
       | { kind: 'failed'; reason: string }
       | { kind: 'rate_limited'; retryAfterMs: number; providerKind?: string }
       | { kind: 'gated_reject'; reason: string }
+      | { kind: 'gate_pending'; approvalId: string; reason?: string }
       | { kind: 'cancelled' }
       | { kind: 'budget_exhausted'; reason?: string };
   }): Promise<void> {
     const { organizationId, projectId, runId, workflowRunId, stepId, outcome } = data;
+    if (outcome.kind === 'gate_pending') {
+      // Runner persisted an ApprovalRequest + RunPause(kind='gate') already.
+      // We just transition the run + step into paused_gate and stop here —
+      // we explicitly do NOT advance the workflow. resumeGate re-dispatches
+      // this step once a human approves.
+      await withTenant(organizationId, (tx) =>
+        tx.agentStep.update({
+          where: { id: stepId },
+          data: { status: 'paused_gate' },
+        }),
+      );
+      await withTenant(organizationId, (tx) =>
+        tx.dailyRun.update({ where: { id: runId }, data: { status: 'paused_gate' } }),
+      );
+      await this.deps.eventlog.emit({
+        organizationId,
+        projectId,
+        dailyRunId: runId,
+        workflowRunId,
+        agentStepId: stepId,
+        type: 'RUN_PAUSED_GATE',
+        actor: { kind: 'system' },
+        payload: { approvalId: outcome.approvalId, reason: outcome.reason },
+      });
+      return;
+    }
     if (outcome.kind === 'rate_limited') {
       await withTenant(organizationId, (tx) =>
         tx.runPause.create({
@@ -388,9 +425,16 @@ export class Orchestrator {
     runId: string,
     workflowRunId: string,
   ) {
+    // A workflow advances only when every step has reached a terminal
+    // state (done/failed/cancelled). Steps paused on a gate or rate-limit
+    // are still in flight — counting them as "remaining" keeps the
+    // workflow from advancing past a step a human still needs to approve.
     const remaining = await withTenant(organizationId, (tx) =>
       tx.agentStep.count({
-        where: { workflowRunId, status: { in: ['pending', 'running'] } },
+        where: {
+          workflowRunId,
+          status: { notIn: ['done', 'failed', 'cancelled'] },
+        },
       }),
     );
     if (remaining > 0) return;
@@ -523,24 +567,122 @@ export class Orchestrator {
   }
 
   async resumeGate(data: { approvalId: string; resolution: 'approve' | 'reject' | 'takeover' }): Promise<void> {
-    // Find the approval, mark related run as resumed, redispatch.
-    // We use system bypass to find the org first; once known we use tenant scope.
+    // Look up the approval (system bypass — org is unknown until we read it)
+    // then scope every subsequent write to that org via withTenant.
     const ar = await (await import('@mergecrew/db')).withSystem((tx) =>
       tx.approvalRequest.findUnique({ where: { id: data.approvalId } }),
     );
     if (!ar) return;
-    if (data.resolution !== 'approve') return; // reject/takeover stop the workflow
-    await withTenant(ar.organizationId, (tx) =>
-      tx.runPause.updateMany({
-        where: { approvalRequestId: ar.id, resumedAt: null, kind: 'gate' },
-        data: { resumedAt: new Date() },
+
+    // The RunPause row records exactly which run + step were waiting on
+    // this approval. We scope by that, not by org-wide `status='paused_gate'`
+    // — sibling runs paused on different gates must stay paused.
+    const pause = await withTenant(ar.organizationId, (tx) =>
+      tx.runPause.findFirst({
+        where: { approvalRequestId: ar.id, kind: 'gate', resumedAt: null },
       }),
     );
+    if (!pause) {
+      this.deps.logger.info(
+        { approvalId: ar.id, resolution: data.resolution },
+        'resumeGate: no open RunPause for this approval — already resumed or never paused',
+      );
+      return;
+    }
+
     await withTenant(ar.organizationId, (tx) =>
-      tx.dailyRun.updateMany({
-        where: { id: { not: undefined }, status: 'paused_gate' },
-        data: { status: 'running' },
+      tx.runPause.update({ where: { id: pause.id }, data: { resumedAt: new Date() } }),
+    );
+
+    // Only flip daily_run back to 'running' when no other gate or
+    // rate-limit pause is still open for this run — otherwise we'd
+    // un-pause a run that's still waiting on a sibling gate or wake.
+    const stillPaused = await withTenant(ar.organizationId, (tx) =>
+      tx.runPause.count({
+        where: { dailyRunId: pause.dailyRunId, resumedAt: null },
       }),
+    );
+
+    if (data.resolution !== 'approve') {
+      if (pause.stepId) {
+        await withTenant(ar.organizationId, (tx) =>
+          tx.agentStep.update({
+            where: { id: pause.stepId! },
+            data: {
+              status: 'failed',
+              failureReason: `gate_${data.resolution}`,
+              finishedAt: new Date(),
+            },
+          }),
+        );
+      }
+      if (stillPaused === 0) {
+        await withTenant(ar.organizationId, (tx) =>
+          tx.dailyRun.update({
+            where: { id: pause.dailyRunId },
+            data: { status: 'running' },
+          }),
+        );
+      }
+      await this.deps.eventlog.emit({
+        organizationId: ar.organizationId,
+        projectId: ar.projectId,
+        dailyRunId: pause.dailyRunId,
+        agentStepId: pause.stepId ?? null,
+        type: 'RUN_RESUMED',
+        actor: { kind: 'system' },
+        payload: { resolution: data.resolution },
+      });
+      if (pause.stepId) {
+        await this.maybeAdvanceWorkflow(ar.organizationId, ar.projectId, pause.dailyRunId, ar.workflowRunId);
+      }
+      return;
+    }
+
+    // Approve: re-dispatch the same step. The runner is idempotent on
+    // agent_steps.id so a re-run from the top is safe; the step's `input`
+    // carries the original agentRef.
+    if (stillPaused === 0) {
+      await withTenant(ar.organizationId, (tx) =>
+        tx.dailyRun.update({
+          where: { id: pause.dailyRunId },
+          data: { status: 'running' },
+        }),
+      );
+    }
+    await this.deps.eventlog.emit({
+      organizationId: ar.organizationId,
+      projectId: ar.projectId,
+      dailyRunId: pause.dailyRunId,
+      agentStepId: pause.stepId ?? null,
+      type: 'RUN_RESUMED',
+      actor: { kind: 'system' },
+      payload: { resolution: 'approve' },
+    });
+
+    if (!pause.stepId) return;
+    const step = await withTenant(ar.organizationId, (tx) =>
+      tx.agentStep.findUnique({ where: { id: pause.stepId! } }),
+    );
+    if (!step) return;
+    await withTenant(ar.organizationId, (tx) =>
+      tx.agentStep.update({
+        where: { id: step.id },
+        data: { status: 'pending' },
+      }),
+    );
+    const input = step.input as any;
+    await this.runner.add(
+      'step',
+      {
+        organizationId: ar.organizationId,
+        projectId: ar.projectId,
+        runId: pause.dailyRunId,
+        workflowRunId: ar.workflowRunId,
+        stepId: step.id,
+        agentRef: input?.agentRef,
+      },
+      { removeOnComplete: 1000 },
     );
   }
 
