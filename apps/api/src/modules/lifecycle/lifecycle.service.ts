@@ -154,6 +154,79 @@ export class LifecycleService {
     return this.writeNewVersion(projectSlug, cfg);
   }
 
+  /**
+   * Get persisted node positions for the visual lifecycle editor
+   * (V2.1 phase 2, #195). Returns a map of `workflowId → { x, y }`.
+   * Empty when no positions are saved — the caller renders the
+   * BFS-by-depth fallback layout.
+   */
+  async getGraphLayout(
+    projectSlug: string,
+  ): Promise<Record<string, { x: number; y: number }>> {
+    const t = this.tenant.require();
+    const project = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.project.findFirst({ where: { slug: projectSlug, organizationId: t.organizationId } }),
+    );
+    if (!project) throw new NotFoundError();
+    const rows = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.lifecycleGraphLayout.findMany({ where: { projectId: project.id } }),
+    );
+    const out: Record<string, { x: number; y: number }> = {};
+    for (const r of rows) out[r.workflowId] = { x: r.x, y: r.y };
+    return out;
+  }
+
+  /**
+   * Persist node positions for the visual lifecycle editor (V2.1
+   * phase 2, #195). The body is the full set of positions for the
+   * project; we upsert every supplied position and delete any saved
+   * row whose workflowId isn't in the body, so removing a workflow
+   * from the YAML cleans up its layout in the same transaction.
+   */
+  async setGraphLayout(
+    projectSlug: string,
+    positions: Record<string, { x: number; y: number }>,
+  ): Promise<{ count: number }> {
+    const t = this.tenant.require();
+    const project = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.project.findFirst({ where: { slug: projectSlug, organizationId: t.organizationId } }),
+    );
+    if (!project) throw new NotFoundError();
+
+    const entries = Object.entries(positions ?? {});
+    for (const [, pos] of entries) {
+      if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) {
+        throw new ValidationError('positions must be { workflowId: { x: number, y: number } }');
+      }
+    }
+    const ids = entries.map(([id]) => id);
+
+    // `withTenant` already runs us inside a Prisma transaction with the
+    // tenant `org_id` set for RLS — no nested $transaction needed.
+    await this.prisma.withTenant(t.organizationId, async (tx) => {
+      await tx.lifecycleGraphLayout.deleteMany({
+        where: {
+          projectId: project.id,
+          ...(ids.length > 0 ? { workflowId: { notIn: ids } } : {}),
+        },
+      });
+      for (const [workflowId, pos] of entries) {
+        await tx.lifecycleGraphLayout.upsert({
+          where: { projectId_workflowId: { projectId: project.id, workflowId } },
+          update: { x: Math.round(pos.x), y: Math.round(pos.y) },
+          create: {
+            organizationId: t.organizationId,
+            projectId: project.id,
+            workflowId,
+            x: Math.round(pos.x),
+            y: Math.round(pos.y),
+          },
+        });
+      }
+    });
+    return { count: entries.length };
+  }
+
   private async writeNewVersion(
     projectSlug: string,
     parsed: MergecrewConfig,

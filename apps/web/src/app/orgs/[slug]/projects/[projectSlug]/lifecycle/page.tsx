@@ -21,16 +21,22 @@ export default async function LifecyclePage({
 }) {
   const { slug, projectSlug } = await params;
   const session = await requireSession();
-  const [lc, catalog, canEdit] = await Promise.all([
+  const [lc, catalog, canEdit, layout] = await Promise.all([
     api<{ version: number; sourceYaml: string; parsed: ParsedConfig }>(
       `/v1/orgs/${slug}/projects/${projectSlug}/lifecycle`,
       { session },
     ),
     api<{ items: SkillRow[] }>('/v1/skills', { session }),
     hasRole(slug, session, 'admin'),
+    // V2.1 phase 2 (#195): persisted node positions, applied if present.
+    api<{ positions: Record<string, { x: number; y: number }> }>(
+      `/v1/orgs/${slug}/projects/${projectSlug}/lifecycle/graph-layout`,
+      { session },
+    ).catch(() => ({ positions: {} })),
   ]);
 
   const scope: LifecycleScope = { kind: 'project', orgSlug: slug, projectSlug };
+  const canEditOrOperator = await hasRole(slug, session, 'operator');
 
   return (
     <main className="mx-auto max-w-4xl space-y-4 p-6">
@@ -49,6 +55,8 @@ export default async function LifecyclePage({
           catalog={catalog.items}
           showApplyTemplate
           readOnly={!canEdit}
+          graphLayout={layout.positions}
+          graphLayoutEditable={canEditOrOperator}
         />
       </Card>
     </main>

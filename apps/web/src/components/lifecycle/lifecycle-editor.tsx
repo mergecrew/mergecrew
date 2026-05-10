@@ -75,6 +75,8 @@ export function LifecycleEditor({
   catalog,
   showApplyTemplate = false,
   readOnly = false,
+  graphLayout = {},
+  graphLayoutEditable = false,
 }: {
   scope: LifecycleScope;
   parsed: ParsedConfig;
@@ -83,6 +85,17 @@ export function LifecycleEditor({
   showApplyTemplate?: boolean;
   /** When true, all create/edit/delete affordances are hidden. Data still renders. */
   readOnly?: boolean;
+  /**
+   * Persisted positions for graph nodes (V2.1 phase 2, #195). Applied
+   * on top of the BFS-by-depth fallback layout.
+   */
+  graphLayout?: Record<string, { x: number; y: number }>;
+  /**
+   * When true, dragging nodes in the Graph tab persists their new
+   * positions via the BFF action. Mirrors `readOnly` but scoped to
+   * graph layout — operator+ can move nodes; viewer cannot.
+   */
+  graphLayoutEditable?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>('agents');
   const [pending, startTransition] = useTransition();
@@ -149,7 +162,14 @@ export function LifecycleEditor({
         </div>
       )}
 
-      {tab === 'graph' && <LifecycleGraph parsed={parsed} />}
+      {tab === 'graph' && (
+        <LifecycleGraph
+          parsed={parsed}
+          scope={scope}
+          initialLayout={graphLayout}
+          editable={graphLayoutEditable}
+        />
+      )}
       {tab === 'agents' && (
         <AgentsTab
           scope={scope}
