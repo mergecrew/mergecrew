@@ -4,9 +4,10 @@ import 'reflect-metadata';
 (BigInt.prototype as any).toJSON = function () { return this.toString(); };
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { SwaggerModule } from '@nestjs/swagger';
 import { JwtService } from '@nestjs/jwt';
 import { AppModule } from './app.module.js';
+import { buildOpenApiDocumentConfig } from './openapi-config.js';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 import { PrismaService } from './common/prisma.service.js';
 import { stampUserContextOnRequest } from './common/tenant-context.service.js';
@@ -99,12 +100,7 @@ async function bootstrap() {
     }
   });
 
-  const swagger = new DocumentBuilder()
-    .setTitle('Mergecrew API')
-    .setVersion('1.0.0')
-    .addBearerAuth()
-    .build();
-  const doc = SwaggerModule.createDocument(app, swagger);
+  const doc = SwaggerModule.createDocument(app, buildOpenApiDocumentConfig());
   SwaggerModule.setup('v1/openapi', app, doc, {
     jsonDocumentUrl: 'v1/openapi.json',
   });

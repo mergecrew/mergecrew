@@ -47,3 +47,10 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm build
       - run: pnpm test --if-present
+      - name: OpenAPI spec is up to date
+        run: |
+          pnpm --filter @mergecrew/api openapi:export
+          git diff --exit-code -- docs/openapi.json || {
+            echo "::error::docs/openapi.json is stale. Run 'pnpm --filter @mergecrew/api openapi:export' and commit the result."
+            exit 1
+          }
