@@ -7,7 +7,8 @@
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "default": "./dist/index.js" } },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@mergecrew/domain": "workspace:*",
@@ -15,5 +16,5 @@
     "@octokit/rest": "^21.0.2",
     "execa": "^8.0.1"
   },
-  "devDependencies": { "typescript": "^5.6.2" }
+  "devDependencies": { "typescript": "^5.6.2", "vitest": "^2.1.1" }
 }
