@@ -253,6 +253,20 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/projects/{projectSlug}/deploy-targets/{kind}": {
+      "delete": {
+        "operationId": "ProjectController_deleteDeployTarget",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/projects/{projectSlug}/secrets": {
       "get": {
         "operationId": "ProjectController_listSecrets",

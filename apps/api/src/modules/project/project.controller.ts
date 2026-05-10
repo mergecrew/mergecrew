@@ -68,6 +68,16 @@ export class ProjectController {
     return this.projects.upsertDeployTarget(projectSlug, body);
   }
 
+  @Delete(':projectSlug/deploy-targets/:kind')
+  @RequireRole('admin')
+  async deleteDeployTarget(
+    @Param('projectSlug') projectSlug: string,
+    @Param('kind') kind: 'dev' | 'staging' | 'prod',
+  ) {
+    await this.projects.deleteDeployTarget(projectSlug, kind);
+    return { ok: true };
+  }
+
   @Get(':projectSlug/secrets')
   async listSecrets(@Param('projectSlug') projectSlug: string) {
     return { items: await this.projects.listSecrets(projectSlug) };

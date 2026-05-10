@@ -9,6 +9,7 @@ import { TrackerForm } from './tracker-form';
 import { ErrorTargetForm } from './error-target-form';
 import { ScheduleForm } from './schedule-form';
 import { InceptionForm } from './inception-form';
+import { DeployTargetForm, type DeployTargetRow } from './deploy-target-form';
 
 export default async function ProjectSettings({
   params,
@@ -35,7 +36,7 @@ export default async function ProjectSettings({
     } | null;
   }>(`/v1/orgs/${slug}/projects/${projectSlug}`, { session });
 
-  const targets = await api<{ items: Array<{ id: string; kind: string; adapterId: string }> }>(
+  const targets = await api<{ items: DeployTargetRow[] }>(
     `/v1/orgs/${slug}/projects/${projectSlug}/deploy-targets`,
     { session },
   );
@@ -117,24 +118,13 @@ export default async function ProjectSettings({
 
       <Section
         title="Deploy targets"
-        description="Where the runner promotes changesets. dev / staging / prod each pick an adapter (GitHub Actions, Vercel, …)."
+        description="Where the runner promotes changesets. dev / staging / prod each pick an adapter (GitHub Actions, Vercel, …). The dev target also drives the post-PR auto-deploy on each daily run."
       >
-        <ul className="space-y-2">
-          {targets.items.map((t) => (
-            <li
-              key={t.id}
-              className="flex items-baseline justify-between rounded border px-3 py-2 text-sm dark:border-zinc-800"
-            >
-              <span className="font-mono">{t.kind}</span>
-              <span className="text-zinc-500">{t.adapterId}</span>
-            </li>
-          ))}
-          {targets.items.length === 0 && (
-            <li className="text-sm text-zinc-500">
-              No targets configured. (Adapter-specific editor coming soon — set via API for now.)
-            </li>
-          )}
-        </ul>
+        <DeployTargetForm
+          slug={slug}
+          projectSlug={projectSlug}
+          initial={targets.items}
+        />
       </Section>
 
       <Section
