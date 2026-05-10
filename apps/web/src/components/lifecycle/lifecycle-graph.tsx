@@ -1,16 +1,26 @@
 'use client';
 
 /**
- * Read-only DAG visualization of the lifecycle (V2.1 phase 1, #25).
+ * DAG visualization of the lifecycle.
  *
- * Renders workflows as boxes with their assigned agents listed inside,
- * and edges from each `workflow.out` transition. Layout is hand-rolled
- * BFS-by-depth — for the 5–15 workflow DAGs we expect, this is plenty
- * and keeps the bundle free of `dagre`/`react-flow` (~150 KB combined).
+ * V2.1 phase 1 (#25) shipped a read-only view. Phase 2 (#195) adds:
+ *   - Drag-to-position with snap-to-grid (10px).
+ *   - Persisted positions per (project, workflow) so the layout doesn't
+ *     drift across YAML version bumps.
+ *   - Saved-position fallback to the BFS-by-depth auto-layout for any
+ *     workflow without a saved position.
  *
- * Phase 2 (drag-to-position) and phase 3 (edit-and-commit a PR against
- * mergecrew.yaml) are tracked separately on the V2.1 issue.
+ * Layout is hand-rolled — for the 5–15 workflow DAGs we expect, no
+ * library is needed. Bundle stays free of `dagre` / `react-flow`.
+ *
+ * Phase 3 (edit-and-commit a PR against mergecrew.yaml) is tracked
+ * separately on #196 — the affordances here intentionally stop at
+ * positions, not topology.
  */
+
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { LifecycleScope } from './scope';
+import { saveGraphLayoutAction } from './lifecycle-actions';
 
 interface WorkflowDef {
   id: string;
@@ -29,6 +39,8 @@ const AGENT_H = 18;
 const NODE_PAD = 12;
 const COL_GAP = 80;
 const ROW_GAP = 28;
+const SNAP_GRID = 10;
+const SAVE_DEBOUNCE_MS = 600;
 
 interface PlacedNode {
   workflow: WorkflowDef;
@@ -37,17 +49,16 @@ interface PlacedNode {
   height: number;
 }
 
+function nodeHeight(w: WorkflowDef): number {
+  return HEADER_H + Math.max(1, w.agents.length) * AGENT_H + NODE_PAD * 2;
+}
+
 /**
- * BFS-by-depth layout. Each workflow's depth is the longest predecessor
- * path from a root (a workflow no other workflow points at). Within a
- * depth column nodes stack top-to-bottom in declaration order.
+ * BFS-by-depth fallback layout. Each workflow's depth is the longest
+ * predecessor path from a root. Within a depth column nodes stack
+ * top-to-bottom in declaration order.
  */
-function layout(workflows: WorkflowDef[]): {
-  nodes: Map<string, PlacedNode>;
-  width: number;
-  height: number;
-} {
-  const byId = new Map(workflows.map((w) => [w.id, w]));
+function bfsLayout(workflows: WorkflowDef[]): Record<string, { x: number; y: number }> {
   const incoming = new Map<string, string[]>();
   for (const w of workflows) incoming.set(w.id, []);
   for (const w of workflows) {
@@ -57,8 +68,6 @@ function layout(workflows: WorkflowDef[]): {
     }
   }
   const depth = new Map<string, number>();
-  // Repeatedly relax until stable. With at most ~50 workflows this is
-  // negligible; a real toposort is fine but not necessary here.
   let changed = true;
   let safety = workflows.length + 1;
   while (changed && safety-- > 0) {
@@ -72,41 +81,154 @@ function layout(workflows: WorkflowDef[]): {
       }
     }
   }
-
   const columns = new Map<number, WorkflowDef[]>();
   for (const w of workflows) {
     const d = depth.get(w.id) ?? 0;
     if (!columns.has(d)) columns.set(d, []);
     columns.get(d)!.push(w);
   }
-
-  const nodes = new Map<string, PlacedNode>();
-  const colHeights = new Map<number, number>();
+  const positions: Record<string, { x: number; y: number }> = {};
   const sortedDepths = [...columns.keys()].sort((a, b) => a - b);
-  let maxDepth = 0;
+  const colHeights = new Map<number, number>();
   for (const d of sortedDepths) {
-    if (d > maxDepth) maxDepth = d;
     let y = 0;
     for (const w of columns.get(d)!) {
-      const h = HEADER_H + Math.max(1, w.agents.length) * AGENT_H + NODE_PAD * 2;
-      nodes.set(w.id, { workflow: w, x: d * (NODE_W + COL_GAP), y, height: h });
-      y += h + ROW_GAP;
+      positions[w.id] = { x: d * (NODE_W + COL_GAP), y };
+      y += nodeHeight(w) + ROW_GAP;
     }
     colHeights.set(d, y);
   }
-  const maxHeight = Math.max(0, ...colHeights.values());
-  const width = (maxDepth + 1) * NODE_W + maxDepth * COL_GAP;
-  const height = Math.max(maxHeight, 60);
   // Center each column vertically against the tallest one.
-  for (const node of nodes.values()) {
-    const colH = colHeights.get(depth.get(node.workflow.id) ?? 0) ?? 0;
-    node.y += (maxHeight - colH) / 2;
+  const maxHeight = Math.max(0, ...colHeights.values());
+  for (const w of workflows) {
+    const d = depth.get(w.id) ?? 0;
+    const colH = colHeights.get(d) ?? 0;
+    const pos = positions[w.id]!;
+    pos.y += (maxHeight - colH) / 2;
   }
-  return { nodes, width, height };
+  return positions;
 }
 
-export function LifecycleGraph({ parsed }: { parsed: ParsedConfigShape }) {
+function snap(n: number): number {
+  return Math.round(n / SNAP_GRID) * SNAP_GRID;
+}
+
+export function LifecycleGraph({
+  parsed,
+  scope,
+  initialLayout = {},
+  editable = false,
+}: {
+  parsed: ParsedConfigShape;
+  scope: LifecycleScope;
+  initialLayout?: Record<string, { x: number; y: number }>;
+  editable?: boolean;
+}) {
   const workflows = parsed.lifecycle?.workflows ?? [];
+  const projectScope = scope.kind === 'project' ? scope : null;
+  const editableHere = editable && projectScope !== null;
+
+  // BFS positions are recomputed when the workflow set changes; saved
+  // positions override per-workflow.
+  const fallback = useMemo(() => bfsLayout(workflows), [workflows]);
+  const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>(() => {
+    const merged: Record<string, { x: number; y: number }> = {};
+    for (const w of workflows) {
+      merged[w.id] = initialLayout[w.id] ?? fallback[w.id] ?? { x: 0, y: 0 };
+    }
+    return merged;
+  });
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Re-seed positions when the workflow set changes (e.g., a YAML save
+  // added or removed one) — keep saved positions for unchanged ids,
+  // pick fallback for new ones, drop ids no longer present.
+  useEffect(() => {
+    setPositions((prev) => {
+      const next: Record<string, { x: number; y: number }> = {};
+      for (const w of workflows) {
+        next[w.id] = prev[w.id] ?? initialLayout[w.id] ?? fallback[w.id] ?? { x: 0, y: 0 };
+      }
+      return next;
+    });
+    // We intentionally exclude `positions` from the dep array — this
+    // effect re-seeds on workflow set changes, not on every drag.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workflows.map((w) => w.id).join('|')]);
+
+  function persistDebounced(p: Record<string, { x: number; y: number }>) {
+    if (!editableHere || !projectScope) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      setSaving(true);
+      setSaveError(null);
+      try {
+        await saveGraphLayoutAction(projectScope, p);
+      } catch (e: any) {
+        setSaveError(String(e?.message ?? e));
+      } finally {
+        setSaving(false);
+      }
+    }, SAVE_DEBOUNCE_MS);
+  }
+
+  // Pointer drag — captured on the SVG so the move handler still fires
+  // when the cursor leaves the node rect.
+  const dragRef = useRef<{
+    id: string;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    nodeX: number;
+    nodeY: number;
+  } | null>(null);
+
+  function onPointerDown(e: React.PointerEvent<SVGGElement>, id: string) {
+    if (!editableHere) return;
+    const pos = positions[id];
+    if (!pos) return;
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    dragRef.current = {
+      id,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      nodeX: pos.x,
+      nodeY: pos.y,
+    };
+  }
+  function onPointerMove(e: React.PointerEvent<SVGGElement>) {
+    const d = dragRef.current;
+    if (!d || d.pointerId !== e.pointerId) return;
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+    setPositions((prev) => ({
+      ...prev,
+      [d.id]: { x: Math.max(0, d.nodeX + dx), y: Math.max(0, d.nodeY + dy) },
+    }));
+  }
+  function onPointerUp(e: React.PointerEvent<SVGGElement>) {
+    const d = dragRef.current;
+    if (!d || d.pointerId !== e.pointerId) return;
+    try {
+      (e.currentTarget as Element).releasePointerCapture(e.pointerId);
+    } catch {
+      // releasePointerCapture throws if capture was already released —
+      // benign at end-of-drag.
+    }
+    setPositions((prev) => {
+      const cur = prev[d.id];
+      if (!cur) return prev;
+      const snapped = { x: snap(cur.x), y: snap(cur.y) };
+      const next = { ...prev, [d.id]: snapped };
+      persistDebounced(next);
+      return next;
+    });
+    dragRef.current = null;
+  }
+
   if (workflows.length === 0) {
     return (
       <div className="rounded border border-dashed p-6 text-sm text-zinc-500 dark:border-zinc-800">
@@ -115,29 +237,51 @@ export function LifecycleGraph({ parsed }: { parsed: ParsedConfigShape }) {
     );
   }
 
-  const { nodes, width, height } = layout(workflows);
+  // Build placed-node list (for edge math) + extents from current positions.
+  const placed: PlacedNode[] = workflows.map((w) => {
+    const p = positions[w.id] ?? { x: 0, y: 0 };
+    return { workflow: w, x: p.x, y: p.y, height: nodeHeight(w) };
+  });
+  const placedById = new Map(placed.map((n) => [n.workflow.id, n]));
+  const maxX = Math.max(0, ...placed.map((n) => n.x + NODE_W));
+  const maxY = Math.max(0, ...placed.map((n) => n.y + n.height));
   const padding = 24;
+  const viewW = maxX + padding * 2;
+  const viewH = maxY + padding * 2;
 
   const edges: Array<{ from: PlacedNode; to: PlacedNode }> = [];
   for (const w of workflows) {
-    const fromNode = nodes.get(w.id);
+    const fromNode = placedById.get(w.id);
     if (!fromNode) continue;
     for (const nextId of w.out) {
-      const toNode = nodes.get(nextId);
+      const toNode = placedById.get(nextId);
       if (toNode) edges.push({ from: fromNode, to: toNode });
     }
   }
 
-  const viewW = width + padding * 2;
-  const viewH = height + padding * 2;
-
   return (
     <div className="space-y-2">
-      <div className="text-xs text-zinc-500">
-        Read-only view of the lifecycle DAG. Edit on the <strong>Workflows</strong> tab; drag-and-drop
-        editing is phase 2 of the V2.1 visual editor.
+      <div className="flex items-center justify-between text-xs">
+        <div className="text-zinc-500">
+          {editableHere ? (
+            <>
+              Drag a node to reposition it. Positions snap to a 10px grid and persist per project.
+              Edit topology (workflows, agents, transitions) on the <strong>Workflows</strong> tab.
+            </>
+          ) : (
+            <>
+              Read-only view of the lifecycle DAG. Edit on the <strong>Workflows</strong> tab.
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-2 text-zinc-500">
+          {saving && <span>saving…</span>}
+          {saveError && (
+            <span className="text-rose-600 dark:text-rose-400">save failed: {saveError}</span>
+          )}
+        </div>
       </div>
-      <div className="overflow-x-auto rounded border bg-zinc-50 p-2 dark:bg-zinc-900 dark:border-zinc-800">
+      <div className="overflow-auto rounded border bg-zinc-50 p-2 dark:bg-zinc-900 dark:border-zinc-800">
         <svg
           width={viewW}
           height={viewH}
@@ -179,8 +323,19 @@ export function LifecycleGraph({ parsed }: { parsed: ParsedConfigShape }) {
                 />
               );
             })}
-            {[...nodes.values()].map((n) => (
-              <g key={n.workflow.id} transform={`translate(${n.x}, ${n.y})`}>
+            {placed.map((n) => (
+              <g
+                key={n.workflow.id}
+                transform={`translate(${n.x}, ${n.y})`}
+                onPointerDown={(e) => onPointerDown(e, n.workflow.id)}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                onPointerCancel={onPointerUp}
+                style={{
+                  cursor: editableHere ? 'grab' : 'default',
+                  touchAction: editableHere ? 'none' : undefined,
+                }}
+              >
                 <rect
                   width={NODE_W}
                   height={n.height}

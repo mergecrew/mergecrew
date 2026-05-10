@@ -54,3 +54,25 @@ export async function applyOrgTemplateAction(
   });
   revalidatePath(lifecycleRevalidatePath(scope));
 }
+
+/**
+ * Persist node positions for the graph view (V2.1 phase 2, #195).
+ * Project-scope only — org-scope templates have no graph view yet.
+ * Skips revalidatePath: the graph layout is decoration on top of the
+ * lifecycle, and re-fetching the whole page on every drag would
+ * kill the UX.
+ */
+export async function saveGraphLayoutAction(
+  scope: Extract<LifecycleScope, { kind: 'project' }>,
+  positions: Record<string, { x: number; y: number }>,
+) {
+  const session = await requireSession();
+  await api(
+    `/v1/orgs/${scope.orgSlug}/projects/${scope.projectSlug}/lifecycle/graph-layout`,
+    {
+      method: 'PUT',
+      session,
+      body: JSON.stringify({ positions }),
+    },
+  );
+}

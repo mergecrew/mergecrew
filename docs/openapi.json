@@ -649,6 +649,32 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/projects/{projectSlug}/lifecycle/graph-layout": {
+      "get": {
+        "operationId": "LifecycleController_getGraphLayout",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Lifecycle"
+        ]
+      },
+      "put": {
+        "operationId": "LifecycleController_setGraphLayout",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Lifecycle"
+        ]
+      }
+    },
     "/v1/skills": {
       "get": {
         "operationId": "SkillsController_list",

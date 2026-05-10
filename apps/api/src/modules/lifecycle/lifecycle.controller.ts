@@ -110,4 +110,19 @@ export class LifecycleController {
   ) {
     return this.lifecycle.setHumanGates(projectSlug, body);
   }
+
+  // --- Graph layout (V2.1 phase 2, #195) ---
+  @Get('graph-layout')
+  async getGraphLayout(@Param('projectSlug') projectSlug: string) {
+    return { positions: await this.lifecycle.getGraphLayout(projectSlug) };
+  }
+
+  @Put('graph-layout')
+  @RequireRole('operator')
+  async setGraphLayout(
+    @Param('projectSlug') projectSlug: string,
+    @Body() body: { positions: Record<string, { x: number; y: number }> },
+  ) {
+    return this.lifecycle.setGraphLayout(projectSlug, body?.positions ?? {});
+  }
 }
