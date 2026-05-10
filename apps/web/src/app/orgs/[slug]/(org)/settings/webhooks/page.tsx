@@ -5,6 +5,7 @@ import { hasRole } from '@/lib/role';
 import { Card, Button } from '@/components/ui';
 import { TestWebhookButton } from '@/components/test-webhook-button';
 import { CreatedSecretCallout } from '@/components/created-secret-callout';
+import { WebhookDeliveriesLog, type DeliveryRow } from '@/components/webhook-deliveries-log';
 
 interface WebhookSummary {
   id: string;
@@ -133,19 +134,20 @@ export default async function WebhooksPage({
         ) : (
           <ul className="mt-2 divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
             {list.items.map((w) => (
-              <li key={w.id} className="flex items-baseline justify-between gap-3 py-2">
-                <div className="min-w-0">
-                  <div className="truncate font-mono">{w.url}</div>
-                  <div className="text-xs text-zinc-500">
-                    {w.events.length === 0 ? 'all events' : w.events.join(', ')}
-                    {w.failureCount > 0 && (
-                      <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-red-700 dark:bg-red-900/40 dark:text-red-300">
-                        {w.failureCount} failures
-                      </span>
-                    )}
+              <li key={w.id} className="space-y-2 py-2">
+                <div className="flex items-baseline justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate font-mono">{w.url}</div>
+                    <div className="text-xs text-zinc-500">
+                      {w.events.length === 0 ? 'all events' : w.events.join(', ')}
+                      {w.failureCount > 0 && (
+                        <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-red-700 dark:bg-red-900/40 dark:text-red-300">
+                          {w.failureCount} failures
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-                {canEdit && (
+                  {canEdit && (
                   <div className="flex shrink-0 gap-2">
                     <TestWebhookButton
                       onTest={async () => {
@@ -170,7 +172,22 @@ export default async function WebhooksPage({
                       </Button>
                     </form>
                   </div>
-                )}
+                  )}
+                </div>
+                <WebhookDeliveriesLog
+                  load={async () => {
+                    'use server';
+                    try {
+                      const res = await api<{ items: DeliveryRow[] }>(
+                        `/v1/orgs/${slug}/webhooks/${w.id}/deliveries?limit=50`,
+                        { session: await requireSession() },
+                      );
+                      return { ok: true as const, items: res.items };
+                    } catch (e: any) {
+                      return { ok: false as const, error: String(e?.message ?? e) };
+                    }
+                  }}
+                />
               </li>
             ))}
           </ul>
