@@ -4,7 +4,7 @@ import { requireSession } from '@/lib/session';
 import { hasRole } from '@/lib/role';
 import { Card, Button } from '@/components/ui';
 import { CreatedSecretCallout } from '@/components/created-secret-callout';
-import { MfaRequiredCallout, isMfaGateError } from '@/components/mfa-required-callout';
+import { MfaRequiredCallout } from '@/components/mfa-required-callout';
 
 interface ApiKeySummary {
   id: string;
@@ -69,20 +69,20 @@ export default async function ApiKeysPage({
   const session = await requireSession();
   const canEdit = await hasRole(slug, session, 'admin');
 
-  // The list endpoint requires admin role, which triggers the RoleGuard's
-  // MFA gate. Catch that specific error so unenrolled admins land on a
-  // clear CTA instead of a 500.
-  let list: { items: ApiKeySummary[] };
-  let mfaBlocked = false;
-  try {
-    list = await api<{ items: ApiKeySummary[] }>(`/v1/orgs/${slug}/api-keys`, { session });
-  } catch (err) {
-    if (canEdit && isMfaGateError(err)) {
-      mfaBlocked = true;
-      list = { items: [] };
-    } else {
-      throw err;
-    }
+  const list = await api<{ items: ApiKeySummary[] }>(
+    `/v1/orgs/${slug}/api-keys`,
+    { session },
+  );
+
+  // MFA is recommended for admin/owner accounts but not enforced by the
+  // API. When the caller is admin and hasn't enrolled, surface a passive
+  // nudge — the form below stays usable.
+  let showMfaNudge = false;
+  if (canEdit) {
+    const mfa = await api<{ enrolled: boolean }>('/v1/me/mfa', { session }).catch(
+      () => ({ enrolled: false }),
+    );
+    showMfaNudge = !mfa.enrolled;
   }
 
   const { cookies } = await import('next/headers');
@@ -108,9 +108,9 @@ export default async function ApiKeysPage({
         />
       )}
 
-      {mfaBlocked && <MfaRequiredCallout />}
+      {showMfaNudge && <MfaRequiredCallout />}
 
-      {canEdit && !mfaBlocked && (
+      {canEdit && (
         <Card>
           <h2 className="font-medium">Issue key</h2>
           <form action={issueAction} className="mt-3 space-y-2 text-sm">

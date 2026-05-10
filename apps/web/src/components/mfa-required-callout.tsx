@@ -1,20 +1,26 @@
 import { LinkButton } from '@/components/ui';
 
 /**
- * Shown on admin-only pages when the caller is admin/owner but hasn't
- * enrolled in MFA yet. Without this guard, the underlying admin GET
- * fails the RoleGuard's MFA gate (#107) and the page crashes — see
- * the page-level try/catch around api(...) calls.
+ * Passive nudge shown on admin/owner pages when the caller hasn't
+ * enrolled in MFA. The API doesn't enforce MFA on writes (see
+ * `apps/api/src/common/role.guard.ts`) — this is a recommendation, not
+ * a gate. Renders inline; the page below it works whether the user
+ * follows the link or ignores it.
+ *
+ * The component is named `MfaRequiredCallout` for backwards-compat with
+ * existing imports; the copy is "recommended" because that's what the
+ * policy actually is now.
  */
 export function MfaRequiredCallout() {
   return (
     <div className="rounded border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-800 dark:bg-amber-900/20">
       <div className="font-medium text-amber-900 dark:text-amber-200">
-        MFA enrollment required
+        Two-factor authentication recommended
       </div>
       <p className="mt-1 text-amber-800 dark:text-amber-300">
-        Admin and owner write actions on this org need two-factor authentication.
-        Set it up first, then come back here.
+        Admin and owner accounts can create API keys, manage members, and
+        access audit logs. Enabling MFA hardens those accounts against
+        password-only compromise. Optional, but recommended.
       </p>
       <div className="mt-3">
         <LinkButton href="/account/security" variant="primary">
@@ -23,15 +29,4 @@ export function MfaRequiredCallout() {
       </div>
     </div>
   );
-}
-
-/**
- * Returns true if the thrown error from `api(...)` indicates the
- * RoleGuard's "you need MFA" responses (codes minted in role.guard.ts:
- * `MFA_REQUIRED_NOT_ENROLLED` for unenrolled admins, `MFA_CHALLENGE_REQUIRED`
- * when the JWT's mfa_at claim is stale).
- */
-export function isMfaGateError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return /MFA_(REQUIRED_NOT_ENROLLED|CHALLENGE_REQUIRED)/.test(msg);
 }
