@@ -101,6 +101,16 @@ describe('autoPromoteMatches', () => {
     expect(r.reason).toContain('src/index.ts');
   });
 
+  it('rejects requirePackageJsonPatchOnly when packageJsonChanges is undefined', () => {
+    // Safety: a caller that didn't parse versions could otherwise auto-promote
+    // a major bump that happens to live in package.json.
+    const r = autoPromoteMatches(depPatchRule, {
+      files: [file('package.json')],
+    });
+    expect(r.matched).toBe(false);
+    expect(r.reason).toContain('parsed packageJsonChanges');
+  });
+
   it('treats caret/tilde prefixes as patch bumps', () => {
     expect(
       autoPromoteMatches(depPatchRule, {
