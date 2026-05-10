@@ -151,6 +151,25 @@ importers:
         specifier: ^5.6.2
         version: 5.9.3
 
+  apps/dogfood-smoke:
+    dependencies:
+      '@mergecrew/adapters-deploy':
+        specifier: workspace:*
+        version: link:../../packages/adapters-deploy
+      '@mergecrew/adapters-vcs':
+        specifier: workspace:*
+        version: link:../../packages/adapters-vcs
+    devDependencies:
+      '@types/node':
+        specifier: ^25.6.2
+        version: 25.6.2
+      tsx:
+        specifier: ^4.19.1
+        version: 4.21.0
+      typescript:
+        specifier: ^5.6.2
+        version: 5.9.3
+
   apps/orchestrator:
     dependencies:
       '@mergecrew/adapters-comms':

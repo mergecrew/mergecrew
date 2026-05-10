@@ -1,0 +1,168 @@
+#!/usr/bin/env tsx
+/**
+ * V0.5 dogfood smoke (#5).
+ *
+ * Exercises the VCS + GitHub-Actions deploy adapters end-to-end against a
+ * real test repo. This is the runnable artifact for the V0.5 exit
+ * criterion:
+ *
+ *   "From a CLI, given the test repo, the agent edits a file, opens a
+ *    PR, triggers the test repo's deploy-dev.yml, retrieves the dev URL."
+ *
+ * Steps:
+ *   1. Clone the test repo via `GitHubProvider.cloneIntoWorkspace`.
+ *   2. Create a feature branch and write a tiny marker file.
+ *   3. Commit + push.
+ *   4. Open a PR.
+ *   5. Trigger `deploy-dev.yml` via `GitHubActionsProvider.triggerDeploy`.
+ *   6. Wait for the workflow to finish (default timeout 5 min).
+ *   7. Resolve and print the dev URL.
+ *
+ * Required env:
+ *   GITHUB_APP_ID            — the GitHub App's numeric id
+ *   GITHUB_APP_PRIVATE_KEY   — the App's PEM (literal contents, not a path)
+ *   INSTALLATION_ID          — the App's installation on the test repo's org
+ *   REPO_FULL_NAME           — e.g. "mergecrew/dogfood-target"
+ *
+ * Optional env:
+ *   DEFAULT_BRANCH           — defaults to "main"
+ *   WORKFLOW_FILENAME        — defaults to "deploy-dev.yml"
+ *   URL_RESOLUTION           — "pattern" | "fixed" (default "pattern")
+ *   URL_PATTERN              — e.g. "https://${branch}.preview.example.com"
+ *   URL_FIXED                — used when URL_RESOLUTION=fixed
+ *   TIMEOUT_MS               — defaults to 300000 (5 min)
+ *
+ * Usage:
+ *
+ *   GITHUB_APP_ID=… GITHUB_APP_PRIVATE_KEY="$(cat key.pem)" \
+ *   INSTALLATION_ID=… REPO_FULL_NAME=mergecrew/dogfood-target \
+ *   URL_PATTERN='https://${branch}.preview.mergecrew.dev' \
+ *     pnpm --filter @mergecrew/dogfood-smoke smoke
+ *
+ * Exits 0 when the deploy succeeds and a URL is printed; exits 1 on any
+ * failure with a diagnostic.
+ */
+
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { GitHubProvider } from '@mergecrew/adapters-vcs';
+import { GitHubActionsProvider } from '@mergecrew/adapters-deploy';
+
+function requireEnv(name: string): string {
+  const v = process.env[name];
+  if (!v) {
+    console.error(`error: missing required env ${name}`);
+    process.exit(1);
+  }
+  return v;
+}
+
+async function main(): Promise<void> {
+  const appId = requireEnv('GITHUB_APP_ID');
+  const privateKey = requireEnv('GITHUB_APP_PRIVATE_KEY');
+  const installationId = requireEnv('INSTALLATION_ID');
+  const repoFullName = requireEnv('REPO_FULL_NAME');
+  const defaultBranch = process.env.DEFAULT_BRANCH ?? 'main';
+  const workflowFilename = process.env.WORKFLOW_FILENAME ?? 'deploy-dev.yml';
+  const urlResolution = (process.env.URL_RESOLUTION ?? 'pattern') as
+    | 'pattern'
+    | 'fixed'
+    | 'workflow_output';
+  const urlPattern = process.env.URL_PATTERN;
+  const urlFixed = process.env.URL_FIXED;
+  const timeoutMs = Number(process.env.TIMEOUT_MS ?? 300_000);
+
+  const branch = `mergecrew-smoke/${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  const correlationId = `smoke-${Date.now().toString(36)}`;
+
+  const vcs = new GitHubProvider({ appId, privateKey });
+  const deploy = new GitHubActionsProvider({ appId, privateKey });
+
+  const repoRef = { installationId, repoFullName, defaultBranch };
+  const targetRef = {
+    id: 'smoke-dev',
+    kind: 'dev' as const,
+    adapterId: 'github-actions',
+    config: {
+      installationId,
+      repoFullName,
+      workflowFilename,
+      inputsTemplate: { branch: '${ref.branch}' },
+      urlResolution,
+      ...(urlPattern ? { urlPattern } : {}),
+      ...(urlFixed ? { urlFixed } : {}),
+    },
+  };
+
+  const workspace = await mkdtemp(path.join(tmpdir(), 'mergecrew-smoke-'));
+  console.log(`[smoke] workspace: ${workspace}`);
+
+  try {
+    console.log(`[smoke] step 1/6  cloning ${repoFullName}@${defaultBranch}`);
+    await vcs.cloneIntoWorkspace(repoRef, defaultBranch, workspace);
+
+    console.log(`[smoke] step 2/6  creating branch ${branch}`);
+    await vcs.createBranch(workspace, branch, defaultBranch);
+
+    const markerPath = path.join(workspace, '.mergecrew-smoke');
+    await writeFile(
+      markerPath,
+      `smoke run ${correlationId} at ${new Date().toISOString()}\n`,
+    );
+
+    console.log(`[smoke] step 3/6  committing + pushing`);
+    const sha = await vcs.commit(workspace, {
+      message: `chore: mergecrew V0.5 smoke marker\n\ncorrelation: ${correlationId}`,
+      authorName: 'Mergecrew Smoke',
+      authorEmail: 'smoke@mergecrew.dev',
+    });
+    await vcs.push(workspace, branch);
+    console.log(`[smoke]            head sha ${sha}`);
+
+    console.log(`[smoke] step 4/6  opening PR`);
+    const pr = await vcs.openPullRequest(repoRef, {
+      head: branch,
+      base: defaultBranch,
+      title: `[smoke] V0.5 dogfood ${correlationId}`,
+      body: [
+        '<!-- mergecrew V0.5 dogfood smoke -->',
+        '',
+        'Auto-generated by `scripts/v0-5-dogfood-smoke.ts` to exercise the',
+        'VCS + GitHub-Actions deploy adapters end-to-end. Safe to close.',
+      ].join('\n'),
+      draft: true,
+    });
+    console.log(`[smoke]            PR ${pr.url}`);
+
+    console.log(`[smoke] step 5/6  triggering ${workflowFilename}`);
+    const handle = await deploy.triggerDeploy(targetRef, {
+      ref: sha,
+      branch,
+      correlationId,
+    });
+    console.log(`[smoke]            workflow run ${handle.externalRunId}`);
+
+    console.log(`[smoke] step 6/6  awaiting completion (timeout ${timeoutMs}ms)`);
+    const abort = new AbortController();
+    const result = await deploy.awaitCompletion(handle, timeoutMs, abort.signal);
+    if (result.status.kind !== 'success') {
+      console.error(
+        `[smoke] FAIL  deploy did not succeed: ${JSON.stringify(result.status)}`,
+      );
+      process.exit(1);
+    }
+
+    const url =
+      result.url ??
+      (await deploy.resolveUrlForRef(targetRef, branch).catch(() => null));
+    console.log(`[smoke] OK    PR=${pr.url}  dev=${url ?? '(no URL configured)'}`);
+  } catch (err: any) {
+    console.error(`[smoke] error: ${err?.stack ?? err}`);
+    process.exit(1);
+  } finally {
+    await rm(workspace, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+void main();
