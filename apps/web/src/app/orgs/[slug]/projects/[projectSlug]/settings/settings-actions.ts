@@ -46,3 +46,34 @@ export async function disconnectRepoAction(slug: string, projectSlug: string) {
   });
   revalidatePath(`/orgs/${slug}/projects/${projectSlug}/settings`);
 }
+
+export async function upsertDeployTargetAction(
+  slug: string,
+  projectSlug: string,
+  input: {
+    kind: 'dev' | 'staging' | 'prod';
+    adapterId: string;
+    config: Record<string, unknown>;
+  },
+) {
+  const session = await requireSession();
+  await api(`/v1/orgs/${slug}/projects/${projectSlug}/deploy-targets`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    session,
+  });
+  revalidatePath(`/orgs/${slug}/projects/${projectSlug}/settings`);
+}
+
+export async function deleteDeployTargetAction(
+  slug: string,
+  projectSlug: string,
+  kind: 'dev' | 'staging' | 'prod',
+) {
+  const session = await requireSession();
+  await api(`/v1/orgs/${slug}/projects/${projectSlug}/deploy-targets/${kind}`, {
+    method: 'DELETE',
+    session,
+  });
+  revalidatePath(`/orgs/${slug}/projects/${projectSlug}/settings`);
+}
