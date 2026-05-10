@@ -153,6 +153,18 @@ export default async function ProjectSettings({
           }}
         />
       </Section>
+
+      <Section
+        title="Auto-promote rules"
+        description="Allowlist patterns that let qualifying changesets skip the manual approval gate (e.g. docs-only diffs, dep patch bumps)."
+      >
+        <a
+          href={`/orgs/${slug}/projects/${projectSlug}/settings/auto-promote`}
+          className="text-sm underline"
+        >
+          Manage rules →
+        </a>
+      </Section>
     </main>
   );
 }

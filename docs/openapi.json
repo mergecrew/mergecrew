@@ -383,6 +383,32 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/projects/{projectSlug}/auto-promote": {
+      "get": {
+        "operationId": "ProjectController_getAutoPromote",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      },
+      "put": {
+        "operationId": "ProjectController_setAutoPromote",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/projects/{projectSlug}/lifecycle": {
       "get": {
         "operationId": "LifecycleController_current",
