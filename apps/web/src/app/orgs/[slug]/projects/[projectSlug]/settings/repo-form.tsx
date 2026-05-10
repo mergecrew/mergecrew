@@ -15,14 +15,24 @@ export function RepoForm({
   slug,
   projectSlug,
   initial,
+  installedInstallationId,
 }: {
   slug: string;
   projectSlug: string;
   initial: ConnectedRepo | null;
+  /**
+   * V1.1 (#7): when the user just completed a GitHub App install, the
+   * callback redirects them back to this page with an `installation_id`
+   * query param. We pre-fill the form so they only need to type the repo
+   * name — the install id has already been determined by GitHub.
+   */
+  installedInstallationId?: string | null;
 }) {
   const [repoFullName, setRepoFullName] = useState(initial?.repoFullName ?? '');
   const [defaultBranch, setDefaultBranch] = useState(initial?.defaultBranch ?? 'main');
-  const [installationId, setInstallationId] = useState(initial?.installationId ?? '');
+  const [installationId, setInstallationId] = useState(
+    installedInstallationId ?? initial?.installationId ?? '',
+  );
   const [repoId, setRepoId] = useState(initial?.repoId ?? '');
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +68,9 @@ export function RepoForm({
     });
   };
 
+  const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? '';
+  const installHref = `${apiBase}/v1/integrations/github/install?org=${encodeURIComponent(slug)}&project=${encodeURIComponent(projectSlug)}`;
+
   return (
     <div className="space-y-3">
       {initial && (
@@ -66,6 +79,30 @@ export function RepoForm({
           <span className="font-mono">{initial.repoFullName}</span>
           <span className="text-zinc-500"> · branch </span>
           <span className="font-mono">{initial.defaultBranch}</span>
+        </div>
+      )}
+
+      {installedInstallationId && (
+        <div className="rounded bg-emerald-50 p-2 text-xs text-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-200">
+          GitHub App installed. Type the repository this project should connect
+          to (must be one the App was given access to during install) and click
+          Connect.
+        </div>
+      )}
+
+      {!initial && !installedInstallationId && (
+        <div className="rounded border border-dashed p-3 text-sm dark:border-zinc-800">
+          <p className="text-zinc-600 dark:text-zinc-400">
+            No repository connected. The fastest path is to install the
+            Mergecrew GitHub App on the repo you want this project to work
+            against — we&apos;ll bring you back here with the installation id
+            pre-filled.
+          </p>
+          <div className="mt-2">
+            <a href={installHref}>
+              <Button variant="primary">Install GitHub App</Button>
+            </a>
+          </div>
         </div>
       )}
 
