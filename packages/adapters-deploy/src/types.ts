@@ -39,7 +39,7 @@ export interface LogChunk {
 }
 
 export interface DeployProvider {
-  readonly id: 'github-actions' | 'vercel' | 'aws-direct' | 'fly' | 'render';
+  readonly id: 'github-actions' | 'vercel' | 'netlify' | 'aws-direct' | 'fly' | 'render';
 
   triggerDeploy(target: DeployTargetRef, opts: DeployOpts): Promise<DeployHandle>;
   getStatus(handle: DeployHandle): Promise<DeployStatus>;

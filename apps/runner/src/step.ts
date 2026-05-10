@@ -30,6 +30,7 @@ import { GitHubProvider, type VcsProvider } from '@mergecrew/adapters-vcs';
 import {
   GitHubActionsProvider,
   VercelProvider,
+  NetlifyProvider,
   type DeployProvider,
 } from '@mergecrew/adapters-deploy';
 import { LinearProvider, GitHubIssuesProvider, type TrackerProvider } from '@mergecrew/adapters-tracker';
@@ -139,6 +140,8 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     });
   } else if (dt?.adapterId === 'vercel' && process.env.VERCEL_TOKEN) {
     deploy = new VercelProvider({ token: process.env.VERCEL_TOKEN });
+  } else if (dt?.adapterId === 'netlify' && process.env.NETLIFY_TOKEN) {
+    deploy = new NetlifyProvider({ token: process.env.NETLIFY_TOKEN });
   }
 
   // Tracker adapter — per-project. Reads tracker_targets + the encrypted
