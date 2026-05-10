@@ -19,6 +19,7 @@ import { MfaModule } from './modules/mfa/mfa.module.js';
 import { AdminModule } from './modules/admin/admin.module.js';
 import { ApiKeyModule } from './modules/api-key/api-key.module.js';
 import { OutboundWebhookModule } from './modules/outbound-webhook/outbound-webhook.module.js';
+import { MagicLinkModule } from './modules/magic-link/magic-link.module.js';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { OutboundWebhookModule } from './modules/outbound-webhook/outbound-webho
     AdminModule,
     ApiKeyModule,
     OutboundWebhookModule,
+    MagicLinkModule,
   ],
 })
 export class AppModule implements NestModule {
