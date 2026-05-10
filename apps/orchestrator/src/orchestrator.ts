@@ -22,6 +22,7 @@ export class Orchestrator {
   private wake: Queue;
   private digestSlack: Queue;
   private digestEmail: Queue;
+  private orgCapWaitQueue: Queue;
 
   private dispatchQueue: Queue;
 
@@ -31,6 +32,7 @@ export class Orchestrator {
     this.digestSlack = new Queue('digest.slack', { connection: deps.connection });
     this.digestEmail = new Queue('digest.email', { connection: deps.connection });
     this.dispatchQueue = new Queue('orchestrator.dispatch', { connection: deps.connection });
+    this.orgCapWaitQueue = new Queue('orchestrator.org-cap-wait', { connection: deps.connection });
   }
 
   // ─── 1. Run start ───────────────────────────────────────────────────────
@@ -180,6 +182,40 @@ export class Orchestrator {
       return;
     }
 
+    // Per-org concurrency cap (V1.3, #9). If the org has more in-flight
+    // (pending or running) steps than its cap, defer this dispatch by
+    // re-queueing it with a delay. The same job re-enters here after the
+    // delay and re-checks. We don't create the agent_steps row yet so the
+    // count it's compared against stays accurate while the deferral chain
+    // resolves.
+    const org = await withTenant(organizationId, (tx) =>
+      tx.organization.findUnique({
+        where: { id: organizationId },
+        select: { orgConcurrencyCap: true },
+      }),
+    );
+    const cap = org?.orgConcurrencyCap ?? 0;
+    if (cap > 0) {
+      const inflight = await withTenant(organizationId, (tx) =>
+        tx.agentStep.count({
+          where: { organizationId, status: { in: ['pending', 'running'] } },
+        }),
+      );
+      if (inflight >= cap) {
+        const delayMs = Number(process.env.ORG_CAP_DEFERRAL_MS ?? 5_000);
+        this.deps.logger.info(
+          { organizationId, projectId, agentRef, inflight, cap, delayMs },
+          'org-cap: deferring step dispatch — org at concurrency cap',
+        );
+        await this.orgCapWaitQueue.add(
+          'agent-step',
+          { organizationId, projectId, runId, workflowRunId, agentRef },
+          { delay: delayMs, removeOnComplete: 1000, removeOnFail: 1000 },
+        );
+        return;
+      }
+    }
+
     const step = await withTenant(organizationId, (tx) =>
       tx.agentStep.create({
         data: {
@@ -203,6 +239,32 @@ export class Orchestrator {
         agentRef,
       },
       { removeOnComplete: 1000, removeOnFail: 1000, attempts: 1 },
+    );
+  }
+
+  /**
+   * Waker for org-cap deferred dispatches (V1.3, #9). Re-enters the
+   * dispatch path with the same params; if the org still exceeds its cap
+   * the job is re-deferred by `dispatchAgentStep`.
+   */
+  async handleOrgCapWait(data: {
+    organizationId: string;
+    projectId: string;
+    runId: string;
+    workflowRunId: string;
+    agentRef: string;
+  }): Promise<void> {
+    const lc = await withTenant(data.organizationId, (tx) =>
+      tx.lifecycle.findFirst({ where: { projectId: data.projectId }, orderBy: { version: 'desc' } }),
+    );
+    const cfg = (lc?.parsed ?? {}) as MergecrewConfig;
+    await this.dispatchAgentStep(
+      data.organizationId,
+      data.projectId,
+      data.runId,
+      data.workflowRunId,
+      data.agentRef,
+      cfg,
     );
   }
 
