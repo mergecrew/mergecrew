@@ -19,8 +19,20 @@ export interface EmitInput {
   payload?: Record<string, unknown>;
 }
 
+/**
+ * Optional fanout sink. When provided, every persisted event triggers one
+ * call after the pubsub broadcast — used by services with bullmq to push
+ * webhook.fanout jobs onto the orchestrator queue (#148). Best-effort:
+ * the hook should swallow its own errors (we don't fail emit() if the
+ * fanout enqueue fails).
+ */
+export type EventFanoutHook = (event: TimelineEvent) => void | Promise<void>;
+
 export class Eventlog {
-  constructor(private readonly pubsub: RedisPubSub) {}
+  constructor(
+    private readonly pubsub: RedisPubSub,
+    private readonly fanout?: EventFanoutHook,
+  ) {}
 
   /**
    * Persist a timeline event and broadcast it on Redis pubsub. Returns the
@@ -69,6 +81,17 @@ export class Eventlog {
       await this.pubsub.publish(`run:${input.dailyRunId}`, persisted);
     }
     await this.pubsub.publish(`project:${input.projectId}`, persisted);
+
+    // Outbound webhook fanout (#148). Best-effort — emit() doesn't fail if
+    // enqueue does, since the timeline row is already durable and the
+    // webhook system is meant to be a best-effort notification surface.
+    if (this.fanout) {
+      try {
+        await this.fanout(persisted);
+      } catch {
+        // Swallow; the caller is responsible for its own logging.
+      }
+    }
     return persisted;
   }
 

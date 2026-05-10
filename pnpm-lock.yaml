@@ -513,6 +513,9 @@ importers:
       '@prisma/client':
         specifier: ^5.22.0
         version: 5.22.0(prisma@5.22.0)
+      bullmq:
+        specifier: ^5.21.0
+        version: 5.76.6
       ioredis:
         specifier: ^5.4.1
         version: 5.10.1

@@ -1,7 +1,7 @@
 import { Worker, Queue, type Job } from 'bullmq';
 import IORedis from 'ioredis';
 import pino from 'pino';
-import { Eventlog, RedisPubSub } from '@mergecrew/eventlog';
+import { Eventlog, RedisPubSub, fanoutToBullmq } from '@mergecrew/eventlog';
 import { runStep } from './step.js';
 
 const logger = pino({
@@ -15,7 +15,8 @@ const logger = pino({
 const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
 const conn = new IORedis(url, { maxRetriesPerRequest: null });
 const pubsub = new RedisPubSub(url);
-const eventlog = new Eventlog(pubsub);
+const fanoutQueue = new Queue('webhook.fanout', { connection: conn });
+const eventlog = new Eventlog(pubsub, fanoutToBullmq(fanoutQueue));
 const replyQueue = new Queue('orchestrator.step-reply', { connection: conn });
 
 const concurrency = Number(process.env.RUNNER_CONCURRENCY ?? 4);
@@ -46,7 +47,13 @@ logger.info({ concurrency }, 'runner started');
 
 async function shutdown() {
   logger.info('shutting down');
-  await Promise.all([worker.close(), pubsub.close(), replyQueue.close(), conn.quit()]);
+  await Promise.all([
+    worker.close(),
+    pubsub.close(),
+    replyQueue.close(),
+    fanoutQueue.close(),
+    conn.quit(),
+  ]);
   process.exit(0);
 }
 
