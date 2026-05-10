@@ -34,12 +34,14 @@ export interface MfaActionError {
   error: string;
 }
 
-export async function startSetup(): Promise<MfaSetupResult | MfaActionError> {
+export async function startSetup(
+  opts: { force?: boolean } = {},
+): Promise<MfaSetupResult | MfaActionError> {
   try {
     const session = await requireSession();
     const r = await api<{ otpauthUrl: string; secret: string }>(
       '/v1/me/mfa/setup',
-      { method: 'POST', body: JSON.stringify({}), session },
+      { method: 'POST', body: JSON.stringify({ force: !!opts.force }), session },
     );
     // Render the QR server-side so the client just gets a data URL — keeps
     // the 'qrcode' lib out of the bundled client JS.

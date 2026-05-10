@@ -11,8 +11,8 @@ export class MfaController {
   }
 
   @Post('setup')
-  async setup() {
-    return this.mfa.setup();
+  async setup(@Body() body: { force?: boolean } = {}) {
+    return this.mfa.setup({ force: !!body?.force });
   }
 
   @Post('verify')

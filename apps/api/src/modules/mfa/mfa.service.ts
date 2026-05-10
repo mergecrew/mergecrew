@@ -50,19 +50,29 @@ export class MfaService {
   /**
    * Begin enrollment: produce a fresh TOTP secret + matching otpauth URL,
    * persist the (still-unconfirmed) secret in `mfa_pending_ciphertext`.
-   * Calling this overwrites any prior pending secret.
+   *
+   * Idempotent: if a pending secret already exists, we reuse it and return
+   * the same otpauth URL. This lets the setup page recover the QR code
+   * after a refresh without rotating the secret behind the user's back —
+   * if the user has already scanned the previous QR into their app, they
+   * can keep using it. Pass `force: true` to discard and rotate.
    */
-  async setup(): Promise<{ otpauthUrl: string; secret: string }> {
+  async setup(opts: { force?: boolean } = {}): Promise<{ otpauthUrl: string; secret: string }> {
     const u = await this.requireUser();
-    const secret = authenticator.generateSecret();
+    let secret: string;
+    if (u.mfaPendingCiphertext && !opts.force) {
+      secret = this.crypto.decrypt(u.mfaPendingCiphertext);
+    } else {
+      secret = authenticator.generateSecret();
+      const ciphertext = this.crypto.encrypt(secret);
+      await this.prisma.withSystem((tx) =>
+        tx.user.update({
+          where: { id: u.id },
+          data: { mfaPendingCiphertext: ciphertext },
+        }),
+      );
+    }
     const otpauthUrl = authenticator.keyuri(u.email, ISSUER, secret);
-    const ciphertext = this.crypto.encrypt(secret);
-    await this.prisma.withSystem((tx) =>
-      tx.user.update({
-        where: { id: u.id },
-        data: { mfaPendingCiphertext: ciphertext },
-      }),
-    );
     return { otpauthUrl, secret };
   }
 

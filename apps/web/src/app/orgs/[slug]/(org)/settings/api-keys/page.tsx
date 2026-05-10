@@ -4,6 +4,7 @@ import { requireSession } from '@/lib/session';
 import { hasRole } from '@/lib/role';
 import { Card, Button } from '@/components/ui';
 import { CreatedSecretCallout } from '@/components/created-secret-callout';
+import { MfaRequiredCallout, isMfaGateError } from '@/components/mfa-required-callout';
 
 interface ApiKeySummary {
   id: string;
@@ -66,10 +67,23 @@ export default async function ApiKeysPage({
 }) {
   const { slug } = await params;
   const session = await requireSession();
-  const [list, canEdit] = await Promise.all([
-    api<{ items: ApiKeySummary[] }>(`/v1/orgs/${slug}/api-keys`, { session }),
-    hasRole(slug, session, 'admin'),
-  ]);
+  const canEdit = await hasRole(slug, session, 'admin');
+
+  // The list endpoint requires admin role, which triggers the RoleGuard's
+  // MFA gate. Catch that specific error so unenrolled admins land on a
+  // clear CTA instead of a 500.
+  let list: { items: ApiKeySummary[] };
+  let mfaBlocked = false;
+  try {
+    list = await api<{ items: ApiKeySummary[] }>(`/v1/orgs/${slug}/api-keys`, { session });
+  } catch (err) {
+    if (canEdit && isMfaGateError(err)) {
+      mfaBlocked = true;
+      list = { items: [] };
+    } else {
+      throw err;
+    }
+  }
 
   const { cookies } = await import('next/headers');
   const ck = await cookies();
@@ -94,7 +108,9 @@ export default async function ApiKeysPage({
         />
       )}
 
-      {canEdit && (
+      {mfaBlocked && <MfaRequiredCallout />}
+
+      {canEdit && !mfaBlocked && (
         <Card>
           <h2 className="font-medium">Issue key</h2>
           <form action={issueAction} className="mt-3 space-y-2 text-sm">
