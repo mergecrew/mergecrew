@@ -178,6 +178,13 @@ export class ProjectService {
     );
   }
 
+  async deleteDeployTarget(slug: string, kind: 'dev' | 'staging' | 'prod') {
+    const project = await this.detail(slug);
+    await this.prisma.withTenant(project.organizationId, (tx) =>
+      tx.deployTarget.deleteMany({ where: { projectId: project.id, kind } }),
+    );
+  }
+
   async upsertDeployTarget(slug: string, input: {
     kind: 'dev' | 'staging' | 'prod';
     adapterId: string;
