@@ -10,6 +10,7 @@ import { ErrorTargetForm } from './error-target-form';
 import { ScheduleForm } from './schedule-form';
 import { InceptionForm } from './inception-form';
 import { DeployTargetForm, type DeployTargetRow } from './deploy-target-form';
+import { SmokeTestForm } from './smoke-test-form';
 
 export default async function ProjectSettings({
   params,
@@ -159,6 +160,24 @@ export default async function ProjectSettings({
           slug={slug}
           projectSlug={projectSlug}
           hasRepo={Boolean(project.connectedRepo)}
+        />
+      </Section>
+
+      <Section
+        title="Onboarding smoke test"
+        description="Confirms the round-trip: opens a no-op PR, dispatches the dev deploy, waits for completion, returns the URL. Run this once after configuring the repo + dev deploy target."
+      >
+        <SmokeTestForm
+          slug={slug}
+          projectSlug={projectSlug}
+          ready={Boolean(project.connectedRepo) && targets.items.some((t) => t.kind === 'dev')}
+          blockedReason={
+            !project.connectedRepo
+              ? 'Connect a repository first.'
+              : !targets.items.some((t) => t.kind === 'dev')
+                ? 'Configure a dev deploy target first.'
+                : undefined
+          }
         />
       </Section>
 

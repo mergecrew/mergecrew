@@ -90,3 +90,16 @@ export async function deleteDeployTargetAction(
   });
   revalidatePath(`/orgs/${slug}/projects/${projectSlug}/settings`);
 }
+
+/**
+ * V1.1 onboarding smoke test (#7): opens a no-op draft PR, dispatches
+ * the dev deploy workflow, awaits completion, returns the resulting URL.
+ * Long-running (up to 5 min) — the action's transition reflects that.
+ */
+export async function runSmokeTestAction(slug: string, projectSlug: string) {
+  const session = await requireSession();
+  return api(`/v1/orgs/${slug}/projects/${projectSlug}/smoke-test`, {
+    method: 'POST',
+    session,
+  });
+}
