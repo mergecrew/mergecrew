@@ -59,6 +59,24 @@ export class OrgController {
     };
   }
 
+  @Get('orgs/:slug/concurrency-cap')
+  @UseGuards(RoleGuard)
+  async concurrencyCap(@Param('slug') _slug: string) {
+    const org = await this.orgs.detail();
+    return { orgConcurrencyCap: org.orgConcurrencyCap };
+  }
+
+  @Patch('orgs/:slug/concurrency-cap')
+  @UseGuards(RoleGuard)
+  @RequireRole('admin')
+  async updateConcurrencyCap(
+    @Param('slug') _slug: string,
+    @Body() body: { orgConcurrencyCap: number },
+  ) {
+    const updated = await this.orgs.updateConcurrencyCap(body.orgConcurrencyCap);
+    return { orgConcurrencyCap: updated.orgConcurrencyCap };
+  }
+
   @UseGuards(RoleGuard)
   @RequireRole('admin')
   @Get('orgs/:slug/audit-log')

@@ -61,6 +61,15 @@ const stepReplyWorker = new Worker(
   { connection: conn, concurrency: 16 },
 );
 
+// Org-cap deferred dispatches (V1.3, #9). When dispatchAgentStep finds the
+// org at its concurrency cap it delays the dispatch onto this queue;
+// processing here re-enters the dispatch path.
+const orgCapWaitWorker = new Worker(
+  'orchestrator.org-cap-wait',
+  async (job: Job) => orchestrator.handleOrgCapWait(job.data),
+  { connection: conn, concurrency: 4 },
+);
+
 const digestWorker = new Worker(
   'digest.dispatch',
   async (job: Job) => orchestrator.handleDigestDispatch(job.data),
@@ -122,6 +131,7 @@ async function shutdown() {
     rateWorker.close(),
     webhookWorker.close(),
     stepReplyWorker.close(),
+    orgCapWaitWorker.close(),
     digestWorker.close(),
     digestSlackWorker.close(),
     digestEmailWorker.close(),

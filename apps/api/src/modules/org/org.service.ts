@@ -83,6 +83,19 @@ export class OrgService {
     );
   }
 
+  async updateConcurrencyCap(orgConcurrencyCap: number) {
+    const t = this.tenant.require();
+    if (!Number.isInteger(orgConcurrencyCap) || orgConcurrencyCap < 0) {
+      throw new ValidationError('orgConcurrencyCap must be a non-negative integer (0 = unlimited)');
+    }
+    return this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.organization.update({
+        where: { id: t.organizationId },
+        data: { orgConcurrencyCap },
+      }),
+    );
+  }
+
   async listMembers() {
     const t = this.tenant.require();
     const rows = await this.prisma.withTenant(t.organizationId, (tx) =>
