@@ -500,6 +500,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/orgs/{slug}/projects/{projectSlug}/lifecycle/graph-edit-base": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["LifecycleController_graphEditBase"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{slug}/projects/{projectSlug}/lifecycle/graph-edit-pr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["LifecycleController_graphEditPr"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/skills": {
         parameters: {
             query?: never;
@@ -2284,6 +2316,40 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    LifecycleController_graphEditBase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    LifecycleController_graphEditPr: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
