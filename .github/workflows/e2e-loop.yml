@@ -1,0 +1,61 @@
+name: E2E loop
+
+# Full-loop end-to-end test (#191): spawns a DailyRun against a deployed
+# environment, polls until terminal, asserts on workflow + step counts.
+#
+# Skipped on forks and branches without secrets configured. The job's
+# first step short-circuits when MERGECREW_E2E_API_URL is empty so PRs
+# from contributors who don't have access to the secrets see a clean
+# "skipped" status rather than a failure.
+#
+# Required org / repo secrets to enable:
+#   MERGECREW_E2E_API_URL       — base URL of the deployed API
+#   MERGECREW_E2E_API_KEY       — `mc_live_…` operator-role API key
+#   MERGECREW_E2E_ORG_SLUG      — target organization slug
+#   MERGECREW_E2E_PROJECT_SLUG  — target project slug
+#
+# The deployed runner must have `MERGECREW_AGENT_STUB=1` set so the
+# agent loop returns a deterministic completed step without an LLM call.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Daily at 13:00 UTC — after the standard CI window, before US morning.
+    # The default cron deliberately doesn't run on push/PR so PR latency
+    # isn't gated on a 5-minute end-to-end roundtrip.
+    - cron: '0 13 * * *'
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Detect missing secrets
+        id: gate
+        env:
+          API_URL: ${{ secrets.MERGECREW_E2E_API_URL }}
+        run: |
+          if [ -z "$API_URL" ]; then
+            echo "::notice::MERGECREW_E2E_API_URL not set — skipping the full-loop e2e."
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=0" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.gate.outputs.skip != '1'
+        uses: actions/checkout@v6
+      - if: steps.gate.outputs.skip != '1'
+        uses: pnpm/action-setup@v6
+      - if: steps.gate.outputs.skip != '1'
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - if: steps.gate.outputs.skip != '1'
+        run: pnpm install --frozen-lockfile=false
+      - if: steps.gate.outputs.skip != '1'
+        name: Run e2e
+        env:
+          MERGECREW_API_URL: ${{ secrets.MERGECREW_E2E_API_URL }}
+          MERGECREW_API_KEY: ${{ secrets.MERGECREW_E2E_API_KEY }}
+          MERGECREW_ORG_SLUG: ${{ secrets.MERGECREW_E2E_ORG_SLUG }}
+          MERGECREW_PROJECT_SLUG: ${{ secrets.MERGECREW_E2E_PROJECT_SLUG }}
+        run: pnpm --filter @mergecrew/e2e-loop e2e

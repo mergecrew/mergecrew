@@ -92,6 +92,16 @@ const StateAnnotation = Annotation.Root({
 type State = typeof StateAnnotation.State;
 
 export async function runAgentStep(ctx: RunCtx): Promise<StepOutcome> {
+  // E2E stub mode (#191). When `MERGECREW_AGENT_STUB=1` is set the runtime
+  // bypasses the LLM and returns a deterministic `completed` outcome
+  // immediately. This is for the full-loop CI test where we want to
+  // exercise the orchestration plumbing (BullMQ → orchestrator → runner →
+  // eventlog → DB → API readback) without paying for or depending on
+  // model output. Production runs and unit tests don't see this path.
+  if (process.env.MERGECREW_AGENT_STUB === '1') {
+    return runStubAgentStep(ctx);
+  }
+
   const { agent, abortSignal } = ctx;
   const tools: ToolSpec[] = [];
   for (const sb of agent.skills) {
@@ -313,6 +323,36 @@ export async function runAgentStep(ctx: RunCtx): Promise<StepOutcome> {
     output: text,
     toolCallsMade: final.toolCallsMade,
     totalTokens: ctx.budget.snapshot().tokens,
+    transcript,
+  };
+}
+
+/**
+ * Deterministic stub used by the full-loop e2e test (#191). Emits a single
+ * synthetic AI message into the transcript so the run-detail UI doesn't
+ * see an empty step, then returns. No skills are executed, no Changeset
+ * is materialized — the test harness exercises the plumbing around the
+ * step, not the agent itself.
+ */
+async function runStubAgentStep(ctx: RunCtx): Promise<StepOutcome> {
+  if (ctx.abortSignal.aborted) {
+    return { kind: 'cancelled' };
+  }
+  const transcript = [
+    {
+      type: 'system',
+      content: `[mergecrew e2e stub] agent ${ctx.agent.kind} run=${ctx.runId} step=${ctx.agentStepId}`,
+    },
+    {
+      type: 'ai',
+      content: 'stub agent completed without invoking tools',
+    },
+  ];
+  return {
+    kind: 'completed',
+    output: 'stub',
+    toolCallsMade: 0,
+    totalTokens: 0,
     transcript,
   };
 }

@@ -62,6 +62,31 @@ You don't need any paid LLM API keys to run locally — Ollama via Homebrew work
 - Don't introduce a new runtime dependency without a comment explaining why a built-in or already-present library doesn't fit.
 - Match the existing logging shape (`pino`, with `service` and `requestId` keys where applicable).
 
+## Full-loop e2e test (#191)
+
+`apps/e2e-loop` is the runnable counterpart to the unit-test suite — it spawns a real `DailyRun` against a deployed environment, polls until terminal, and asserts on workflow + step counts. The CI workflow at `.github/workflows/e2e-loop.yml` runs it daily on a schedule and skips silently when the secrets aren't configured (forks see no failure).
+
+To enable it on a fork or staging org, set these repo / org secrets:
+
+| Secret | Purpose |
+| --- | --- |
+| `MERGECREW_E2E_API_URL` | Base URL of the deployed API (e.g. `https://api.staging.mergecrew.dev`). Empty → workflow skips. |
+| `MERGECREW_E2E_API_KEY` | `mc_live_…` operator-role API key. |
+| `MERGECREW_E2E_ORG_SLUG` | Target organization slug. |
+| `MERGECREW_E2E_PROJECT_SLUG` | Target project slug. |
+
+The deployed runner must run with `MERGECREW_AGENT_STUB=1` so the agent loop returns a deterministic completed step instead of calling an LLM. The stub lives at `packages/agent-runtime/src/loop.ts`.
+
+To run locally against your own dev stack:
+
+```bash
+MERGECREW_API_URL=http://localhost:3001 \
+MERGECREW_API_KEY=mc_live_... \
+MERGECREW_ORG_SLUG=acme \
+MERGECREW_PROJECT_SLUG=demo \
+  pnpm --filter @mergecrew/e2e-loop e2e
+```
+
 ## Reporting bugs
 
 Use the [Bug report](https://github.com/mergecrew/mergecrew/issues/new?template=bug_report.md) template. Include:
