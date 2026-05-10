@@ -13,6 +13,7 @@ import {
   applyOrgTemplateAction,
 } from './lifecycle-actions';
 import type { LifecycleScope } from './scope';
+import { LifecycleGraph } from './lifecycle-graph';
 
 interface AgentDef {
   kind: string;
@@ -65,7 +66,7 @@ interface SkillCatalogEntry {
   sideEffectClass: string;
 }
 
-type Tab = 'workflows' | 'agents' | 'skills' | 'gates' | 'source';
+type Tab = 'graph' | 'workflows' | 'agents' | 'skills' | 'gates' | 'source';
 
 export function LifecycleEditor({
   scope,
@@ -104,7 +105,7 @@ export function LifecycleEditor({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2 border-b pb-2 dark:border-zinc-800">
-        {(['agents', 'workflows', 'skills', 'gates', 'source'] as Tab[]).map((t) => (
+        {(['graph', 'agents', 'workflows', 'skills', 'gates', 'source'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -148,6 +149,7 @@ export function LifecycleEditor({
         </div>
       )}
 
+      {tab === 'graph' && <LifecycleGraph parsed={parsed} />}
       {tab === 'agents' && (
         <AgentsTab
           scope={scope}
