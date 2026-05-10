@@ -1,9 +1,10 @@
-import { Worker, type Job } from 'bullmq';
+import { Queue, Worker, type Job } from 'bullmq';
 import IORedis from 'ioredis';
 import pino from 'pino';
-import { Eventlog, RedisPubSub } from '@mergecrew/eventlog';
+import { Eventlog, RedisPubSub, fanoutToBullmq, type FanoutPayload } from '@mergecrew/eventlog';
 import { Orchestrator } from './orchestrator.js';
 import { deliverOutboundWebhook, type OutboundJob } from './outbound-webhook-worker.js';
+import { handleFanout } from './webhook-fanout-worker.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
@@ -16,7 +17,9 @@ const logger = pino({
 const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
 const conn = new IORedis(url, { maxRetriesPerRequest: null });
 const pubsub = new RedisPubSub(url);
-const eventlog = new Eventlog(pubsub);
+const fanoutQueue = new Queue('webhook.fanout', { connection: conn });
+const outboundQueue = new Queue('webhook.outbound', { connection: conn });
+const eventlog = new Eventlog(pubsub, fanoutToBullmq(fanoutQueue));
 
 const orchestrator = new Orchestrator({ connection: conn, eventlog, logger });
 
@@ -84,6 +87,14 @@ const outboundWebhookWorker = new Worker<OutboundJob>(
   { connection: conn, concurrency: 8 },
 );
 
+// Eventlog fanout (#148): every persisted event lands here. Worker fetches
+// matching webhooks and enqueues per-webhook delivery jobs onto outbound.
+const fanoutWorker = new Worker<FanoutPayload>(
+  'webhook.fanout',
+  async (job) => handleFanout(job.data, outboundQueue, logger),
+  { connection: conn, concurrency: 4 },
+);
+
 logger.info('orchestrator started');
 
 async function shutdown() {
@@ -99,6 +110,9 @@ async function shutdown() {
     digestSlackWorker.close(),
     digestEmailWorker.close(),
     outboundWebhookWorker.close(),
+    fanoutWorker.close(),
+    fanoutQueue.close(),
+    outboundQueue.close(),
     pubsub.close(),
     conn.quit(),
   ]);
