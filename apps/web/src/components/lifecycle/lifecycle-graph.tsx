@@ -20,7 +20,12 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LifecycleScope } from './scope';
-import { saveGraphLayoutAction } from './lifecycle-actions';
+import {
+  saveGraphLayoutAction,
+  getGraphEditBaseAction,
+  openGraphEditPrAction,
+  type GraphEdit,
+} from './lifecycle-actions';
 
 interface WorkflowDef {
   id: string;
@@ -142,6 +147,19 @@ export function LifecycleGraph({
   const [saveError, setSaveError] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Phase 3 (#196): inline rename → opens a PR against mergecrew.yaml.
+  // We track which node is being renamed, the draft value, and the most
+  // recent PR result / stale banner. baseHash is fetched on demand the first
+  // time the user opens an edit — cheaper than a page-load roundtrip for
+  // viewers who never edit.
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [prSubmitting, setPrSubmitting] = useState(false);
+  const [prError, setPrError] = useState<string | null>(null);
+  const [prResult, setPrResult] = useState<{ url: string; number: number; summary: string } | null>(null);
+  const [staleBanner, setStaleBanner] = useState(false);
+  const baseHashRef = useRef<string | null>(null);
+
   // Re-seed positions when the workflow set changes (e.g., a YAML save
   // added or removed one) — keep saved positions for unchanged ids,
   // pick fallback for new ones, drop ids no longer present.
@@ -157,6 +175,68 @@ export function LifecycleGraph({
     // effect re-seeds on workflow set changes, not on every drag.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflows.map((w) => w.id).join('|')]);
+
+  async function ensureBaseHash(): Promise<string | null> {
+    if (!projectScope) return null;
+    if (baseHashRef.current) return baseHashRef.current;
+    try {
+      const r = await getGraphEditBaseAction(projectScope);
+      baseHashRef.current = r.baseHash;
+      return r.baseHash;
+    } catch {
+      return null;
+    }
+  }
+
+  function startRename(id: string) {
+    if (!editableHere) return;
+    setPrError(null);
+    setPrResult(null);
+    setStaleBanner(false);
+    setRenamingId(id);
+    setRenameDraft(id);
+  }
+  function cancelRename() {
+    setRenamingId(null);
+    setRenameDraft('');
+  }
+  async function submitRename() {
+    if (!projectScope || !renamingId) return;
+    const from = renamingId;
+    const to = renameDraft.trim();
+    if (!to || to === from) {
+      cancelRename();
+      return;
+    }
+    if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(to)) {
+      setPrError('Workflow id must start with a letter and contain only letters, numbers, _ or -.');
+      return;
+    }
+    if (workflows.some((w) => w.id === to)) {
+      setPrError(`Workflow "${to}" already exists.`);
+      return;
+    }
+    setPrSubmitting(true);
+    setPrError(null);
+    setStaleBanner(false);
+    try {
+      const baseHash = await ensureBaseHash();
+      const edits: GraphEdit[] = [{ kind: 'rename_workflow', from, to }];
+      const r = await openGraphEditPrAction(projectScope, edits, baseHash);
+      if ('stale' in r) {
+        baseHashRef.current = r.currentHash;
+        setStaleBanner(true);
+        return;
+      }
+      baseHashRef.current = r.baseHash;
+      setPrResult({ url: r.prUrl, number: r.prNumber, summary: `rename workflow ${from} → ${to}` });
+      cancelRename();
+    } catch (e: any) {
+      setPrError(String(e?.message ?? e));
+    } finally {
+      setPrSubmitting(false);
+    }
+  }
 
   function persistDebounced(p: Record<string, { x: number; y: number }>) {
     if (!editableHere || !projectScope) return;
@@ -265,8 +345,8 @@ export function LifecycleGraph({
         <div className="text-zinc-500">
           {editableHere ? (
             <>
-              Drag a node to reposition it. Positions snap to a 10px grid and persist per project.
-              Edit topology (workflows, agents, transitions) on the <strong>Workflows</strong> tab.
+              Drag a node to reposition it. Double-click a node to rename it via PR. Edge / agent
+              edits stay on the <strong>Workflows</strong> tab.
             </>
           ) : (
             <>
@@ -276,11 +356,27 @@ export function LifecycleGraph({
         </div>
         <div className="flex items-center gap-2 text-zinc-500">
           {saving && <span>saving…</span>}
+          {prSubmitting && <span>opening PR…</span>}
           {saveError && (
             <span className="text-rose-600 dark:text-rose-400">save failed: {saveError}</span>
           )}
         </div>
       </div>
+      {prResult && (
+        <div className="rounded border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200">
+          Opened <a className="underline" href={prResult.url} target="_blank" rel="noreferrer">PR #{prResult.number}</a> — {prResult.summary}.
+        </div>
+      )}
+      {prError && (
+        <div className="rounded border border-rose-200 bg-rose-50 p-2 text-xs text-rose-800 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-300">
+          {prError}
+        </div>
+      )}
+      {staleBanner && (
+        <div className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
+          mergecrew.yaml changed on the default branch since you opened this view. Refresh and try again.
+        </div>
+      )}
       <div className="overflow-auto rounded border bg-zinc-50 p-2 dark:bg-zinc-900 dark:border-zinc-800">
         <svg
           width={viewW}
@@ -331,6 +427,11 @@ export function LifecycleGraph({
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
                 onPointerCancel={onPointerUp}
+                onDoubleClick={(e) => {
+                  if (!editableHere) return;
+                  e.stopPropagation();
+                  startRename(n.workflow.id);
+                }}
                 style={{
                   cursor: editableHere ? 'grab' : 'default',
                   touchAction: editableHere ? 'none' : undefined,
@@ -344,15 +445,45 @@ export function LifecycleGraph({
                   className="fill-white stroke-zinc-300 dark:fill-zinc-950 dark:stroke-zinc-700"
                   strokeWidth={1}
                 />
-                <text
-                  x={NODE_PAD}
-                  y={NODE_PAD + 14}
-                  className="fill-zinc-900 dark:fill-zinc-100"
-                  fontSize={13}
-                  fontWeight={600}
-                >
-                  {n.workflow.id}
-                </text>
+                {renamingId === n.workflow.id ? (
+                  <foreignObject x={NODE_PAD - 4} y={NODE_PAD - 2} width={NODE_W - NODE_PAD * 2 + 8} height={24}>
+                    <input
+                      type="text"
+                      value={renameDraft}
+                      autoFocus
+                      onChange={(ev) => setRenameDraft(ev.target.value)}
+                      onPointerDown={(ev) => ev.stopPropagation()}
+                      onKeyDown={(ev) => {
+                        if (ev.key === 'Enter') {
+                          ev.preventDefault();
+                          submitRename();
+                        } else if (ev.key === 'Escape') {
+                          ev.preventDefault();
+                          cancelRename();
+                        }
+                      }}
+                      onBlur={() => {
+                        // Delay so click handlers (Save) on neighbouring elements still fire.
+                        setTimeout(() => {
+                          if (renamingId === n.workflow.id && !prSubmitting) cancelRename();
+                        }, 100);
+                      }}
+                      disabled={prSubmitting}
+                      className="w-full rounded border border-zinc-300 bg-white px-1 py-0.5 font-semibold text-zinc-900 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+                      style={{ fontSize: 13 }}
+                    />
+                  </foreignObject>
+                ) : (
+                  <text
+                    x={NODE_PAD}
+                    y={NODE_PAD + 14}
+                    className="fill-zinc-900 dark:fill-zinc-100"
+                    fontSize={13}
+                    fontWeight={600}
+                  >
+                    {n.workflow.id}
+                  </text>
+                )}
                 {n.workflow.agents.length === 0 ? (
                   <text
                     x={NODE_PAD}

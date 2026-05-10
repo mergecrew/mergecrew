@@ -9,12 +9,17 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { LifecycleService } from './lifecycle.service.js';
+import { LifecyclePrService } from './lifecycle-pr.service.js';
+import type { GraphEdit } from '@mergecrew/config-yaml';
 import { RequireRole, RoleGuard } from '../../common/role.guard.js';
 
 @Controller('v1/orgs/:slug/projects/:projectSlug/lifecycle')
 @UseGuards(RoleGuard)
 export class LifecycleController {
-  constructor(private lifecycle: LifecycleService) {}
+  constructor(
+    private lifecycle: LifecycleService,
+    private lifecyclePr: LifecyclePrService,
+  ) {}
 
   @Get()
   async current(@Param('projectSlug') projectSlug: string) {
@@ -124,5 +129,26 @@ export class LifecycleController {
     @Body() body: { positions: Record<string, { x: number; y: number }> },
   ) {
     return this.lifecycle.setGraphLayout(projectSlug, body?.positions ?? {});
+  }
+
+  // --- Graph edit PRs (V2.1 phase 3, #196) ---
+  @Get('graph-edit-base')
+  async graphEditBase(@Param('projectSlug') projectSlug: string) {
+    return this.lifecyclePr.currentBaseHash(projectSlug);
+  }
+
+  @Post('graph-edit-pr')
+  @RequireRole('operator')
+  async graphEditPr(
+    @Param('slug') orgSlug: string,
+    @Param('projectSlug') projectSlug: string,
+    @Body() body: { edits: GraphEdit[]; baseHash?: string | null },
+  ) {
+    return this.lifecyclePr.openLifecycleEditPr(
+      orgSlug,
+      projectSlug,
+      body?.edits ?? [],
+      body?.baseHash ?? null,
+    );
   }
 }

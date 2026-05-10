@@ -675,6 +675,34 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/projects/{projectSlug}/lifecycle/graph-edit-base": {
+      "get": {
+        "operationId": "LifecycleController_graphEditBase",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Lifecycle"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/lifecycle/graph-edit-pr": {
+      "post": {
+        "operationId": "LifecycleController_graphEditPr",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Lifecycle"
+        ]
+      }
+    },
     "/v1/skills": {
       "get": {
         "operationId": "SkillsController_list",

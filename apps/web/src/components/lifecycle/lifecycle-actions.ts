@@ -76,3 +76,55 @@ export async function saveGraphLayoutAction(
     },
   );
 }
+
+/**
+ * Edits to the lifecycle topology (rename workflow, add/remove edge,
+ * add/remove agent) open a PR against the project's `mergecrew.yaml`
+ * via the API service in apps/api/src/modules/lifecycle/lifecycle-pr.service.ts
+ * (V2.1 phase 3, #196). The shape mirrors @mergecrew/config-yaml's GraphEdit
+ * union — kept locally rather than imported so the server-only YAML CST code
+ * doesn't get pulled into the web bundle.
+ */
+export type GraphEdit =
+  | { kind: 'rename_workflow'; from: string; to: string }
+  | { kind: 'add_edge'; from: string; to: string }
+  | { kind: 'remove_edge'; from: string; to: string }
+  | { kind: 'add_agent'; workflow: string; agent: string }
+  | { kind: 'remove_agent'; workflow: string; agent: string };
+
+export interface GraphEditPrResult {
+  prNumber: number;
+  prUrl: string;
+  branch: string;
+  baseHash: string;
+}
+export interface GraphEditPrStale {
+  stale: true;
+  currentHash: string;
+}
+
+export async function getGraphEditBaseAction(
+  scope: Extract<LifecycleScope, { kind: 'project' }>,
+): Promise<{ baseHash: string | null }> {
+  const session = await requireSession();
+  return api<{ baseHash: string | null }>(
+    `/v1/orgs/${scope.orgSlug}/projects/${scope.projectSlug}/lifecycle/graph-edit-base`,
+    { session },
+  );
+}
+
+export async function openGraphEditPrAction(
+  scope: Extract<LifecycleScope, { kind: 'project' }>,
+  edits: GraphEdit[],
+  baseHash: string | null,
+): Promise<GraphEditPrResult | GraphEditPrStale> {
+  const session = await requireSession();
+  return api<GraphEditPrResult | GraphEditPrStale>(
+    `/v1/orgs/${scope.orgSlug}/projects/${scope.projectSlug}/lifecycle/graph-edit-pr`,
+    {
+      method: 'POST',
+      session,
+      body: JSON.stringify({ edits, baseHash }),
+    },
+  );
+}
