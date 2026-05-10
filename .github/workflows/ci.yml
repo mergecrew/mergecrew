@@ -54,3 +54,10 @@ jobs:
             echo "::error::docs/openapi.json is stale. Run 'pnpm --filter @mergecrew/api openapi:export' and commit the result."
             exit 1
           }
+      - name: SDK types are regenerated from the spec
+        run: |
+          pnpm --filter @mergecrew/sdk generate
+          git diff --exit-code -- packages/sdk-ts/src/generated.ts || {
+            echo "::error::packages/sdk-ts/src/generated.ts is stale. Run 'pnpm --filter @mergecrew/sdk generate' and commit the result."
+            exit 1
+          }
