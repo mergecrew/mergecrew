@@ -165,6 +165,21 @@ export class Orchestrator {
       this.deps.logger.warn({ agentRef }, 'unknown agent ref');
       return;
     }
+
+    // V1.3 cancellation: if the run was cancelled between scheduling and
+    // dispatch, don't queue another step. The runner double-checks this
+    // too, so a step that races the cancel still fails closed.
+    const run = await withTenant(organizationId, (tx) =>
+      tx.dailyRun.findUnique({ where: { id: runId }, select: { status: true } }),
+    );
+    if (run?.status === 'cancelled') {
+      this.deps.logger.info(
+        { runId, agentRef },
+        'dispatch: skipping step — run is cancelled',
+      );
+      return;
+    }
+
     const step = await withTenant(organizationId, (tx) =>
       tx.agentStep.create({
         data: {
