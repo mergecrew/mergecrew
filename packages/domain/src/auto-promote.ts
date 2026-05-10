@@ -128,8 +128,17 @@ export function autoPromoteMatches(
         };
       }
     }
-    const changes = changeset.packageJsonChanges ?? [];
-    for (const c of changes) {
+    // Safety: rejecting when the caller didn't supply parsed version
+    // diffs prevents a path-pattern-only check from auto-promoting a
+    // package.json that has e.g. a major bump. The caller MUST parse
+    // and pass `packageJsonChanges` to use this rule flag.
+    if (changeset.packageJsonChanges === undefined) {
+      return {
+        matched: false,
+        reason: 'requirePackageJsonPatchOnly requires parsed packageJsonChanges',
+      };
+    }
+    for (const c of changeset.packageJsonChanges) {
       if (!isPatchBump(c.before, c.after)) {
         return {
           matched: false,

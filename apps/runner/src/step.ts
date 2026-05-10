@@ -3,7 +3,10 @@ import { promises as fs } from 'node:fs';
 import type { Logger } from 'pino';
 import { withTenant } from '@mergecrew/db';
 import {
+  AutoPromoteRule,
+  autoPromoteMatches,
   type AgentDefinition,
+  type AutoPromoteRule as AutoPromoteRuleType,
   type MergecrewConfig,
   type ModelCapability,
   type StepOutcome,
@@ -647,12 +650,97 @@ async function openPendingChangesetPrs(opts: {
         actor: { kind: 'system' },
         payload: { prNumber: pr.number, prUrl: pr.url, branch: cs.branch },
       });
+      // Auto-promote check (#154): if the project has rules and the diff
+      // matches one, flip the changeset straight to 'promoted' without
+      // sitting in the manual approval gate. Errors here are non-fatal —
+      // a failure leaves the changeset as 'pr_open' for the human gate.
+      try {
+        await applyAutoPromoteIfMatches({
+          organizationId,
+          projectId,
+          runId,
+          workflowRunId,
+          changesetId: cs.id,
+          prNumber: pr.number,
+          repoRef,
+          vcs,
+          eventlog,
+          logger,
+        });
+      } catch (e: any) {
+        logger.warn(
+          { changesetId: cs.id, err: e?.message ?? e },
+          'auto-promote: evaluation failed; leaving changeset on the manual gate',
+        );
+      }
     } catch (e: any) {
       logger.warn(
         { changesetId: cs.id, err: e?.message ?? e },
         'auto-open-pr: failed; leaving changeset as-is',
       );
     }
+  }
+}
+
+async function applyAutoPromoteIfMatches(opts: {
+  organizationId: string;
+  projectId: string;
+  runId: string;
+  workflowRunId: string;
+  changesetId: string;
+  prNumber: number;
+  repoRef: { installationId: string; repoId?: string; repoFullName: string; defaultBranch: string };
+  vcs: VcsProvider;
+  eventlog: Eventlog;
+  logger: Logger;
+}): Promise<void> {
+  const project = await withTenant(opts.organizationId, (tx) =>
+    tx.project.findUnique({ where: { id: opts.projectId } }),
+  );
+  const rawRules = ((project as any)?.autoPromoteRules ?? []) as unknown[];
+  if (rawRules.length === 0) return;
+
+  // Validate cached rules; tolerate (skip) any that lost shape compatibility
+  // with the current schema. The UI rejects malformed rules on write, so a
+  // bad row here is a migration artifact — log and move on.
+  const rules: AutoPromoteRuleType[] = [];
+  for (const raw of rawRules) {
+    const r = AutoPromoteRule.safeParse(raw);
+    if (r.success) rules.push(r.data);
+    else opts.logger.warn({ projectId: opts.projectId, raw }, 'auto-promote: skipping invalid rule');
+  }
+  if (rules.length === 0) return;
+
+  const files = await opts.vcs.getPullRequestFiles(opts.repoRef, opts.prNumber);
+  const candidate = {
+    files: files.map((f) => ({ path: f.path, additions: f.additions, deletions: f.deletions })),
+  };
+
+  for (const rule of rules) {
+    const result = autoPromoteMatches(rule, candidate);
+    if (!result.matched) continue;
+
+    await withTenant(opts.organizationId, (tx) =>
+      tx.changeset.update({
+        where: { id: opts.changesetId },
+        data: { status: 'promoted', updatedAt: new Date() },
+      }),
+    );
+    await opts.eventlog.emit({
+      organizationId: opts.organizationId,
+      projectId: opts.projectId,
+      dailyRunId: opts.runId,
+      workflowRunId: opts.workflowRunId,
+      changesetId: opts.changesetId,
+      type: 'CHANGESET_AUTO_PROMOTED',
+      actor: { kind: 'system' },
+      payload: { ruleName: rule.name, prNumber: opts.prNumber },
+    });
+    opts.logger.info(
+      { changesetId: opts.changesetId, rule: rule.name },
+      'auto-promote: matched, changeset promoted',
+    );
+    return;
   }
 }
 
