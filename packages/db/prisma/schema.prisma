@@ -555,14 +555,11 @@ enum ChangesetStatus {
   building
   testing
   tests_failed
-  flagged
   pr_open
   dev_deployed
-  awaiting_decision
   promoted
   rolled_back
   deferred
-  abandoned
 
   @@map("changeset_status")
 }

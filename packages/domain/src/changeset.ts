@@ -5,14 +5,11 @@ export const ChangesetStatus = z.enum([
   'building',
   'testing',
   'tests_failed',
-  'flagged',
   'pr_open',
   'dev_deployed',
-  'awaiting_decision',
   'promoted',
   'rolled_back',
   'deferred',
-  'abandoned',
 ]);
 export type ChangesetStatus = z.infer<typeof ChangesetStatus>;
 
