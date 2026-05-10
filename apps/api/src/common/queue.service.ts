@@ -8,7 +8,8 @@ export type QueueName =
   | 'runner.step'
   | 'orchestrator.gate.resume'
   | 'orchestrator.rate-limit.resume'
-  | 'webhook.inbound';
+  | 'webhook.inbound'
+  | 'webhook.outbound';
 
 @Injectable()
 export class QueueService implements OnModuleDestroy {

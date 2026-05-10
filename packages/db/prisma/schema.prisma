@@ -72,6 +72,7 @@ model Organization {
   auditEntries        AuditLogEntry[]
   lifecycleTemplates  OrgLifecycleTemplate[]
   apiKeys             ApiKey[]
+  outboundWebhooks    OutboundWebhook[]
 
   @@map("organizations")
 }
@@ -804,6 +805,53 @@ model AuthVerificationToken {
 
   @@unique([identifier, token])
   @@map("auth_verification_tokens")
+}
+
+/// Outbound webhook subscription (#141). Each row is one URL the org
+/// wants notified when matching events fire on the timeline. Secret is
+/// random per-row and used to HMAC-sign each delivery body (#142).
+model OutboundWebhook {
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @map("organization_id") @db.Uuid
+  url             String
+  /// 32-byte random per-webhook secret used for HMAC-SHA-256 signing.
+  /// Returned to the issuer ONCE on create; DB never reveals it again.
+  secret          String
+  /// JSON array of timeline event types to deliver, e.g.
+  /// ["RUN_COMPLETED","CHANGESET_OPENED"]. Empty array = all events.
+  events          Json      @default("[]")
+  enabled         Boolean   @default(true)
+  createdByUserId String?   @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastDeliveredAt DateTime? @map("last_delivered_at") @db.Timestamptz(6)
+  failureCount    Int       @default(0) @map("failure_count")
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  deliveries   WebhookDelivery[]
+
+  @@index([organizationId])
+  @@map("outbound_webhooks")
+}
+
+/// Per-attempt delivery log for outbound webhooks. Bounded retention
+/// (the worker trims to the last N per webhook on each insert).
+model WebhookDelivery {
+  id           String    @id @default(uuid()) @db.Uuid
+  webhookId    String    @map("webhook_id") @db.Uuid
+  /// Same UUID as the X-Mergecrew-Delivery header sent to the receiver,
+  /// so they can dedupe on retries.
+  deliveryUuid String    @unique @map("delivery_uuid") @db.Uuid
+  eventType    String    @map("event_type")
+  /// Null until the request returns (or the worker gives up).
+  statusCode   Int?      @map("status_code")
+  attempt      Int       @default(1)
+  occurredAt   DateTime  @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  errorMessage String?   @map("error_message")
+
+  webhook OutboundWebhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId, occurredAt(sort: Desc)])
+  @@map("webhook_deliveries")
 }
 
 /// API keys for programmatic access (#138). The plaintext token is shown

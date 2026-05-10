@@ -1396,6 +1396,86 @@
           "ApiKey"
         ]
       }
+    },
+    "/v1/orgs/{slug}/webhooks": {
+      "post": {
+        "operationId": "OutboundWebhookController_create",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OutboundWebhook"
+        ]
+      },
+      "get": {
+        "operationId": "OutboundWebhookController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OutboundWebhook"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/webhooks/{id}": {
+      "patch": {
+        "operationId": "OutboundWebhookController_update",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OutboundWebhook"
+        ]
+      },
+      "delete": {
+        "operationId": "OutboundWebhookController_remove",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OutboundWebhook"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/webhooks/{id}/deliveries": {
+      "get": {
+        "operationId": "OutboundWebhookController_deliveries",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OutboundWebhook"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/webhooks/{id}/test": {
+      "post": {
+        "operationId": "OutboundWebhookController_test",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OutboundWebhook"
+        ]
+      }
     }
   },
   "info": {

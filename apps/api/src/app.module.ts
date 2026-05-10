@@ -18,6 +18,7 @@ import { WebhookModule } from './modules/webhook/webhook.module.js';
 import { MfaModule } from './modules/mfa/mfa.module.js';
 import { AdminModule } from './modules/admin/admin.module.js';
 import { ApiKeyModule } from './modules/api-key/api-key.module.js';
+import { OutboundWebhookModule } from './modules/outbound-webhook/outbound-webhook.module.js';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { ApiKeyModule } from './modules/api-key/api-key.module.js';
     MfaModule,
     AdminModule,
     ApiKeyModule,
+    OutboundWebhookModule,
   ],
 })
 export class AppModule implements NestModule {
