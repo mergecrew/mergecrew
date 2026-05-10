@@ -174,11 +174,18 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
 
   // Workspace per-step. In dev defaults to a tmp dir; in prod set
   // RUNNER_WORKSPACE_ROOT to an ephemeral, writable location (e.g. the
-  // ECS task's /var/mergecrew/work mount).
+  // container's /var/mergecrew/work mount).
+  //
+  // mode 0700 because if multiple org workers ever share a host the
+  // workspace will contain decrypted secrets, repo checkouts, and tool
+  // outputs — none of which should be readable by other users on the
+  // box. `recursive: true` only sets the mode on the leaf, so we mkdir
+  // the root with the same mode first to keep the whole chain locked.
   const workspaceRoot =
     process.env.RUNNER_WORKSPACE_ROOT ?? path.join(process.env.TMPDIR ?? '/tmp', 'mergecrew-work');
+  await fs.mkdir(workspaceRoot, { recursive: true, mode: 0o700 });
   const workspacePath = path.join(workspaceRoot, runId, stepId);
-  await fs.mkdir(workspacePath, { recursive: true });
+  await fs.mkdir(workspacePath, { recursive: true, mode: 0o700 });
 
   // VCS adapter from env (only used by skills that touch the repo).
   let vcs: VcsProvider | undefined;
