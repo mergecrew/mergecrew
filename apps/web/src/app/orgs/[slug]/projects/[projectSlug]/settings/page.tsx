@@ -64,6 +64,29 @@ export default async function ProjectSettings({
   // and live under /orgs/<slug>/settings, not here.
   const canEdit = await hasRole(slug, session, 'operator');
 
+  // After a fresh GitHub App install (#184), fetch the list of repos the
+  // installation was granted access to so the form can render a dropdown
+  // instead of asking the user to retype owner/repo. Best-effort: if the
+  // endpoint fails (no GITHUB_APP_* env, transient error), the UI falls
+  // back to free-text inputs.
+  let availableRepos: Array<{
+    repoId: string;
+    repoFullName: string;
+    defaultBranch: string;
+    private: boolean;
+  }> = [];
+  if (installedInstallationId && canEdit) {
+    try {
+      const r = await api<{ items: typeof availableRepos }>(
+        `/v1/orgs/${slug}/projects/${projectSlug}/installation-repos/${encodeURIComponent(installedInstallationId)}`,
+        { session },
+      );
+      availableRepos = r.items;
+    } catch {
+      // Swallow — RepoForm degrades to free-text inputs.
+    }
+  }
+
   return (
     <main className="mx-auto max-w-3xl space-y-6 p-6">
       <h1 className="text-xl font-semibold">Settings</h1>
@@ -94,6 +117,7 @@ export default async function ProjectSettings({
             projectSlug={projectSlug}
             initial={project.connectedRepo ?? null}
             installedInstallationId={installedInstallationId}
+            availableRepos={availableRepos}
           />
         </Subsection>
 

@@ -11,11 +11,19 @@ interface ConnectedRepo {
   repoId: string;
 }
 
+interface AvailableRepo {
+  repoId: string;
+  repoFullName: string;
+  defaultBranch: string;
+  private: boolean;
+}
+
 export function RepoForm({
   slug,
   projectSlug,
   initial,
   installedInstallationId,
+  availableRepos = [],
 }: {
   slug: string;
   projectSlug: string;
@@ -23,10 +31,16 @@ export function RepoForm({
   /**
    * V1.1 (#7): when the user just completed a GitHub App install, the
    * callback redirects them back to this page with an `installation_id`
-   * query param. We pre-fill the form so they only need to type the repo
+   * query param. We pre-fill the form so they only need to pick the repo
    * name — the install id has already been determined by GitHub.
    */
   installedInstallationId?: string | null;
+  /**
+   * #184: repos the just-completed GitHub App installation was granted
+   * access to. When non-empty, the form replaces the free-text inputs
+   * with a dropdown so the user doesn't have to retype names.
+   */
+  availableRepos?: AvailableRepo[];
 }) {
   const [repoFullName, setRepoFullName] = useState(initial?.repoFullName ?? '');
   const [defaultBranch, setDefaultBranch] = useState(initial?.defaultBranch ?? 'main');
@@ -36,6 +50,15 @@ export function RepoForm({
   const [repoId, setRepoId] = useState(initial?.repoId ?? '');
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+
+  const hasDropdown = availableRepos.length > 0;
+  const onPickRepo = (full: string) => {
+    const r = availableRepos.find((x) => x.repoFullName === full);
+    if (!r) return;
+    setRepoFullName(r.repoFullName);
+    setDefaultBranch(r.defaultBranch);
+    setRepoId(r.repoId);
+  };
 
   const onSave = () => {
     setError(null);
@@ -82,11 +105,19 @@ export function RepoForm({
         </div>
       )}
 
-      {installedInstallationId && (
+      {installedInstallationId && hasDropdown && (
         <div className="rounded bg-emerald-50 p-2 text-xs text-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-200">
-          GitHub App installed. Type the repository this project should connect
-          to (must be one the App was given access to during install) and click
-          Connect.
+          GitHub App installed. Pick the repository this project should connect
+          to from the list below — only repos the App was granted access to
+          during install are shown.
+        </div>
+      )}
+      {installedInstallationId && !hasDropdown && (
+        <div className="rounded bg-amber-50 p-2 text-xs text-amber-900 dark:bg-amber-900/20 dark:text-amber-200">
+          GitHub App installed, but the server couldn&apos;t list its
+          accessible repos (likely because <code>GITHUB_APP_ID</code> /{' '}
+          <code>GITHUB_APP_PRIVATE_KEY</code> aren&apos;t configured). Type the
+          repository name manually and click Connect.
         </div>
       )}
 
@@ -111,12 +142,28 @@ export function RepoForm({
           <span className="block text-zinc-600 dark:text-zinc-400">
             Repository (owner/repo)
           </span>
-          <input
-            className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
-            placeholder="acme/webapp"
-            value={repoFullName}
-            onChange={(e) => setRepoFullName(e.target.value)}
-          />
+          {hasDropdown ? (
+            <select
+              className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+              value={repoFullName}
+              onChange={(e) => onPickRepo(e.target.value)}
+            >
+              <option value="">— select a repo —</option>
+              {availableRepos.map((r) => (
+                <option key={r.repoId} value={r.repoFullName}>
+                  {r.repoFullName}
+                  {r.private ? ' (private)' : ''}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+              placeholder="acme/webapp"
+              value={repoFullName}
+              onChange={(e) => setRepoFullName(e.target.value)}
+            />
+          )}
         </label>
         <label className="text-sm">
           <span className="block text-zinc-600 dark:text-zinc-400">Default branch</span>
