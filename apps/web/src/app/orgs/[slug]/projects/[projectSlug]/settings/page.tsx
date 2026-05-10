@@ -59,7 +59,10 @@ export default async function ProjectSettings({
     enabled: boolean;
     skipDates: string[];
   } | null>(`/v1/orgs/${slug}/projects/${projectSlug}/schedule`, { session });
-  const canEdit = await hasRole(slug, session, 'admin');
+  // Project-level edits are operator-gated (see project.controller.ts).
+  // Org-only operations like API keys / member invites stay admin-gated
+  // and live under /orgs/<slug>/settings, not here.
+  const canEdit = await hasRole(slug, session, 'operator');
 
   return (
     <main className="mx-auto max-w-3xl space-y-6 p-6">

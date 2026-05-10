@@ -19,7 +19,7 @@ export class ProjectController {
   }
 
   @Post()
-  @RequireRole('admin')
+  @RequireRole('operator')
   async create(@Body() body: { name: string; slug: string }) {
     return this.projects.create(body);
   }
@@ -30,7 +30,7 @@ export class ProjectController {
   }
 
   @Patch(':projectSlug')
-  @RequireRole('admin')
+  @RequireRole('operator')
   async update(
     @Param('projectSlug') projectSlug: string,
     @Body() body: { name?: string; description?: string | null; archived?: boolean },
@@ -39,7 +39,7 @@ export class ProjectController {
   }
 
   @Post(':projectSlug/connect-repo')
-  @RequireRole('admin')
+  @RequireRole('operator')
   async connectRepo(
     @Param('projectSlug') projectSlug: string,
     @Body() body: {
@@ -53,7 +53,7 @@ export class ProjectController {
   }
 
   @Delete(':projectSlug/connect-repo')
-  @RequireRole('admin')
+  @RequireRole('operator')
   async disconnectRepo(@Param('projectSlug') projectSlug: string) {
     await this.projects.disconnectRepo(projectSlug);
     return { ok: true };
@@ -65,7 +65,7 @@ export class ProjectController {
   }
 
   @Post(':projectSlug/deploy-targets')
-  @RequireRole('admin')
+  @RequireRole('operator')
   async upsertDeployTarget(
     @Param('projectSlug') projectSlug: string,
     @Body() body: { kind: 'dev' | 'staging' | 'prod'; adapterId: string; config: Record<string, unknown> },
@@ -74,7 +74,7 @@ export class ProjectController {
   }
 
   @Delete(':projectSlug/deploy-targets/:kind')
-  @RequireRole('admin')
+  @RequireRole('operator')
   async deleteDeployTarget(
     @Param('projectSlug') projectSlug: string,
     @Param('kind') kind: 'dev' | 'staging' | 'prod',
@@ -89,7 +89,7 @@ export class ProjectController {
   }
 
   @Post(':projectSlug/secrets')
-  @RequireRole('admin')
+  @RequireRole('operator')
   async setSecret(
     @Param('projectSlug') projectSlug: string,
     @Body() body: { name: string; value: string },
@@ -99,7 +99,7 @@ export class ProjectController {
   }
 
   @Delete(':projectSlug/secrets/:name')
-  @RequireRole('admin')
+  @RequireRole('operator')
   async deleteSecret(@Param('projectSlug') projectSlug: string, @Param('name') name: string) {
     await this.projects.deleteSecret(projectSlug, name);
     return { ok: true };
@@ -111,7 +111,7 @@ export class ProjectController {
   }
 
   @Patch(':projectSlug/tracker')
-  @RequireRole('admin')
+  @RequireRole('operator')
   async upsertTracker(
     @Param('projectSlug') projectSlug: string,
     @Body() body: { adapterId: string; config: Record<string, unknown>; token?: string },
@@ -120,7 +120,7 @@ export class ProjectController {
   }
 
   @Delete(':projectSlug/tracker')
-  @RequireRole('admin')
+  @RequireRole('operator')
   async deleteTracker(@Param('projectSlug') projectSlug: string) {
     await this.projects.deleteTracker(projectSlug);
     return { ok: true };
@@ -137,7 +137,7 @@ export class ProjectController {
   }
 
   @Patch(':projectSlug/error-target')
-  @RequireRole('admin')
+  @RequireRole('operator')
   async upsertErrorTarget(
     @Param('projectSlug') projectSlug: string,
     @Body() body: { adapterId: string; config: Record<string, unknown>; token?: string },
@@ -146,7 +146,7 @@ export class ProjectController {
   }
 
   @Delete(':projectSlug/error-target')
-  @RequireRole('admin')
+  @RequireRole('operator')
   async deleteErrorTarget(@Param('projectSlug') projectSlug: string) {
     await this.projects.deleteErrorTarget(projectSlug);
     return { ok: true };
@@ -158,7 +158,7 @@ export class ProjectController {
   }
 
   @Patch(':projectSlug/schedule')
-  @RequireRole('admin')
+  @RequireRole('operator')
   async updateSchedule(
     @Param('projectSlug') projectSlug: string,
     @Body() body: { cron?: string; timezone?: string; enabled?: boolean; skipDates?: string[] },
@@ -172,7 +172,7 @@ export class ProjectController {
   }
 
   @Put(':projectSlug/auto-promote')
-  @RequireRole('admin')
+  @RequireRole('operator')
   async setAutoPromote(
     @Param('projectSlug') projectSlug: string,
     @Body() body: { rules: unknown },
@@ -181,13 +181,13 @@ export class ProjectController {
   }
 
   @Post(':projectSlug/inception')
-  @RequireRole('admin')
+  @RequireRole('operator')
   async runInception(@Param('projectSlug') projectSlug: string) {
     return this.inception.run(projectSlug);
   }
 
   @Post(':projectSlug/smoke-test')
-  @RequireRole('admin')
+  @RequireRole('operator')
   async runSmokeTest(@Param('projectSlug') projectSlug: string) {
     return this.smokeTest.run(projectSlug);
   }
