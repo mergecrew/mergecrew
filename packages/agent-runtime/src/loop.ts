@@ -279,7 +279,9 @@ export async function runAgentStep(ctx: RunCtx): Promise<StepOutcome> {
     signal: abortSignal,
   })) as State;
 
-  if (final.outcome) return final.outcome;
+  const transcript = serializeTranscript(final.messages);
+
+  if (final.outcome) return { ...final.outcome, transcript };
 
   // No outcome set means we ended naturally — last AI message has the answer.
   const last = final.messages[final.messages.length - 1] as AIMessage | undefined;
@@ -289,7 +291,29 @@ export async function runAgentStep(ctx: RunCtx): Promise<StepOutcome> {
     output: text,
     toolCallsMade: final.toolCallsMade,
     totalTokens: ctx.budget.snapshot().tokens,
+    transcript,
   };
+}
+
+/**
+ * Pull a JSON-serializable shape out of the LangChain message instances.
+ * Keeps the fields a future debugger needs (role/type, content, tool
+ * calls, tool result correlation), drops the runtime junk that would
+ * just bloat the persisted blob.
+ */
+function serializeTranscript(messages: BaseMessage[]): unknown[] {
+  return messages.map((m) => {
+    const out: Record<string, unknown> = {
+      type: typeof (m as any)._getType === 'function' ? (m as any)._getType() : (m as any).type,
+      content: m.content,
+    };
+    const toolCalls = (m as any).tool_calls;
+    if (Array.isArray(toolCalls) && toolCalls.length > 0) out.tool_calls = toolCalls;
+    if ((m as any).name) out.name = (m as any).name;
+    if ((m as any).tool_call_id) out.tool_call_id = (m as any).tool_call_id;
+    if ((m as any).usage_metadata) out.usage_metadata = (m as any).usage_metadata;
+    return out;
+  });
 }
 
 function extractUsage(msg: AIMessage): Usage {
