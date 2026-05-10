@@ -26,7 +26,7 @@ export default async function AutoPromotePage({
       `/v1/orgs/${slug}/projects/${projectSlug}/auto-promote`,
       { session },
     ),
-    hasRole(slug, session, 'admin'),
+    hasRole(slug, session, 'operator'),
   ]);
 
   return (
