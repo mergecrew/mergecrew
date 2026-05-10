@@ -40,6 +40,7 @@ const TRACKER_TOKEN_SECRET = 'TRACKER_TOKEN';
 const ERROR_TRACKER_TOKEN_SECRET = 'ERROR_TRACKER_TOKEN';
 import { CompositeCommsProvider } from '@mergecrew/adapters-comms';
 import { runAgentStep, BudgetTracker, PolicyEngine } from '@mergecrew/agent-runtime';
+import { transcriptStoreFromEnv } from '@mergecrew/transcript-store';
 
 interface StepArgs {
   organizationId: string;
@@ -477,6 +478,46 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
       eventlog,
       logger,
     });
+  }
+
+  // Persist the agent transcript to the configured store (#4). Honored
+  // outcomes come from runAgentStep; if no transcript was collected
+  // (early policy reject before any LLM call) we skip rather than write
+  // an empty blob. The transcript URL is stamped on agent_steps so
+  // operators can pull the full trace by step id.
+  if (outcome.transcript && outcome.transcript.length > 0) {
+    const store = transcriptStoreFromEnv();
+    if (store) {
+      try {
+        const url = await store.put(`runs/${runId}/steps/${stepId}.json`, {
+          organizationId,
+          projectId,
+          runId,
+          workflowRunId,
+          stepId,
+          agentRef,
+          finishedAt: new Date().toISOString(),
+          outcome: {
+            kind: outcome.kind,
+            reason: outcome.reason,
+            toolCallsMade: outcome.toolCallsMade,
+            totalTokens: outcome.totalTokens,
+          },
+          messages: outcome.transcript,
+        });
+        await withTenant(organizationId, (tx) =>
+          tx.agentStep.update({
+            where: { id: stepId },
+            data: { transcriptUrl: url },
+          }),
+        );
+      } catch (err: any) {
+        logger.warn(
+          { stepId, err: err?.message ?? err },
+          'transcript-store: write failed; agent_steps.transcript_url stays null',
+        );
+      }
+    }
   }
 
   // Cleanup workspace.

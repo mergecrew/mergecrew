@@ -422,6 +422,11 @@ model AgentStep {
   totalInputTokens     Int      @default(0) @map("total_input_tokens")
   totalOutputTokens    Int      @default(0) @map("total_output_tokens")
   totalUsdEstimate     Decimal  @default(0) @map("total_usd_estimate") @db.Decimal(12, 6)
+  /// Pointer to the agent's full message transcript (#4). Format is the
+  /// scheme-prefixed location: `s3://bucket/key`, `file:///path`, etc.
+  /// Null when the runner couldn't persist (no S3 + no local dir, or
+  /// the step never produced messages — e.g. cancelled before LLM call).
+  transcriptUrl        String?  @map("transcript_url")
 
   workflowRun WorkflowRun @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
   toolCalls   ToolCall[]

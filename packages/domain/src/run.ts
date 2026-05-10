@@ -31,4 +31,11 @@ export interface StepOutcome {
   totalTokens?: number;
   retryAfterMs?: number;
   reason?: string;
+  /**
+   * Full agent message transcript, captured as serializable JSON (#4).
+   * Persisted to S3 (or local fallback) by the runner via the
+   * `@mergecrew/transcript-store` package. May be empty for early-failed
+   * paths (policy-rejected before the first LLM call, etc).
+   */
+  transcript?: unknown[];
 }
