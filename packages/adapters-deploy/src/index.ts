@@ -4,3 +4,4 @@ export * from './vercel.js';
 export * from './netlify.js';
 export * from './render.js';
 export * from './railway.js';
+export * from './fly.js';
