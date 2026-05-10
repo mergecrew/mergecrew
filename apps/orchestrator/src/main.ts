@@ -5,6 +5,7 @@ import { Eventlog, RedisPubSub, fanoutToBullmq, type FanoutPayload } from '@merg
 import { Orchestrator } from './orchestrator.js';
 import { deliverOutboundWebhook, type OutboundJob } from './outbound-webhook-worker.js';
 import { handleFanout } from './webhook-fanout-worker.js';
+import { HeartbeatSweeper } from './heartbeat-sweeper.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
@@ -95,10 +96,25 @@ const fanoutWorker = new Worker<FanoutPayload>(
   { connection: conn, concurrency: 4 },
 );
 
+// Heartbeat sweeper (#10 V1.4): re-dispatches steps whose runner stopped
+// writing heartbeats. Reuses the same `runner.step` queue the orchestrator
+// dispatches to.
+const runnerQueue = new Queue('runner.step', { connection: conn });
+const heartbeatSweeper = new HeartbeatSweeper({
+  runnerQueue,
+  eventlog,
+  logger,
+  intervalMs: Number(process.env.ORCHESTRATOR_HEARTBEAT_SWEEPER_INTERVAL_MS ?? 30_000),
+  staleAfterMs: Number(process.env.ORCHESTRATOR_HEARTBEAT_STALE_AFTER_MS ?? 90_000),
+  maxAttempts: Number(process.env.ORCHESTRATOR_HEARTBEAT_MAX_ATTEMPTS ?? 3),
+});
+heartbeatSweeper.start();
+
 logger.info('orchestrator started');
 
 async function shutdown() {
   logger.info('shutting down');
+  heartbeatSweeper.stop();
   await Promise.all([
     dueWorker.close(),
     dispatchWorker.close(),
@@ -113,6 +129,7 @@ async function shutdown() {
     fanoutWorker.close(),
     fanoutQueue.close(),
     outboundQueue.close(),
+    runnerQueue.close(),
     pubsub.close(),
     conn.quit(),
   ]);

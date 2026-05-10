@@ -433,12 +433,22 @@ model AgentStep {
   /// the step never produced messages — e.g. cancelled before LLM call).
   transcriptUrl        String?  @map("transcript_url")
 
+  /// Liveness heartbeat (#10 V1.4). Stamped every RUNNER_HEARTBEAT_INTERVAL_MS
+  /// while a step is executing. The orchestrator's heartbeat sweeper
+  /// re-dispatches steps whose heartbeat has gone stale, on the assumption
+  /// that the runner died (OOM, ECS task killed, network partition).
+  /// Null while the step is queued/pending; cleared lazily on terminal
+  /// states. Index is partial-friendly because the sweeper only ever scans
+  /// rows with status='running'.
+  heartbeatAt          DateTime? @map("heartbeat_at") @db.Timestamptz(6)
+
   workflowRun WorkflowRun @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
   toolCalls   ToolCall[]
   modelTurns  ModelTurn[]
   pauses      RunPause[]
 
   @@index([status, startedAt])
+  @@index([status, heartbeatAt])
   @@map("agent_steps")
 }
 

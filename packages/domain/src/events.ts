@@ -26,6 +26,10 @@ export const TimelineEventType = z.enum([
   'AGENT_STEP_STARTED',
   'AGENT_STEP_COMPLETED',
   'AGENT_STEP_FAILED',
+  // V1.4 dead-runner recovery: emitted when the orchestrator's heartbeat
+  // sweeper re-dispatches a step whose runner stopped writing heartbeats
+  // (OOM kill, ECS task drain, network partition).
+  'AGENT_STEP_RECOVERED',
   'AGENT_TOOL_CALL',
   'AGENT_DECISION',
   // gate
