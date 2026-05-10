@@ -77,6 +77,8 @@ function briefFor(e: Ev): string {
       return `paused (rate-limit)`;
     case 'CHANGESET_PROMOTED':
       return `promoted ${p.changesetId}`;
+    case 'CHANGESET_AUTO_PROMOTED':
+      return `auto-promoted via rule "${p.ruleName}" (PR #${p.prNumber})`;
     default:
       return JSON.stringify(p).slice(0, 200);
   }
