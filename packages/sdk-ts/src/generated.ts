@@ -65,7 +65,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        patch: operations["OrgController_update"];
         trace?: never;
     };
     "/v1/orgs/{slug}/members": {
@@ -1461,6 +1461,23 @@ export interface operations {
         };
     };
     OrgController_detail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    OrgController_update: {
         parameters: {
             query?: never;
             header?: never;

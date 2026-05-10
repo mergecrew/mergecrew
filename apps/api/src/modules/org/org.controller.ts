@@ -26,6 +26,16 @@ export class OrgController {
     return this.orgs.detail();
   }
 
+  @Patch('orgs/:slug')
+  @UseGuards(RoleGuard)
+  @RequireRole('admin')
+  async update(
+    @Param('slug') _slug: string,
+    @Body() body: { name?: string; slug?: string },
+  ) {
+    return this.orgs.update(body);
+  }
+
   @Get('orgs/:slug/members')
   async members(@Param('slug') _slug: string) {
     return { items: await this.orgs.listMembers() };
