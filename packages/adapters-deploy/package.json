@@ -15,5 +15,16 @@
     "@octokit/auth-app": "^7.1.0",
     "@octokit/rest": "^21.0.2"
   },
-  "devDependencies": { "typescript": "^5.6.2", "vitest": "^2.1.1" }
+  "optionalDependencies": {
+    "@aws-sdk/client-cloudfront": "^3.658.0",
+    "@aws-sdk/client-ecs": "^3.658.0",
+    "@aws-sdk/client-lambda": "^3.658.0"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-cloudfront": "^3.658.0",
+    "@aws-sdk/client-ecs": "^3.658.0",
+    "@aws-sdk/client-lambda": "^3.658.0",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.1"
+  }
 }
