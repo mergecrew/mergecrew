@@ -1,0 +1,135 @@
+name: Deploy services (ECS)
+
+# Builds Docker images for the four backend services, pushes them to ECR,
+# then forces a new ECS deployment. Auth uses the GitHub OIDC role created
+# by `infra/aws/oidc.tf` — no long-lived AWS keys live in repo secrets.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/api/**'
+      - 'apps/orchestrator/**'
+      - 'apps/runner/**'
+      - 'apps/worker-cron/**'
+      - 'packages/**'
+      - 'infra/docker/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/deploy-services.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-services
+  cancel-in-progress: false
+
+permissions:
+  id-token: write # required for aws-actions/configure-aws-credentials OIDC
+  contents: read
+
+jobs:
+  build-and-push:
+    # Required repo variables / secrets:
+    #   vars.ECS_DEPLOY_ENABLED  — gate; set to 'true' once the Terraform
+    #                              has been applied and the cluster exists
+    #   vars.AWS_REGION          — region, e.g. 'us-east-1'
+    #   vars.ECS_CLUSTER_NAME    — terraform output `ecs_cluster_name`
+    #   secrets.AWS_DEPLOY_ROLE_ARN — terraform output `github_deploy_role_arn`
+    if: ${{ vars.ECS_DEPLOY_ENABLED == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [api, orchestrator, runner, worker-cron]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Compute image tag
+        id: tag
+        run: echo "image_tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/Dockerfile.${{ matrix.service }}
+          push: true
+          # We tag with both the immutable commit SHA and `latest` so that
+          # task definitions can reference either. The ECS service is updated
+          # to pin to the SHA below.
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/mergecrew-${{ vars.ENVIRONMENT || 'prod' }}/${{ matrix.service }}:${{ steps.tag.outputs.image_tag }}
+            ${{ steps.ecr.outputs.registry }}/mergecrew-${{ vars.ENVIRONMENT || 'prod' }}/${{ matrix.service }}:latest
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  deploy:
+    needs: build-and-push
+    if: ${{ vars.ECS_DEPLOY_ENABLED == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [api, orchestrator, runner, worker-cron]
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # Re-register the existing task definition with the new image and force
+      # a deployment. We don't recreate the task def from scratch — Terraform
+      # owns the schema (env vars, secrets, IAM); we only swap the image.
+      - name: Update service image
+        env:
+          ENVIRONMENT: ${{ vars.ENVIRONMENT || 'prod' }}
+          CLUSTER: ${{ vars.ECS_CLUSTER_NAME }}
+          SERVICE: mergecrew-${{ vars.ENVIRONMENT || 'prod' }}-${{ matrix.service }}
+          FAMILY: mergecrew-${{ vars.ENVIRONMENT || 'prod' }}-${{ matrix.service }}
+        run: |
+          set -euo pipefail
+          IMAGE_TAG="${GITHUB_SHA::12}"
+          ACCOUNT_ID=$(aws sts get-caller-identity --query 'Account' --output text)
+          REGISTRY="$ACCOUNT_ID.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com"
+          IMAGE="$REGISTRY/mergecrew-$ENVIRONMENT/${{ matrix.service }}:$IMAGE_TAG"
+
+          # Pull current task def, swap the image, register a new revision.
+          aws ecs describe-task-definition --task-definition "$FAMILY" \
+            | jq --arg img "$IMAGE" '
+                .taskDefinition
+                | .containerDefinitions[0].image = $img
+                | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)
+              ' > /tmp/new-task-def.json
+          NEW_REVISION=$(aws ecs register-task-definition \
+            --cli-input-json "file:///tmp/new-task-def.json" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered: $NEW_REVISION"
+
+          aws ecs update-service \
+            --cluster "$CLUSTER" \
+            --service "$SERVICE" \
+            --task-definition "$NEW_REVISION" \
+            --force-new-deployment \
+            --query 'service.deployments[0].id' \
+            --output text
+
+      - name: Wait for deployment to stabilize
+        env:
+          CLUSTER: ${{ vars.ECS_CLUSTER_NAME }}
+          SERVICE: mergecrew-${{ vars.ENVIRONMENT || 'prod' }}-${{ matrix.service }}
+        run: |
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
+          echo "✅ ${{ matrix.service }} stabilized"
