@@ -1,0 +1,1379 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/v1/auth/exchange": {
+      "post": {
+        "operationId": "AuthController_exchange",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/v1/auth/session": {
+      "get": {
+        "operationId": "AuthController_session",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/v1/orgs": {
+      "get": {
+        "operationId": "OrgController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
+      },
+      "post": {
+        "operationId": "OrgController_create",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}": {
+      "get": {
+        "operationId": "OrgController_detail",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/members": {
+      "get": {
+        "operationId": "OrgController_members",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/budget": {
+      "get": {
+        "operationId": "OrgController_budget",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
+      },
+      "patch": {
+        "operationId": "OrgController_updateBudget",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/audit-log": {
+      "get": {
+        "operationId": "OrgController_auditLog",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects": {
+      "get": {
+        "operationId": "ProjectController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      },
+      "post": {
+        "operationId": "ProjectController_create",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}": {
+      "get": {
+        "operationId": "ProjectController_detail",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      },
+      "patch": {
+        "operationId": "ProjectController_update",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/connect-repo": {
+      "post": {
+        "operationId": "ProjectController_connectRepo",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      },
+      "delete": {
+        "operationId": "ProjectController_disconnectRepo",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/deploy-targets": {
+      "get": {
+        "operationId": "ProjectController_deployTargets",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      },
+      "post": {
+        "operationId": "ProjectController_upsertDeployTarget",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/secrets": {
+      "get": {
+        "operationId": "ProjectController_listSecrets",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      },
+      "post": {
+        "operationId": "ProjectController_setSecret",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/secrets/{name}": {
+      "delete": {
+        "operationId": "ProjectController_deleteSecret",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/tracker": {
+      "get": {
+        "operationId": "ProjectController_getTracker",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      },
+      "patch": {
+        "operationId": "ProjectController_upsertTracker",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      },
+      "delete": {
+        "operationId": "ProjectController_deleteTracker",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/tracker/test": {
+      "post": {
+        "operationId": "ProjectController_testTracker",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/error-target": {
+      "get": {
+        "operationId": "ProjectController_getErrorTarget",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      },
+      "patch": {
+        "operationId": "ProjectController_upsertErrorTarget",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      },
+      "delete": {
+        "operationId": "ProjectController_deleteErrorTarget",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/schedule": {
+      "get": {
+        "operationId": "ProjectController_getSchedule",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      },
+      "patch": {
+        "operationId": "ProjectController_updateSchedule",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/lifecycle": {
+      "get": {
+        "operationId": "LifecycleController_current",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Lifecycle"
+        ]
+      },
+      "put": {
+        "operationId": "LifecycleController_upsert",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Lifecycle"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/lifecycle/versions": {
+      "get": {
+        "operationId": "LifecycleController_versions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Lifecycle"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/lifecycle/apply-template": {
+      "post": {
+        "operationId": "LifecycleController_applyTemplate",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Lifecycle"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/lifecycle/agents/{ref}": {
+      "put": {
+        "operationId": "LifecycleController_upsertAgent",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Lifecycle"
+        ]
+      },
+      "delete": {
+        "operationId": "LifecycleController_deleteAgent",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Lifecycle"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/lifecycle/workflows/{id}": {
+      "put": {
+        "operationId": "LifecycleController_upsertWorkflow",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Lifecycle"
+        ]
+      },
+      "delete": {
+        "operationId": "LifecycleController_deleteWorkflow",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Lifecycle"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/lifecycle/custom-skills/{name}": {
+      "put": {
+        "operationId": "LifecycleController_upsertCustomSkill",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Lifecycle"
+        ]
+      },
+      "delete": {
+        "operationId": "LifecycleController_deleteCustomSkill",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Lifecycle"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/lifecycle/human-gates": {
+      "put": {
+        "operationId": "LifecycleController_setHumanGates",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Lifecycle"
+        ]
+      }
+    },
+    "/v1/skills": {
+      "get": {
+        "operationId": "SkillsController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Skills"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/lifecycle-templates": {
+      "get": {
+        "operationId": "OrgTemplateController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OrgTemplate"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/lifecycle-templates/{name}": {
+      "get": {
+        "operationId": "OrgTemplateController_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OrgTemplate"
+        ]
+      },
+      "put": {
+        "operationId": "OrgTemplateController_upsertYaml",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OrgTemplate"
+        ]
+      },
+      "delete": {
+        "operationId": "OrgTemplateController_delete",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OrgTemplate"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/lifecycle-templates/{name}/agents/{ref}": {
+      "put": {
+        "operationId": "OrgTemplateController_upsertAgent",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OrgTemplate"
+        ]
+      },
+      "delete": {
+        "operationId": "OrgTemplateController_deleteAgent",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OrgTemplate"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/lifecycle-templates/{name}/workflows/{id}": {
+      "put": {
+        "operationId": "OrgTemplateController_upsertWorkflow",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OrgTemplate"
+        ]
+      },
+      "delete": {
+        "operationId": "OrgTemplateController_deleteWorkflow",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OrgTemplate"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/lifecycle-templates/{name}/custom-skills/{skill}": {
+      "put": {
+        "operationId": "OrgTemplateController_upsertCustomSkill",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OrgTemplate"
+        ]
+      },
+      "delete": {
+        "operationId": "OrgTemplateController_deleteCustomSkill",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OrgTemplate"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/lifecycle-templates/{name}/human-gates": {
+      "put": {
+        "operationId": "OrgTemplateController_setHumanGates",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OrgTemplate"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/runs": {
+      "get": {
+        "operationId": "RunController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Run"
+        ]
+      },
+      "post": {
+        "operationId": "RunController_runNow",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Run"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/runs/{runId}": {
+      "get": {
+        "operationId": "RunController_detail",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Run"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/runs/{runId}/full": {
+      "get": {
+        "operationId": "RunController_full",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Run"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/runs/{runId}/cancel": {
+      "post": {
+        "operationId": "RunController_cancel",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Run"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/runs/{runId}/timeline": {
+      "get": {
+        "operationId": "RunController_timeline",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Run"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/runs/{runId}/intent": {
+      "post": {
+        "operationId": "RunController_addIntent",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Run"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/runs/{runId}/timeline/stream": {
+      "get": {
+        "operationId": "TimelineSseController_stream",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "TimelineSse"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/changesets": {
+      "get": {
+        "operationId": "ChangesetController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Changeset"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/changesets/{csId}": {
+      "get": {
+        "operationId": "ChangesetController_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Changeset"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/changesets/{csId}/diff": {
+      "get": {
+        "operationId": "ChangesetController_diff",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Changeset"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/changesets/{csId}/decisions": {
+      "post": {
+        "operationId": "ChangesetController_decide",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Changeset"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/digest/{date}": {
+      "get": {
+        "operationId": "ChangesetController_digest",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Changeset"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/digest/{date}/group-promote": {
+      "post": {
+        "operationId": "ChangesetController_groupPromote",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Changeset"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/changesets/{csId}/comments": {
+      "get": {
+        "operationId": "ChangesetController_listComments",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Changeset"
+        ]
+      },
+      "post": {
+        "operationId": "ChangesetController_createComment",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Changeset"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/changesets/{csId}/comments/{commentId}": {
+      "patch": {
+        "operationId": "ChangesetController_updateComment",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Changeset"
+        ]
+      },
+      "delete": {
+        "operationId": "ChangesetController_deleteComment",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Changeset"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/inbox": {
+      "get": {
+        "operationId": "ApprovalController_inbox",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Approval"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/approvals": {
+      "get": {
+        "operationId": "ApprovalController_listForProject",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Approval"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/approvals/{approvalId}/resolve": {
+      "post": {
+        "operationId": "ApprovalController_resolve",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Approval"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/intent-inbox": {
+      "get": {
+        "operationId": "IntentInboxController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "IntentInbox"
+        ]
+      },
+      "post": {
+        "operationId": "IntentInboxController_create",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "IntentInbox"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/activity": {
+      "get": {
+        "operationId": "ActivityController_activity",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/costs": {
+      "get": {
+        "operationId": "CostController_orgCosts",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Cost"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/costs": {
+      "get": {
+        "operationId": "CostController_projectCosts",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Cost"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/runs/{runId}/costs": {
+      "get": {
+        "operationId": "CostController_runCosts",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Cost"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/llm/providers": {
+      "get": {
+        "operationId": "LlmController_listProviders",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Llm"
+        ]
+      },
+      "post": {
+        "operationId": "LlmController_createProvider",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Llm"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/llm/providers/{providerId}": {
+      "patch": {
+        "operationId": "LlmController_updateProvider",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Llm"
+        ]
+      },
+      "delete": {
+        "operationId": "LlmController_deleteProvider",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Llm"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/llm/providers/{providerId}/test": {
+      "post": {
+        "operationId": "LlmController_testProvider",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Llm"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/llm/providers/{providerId}/probe": {
+      "post": {
+        "operationId": "LlmController_probeProvider",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Llm"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/llm/profiles": {
+      "get": {
+        "operationId": "LlmController_listProfiles",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Llm"
+        ]
+      },
+      "post": {
+        "operationId": "LlmController_createProfile",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Llm"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/llm/profiles/{profileId}": {
+      "patch": {
+        "operationId": "LlmController_updateProfile",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Llm"
+        ]
+      },
+      "delete": {
+        "operationId": "LlmController_deleteProfile",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Llm"
+        ]
+      }
+    },
+    "/v1/integrations/github/install": {
+      "get": {
+        "operationId": "GitHubAppController_install",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "GitHubApp"
+        ]
+      }
+    },
+    "/v1/webhooks/github": {
+      "post": {
+        "operationId": "GitHubWebhookController_receive",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "GitHubWebhook"
+        ]
+      }
+    },
+    "/v1/webhooks/sentry": {
+      "post": {
+        "operationId": "SentryWebhookController_receive",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "SentryWebhook"
+        ]
+      }
+    },
+    "/v1/webhooks/linear": {
+      "post": {
+        "operationId": "LinearWebhookController_receive",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "LinearWebhook"
+        ]
+      }
+    },
+    "/v1/webhooks/slack/interactivity": {
+      "post": {
+        "operationId": "SlackWebhookController_receive",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "SlackWebhook"
+        ]
+      }
+    },
+    "/v1/me/mfa": {
+      "get": {
+        "operationId": "MfaController_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Mfa"
+        ]
+      }
+    },
+    "/v1/me/mfa/setup": {
+      "post": {
+        "operationId": "MfaController_setup",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Mfa"
+        ]
+      }
+    },
+    "/v1/me/mfa/verify": {
+      "post": {
+        "operationId": "MfaController_verify",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Mfa"
+        ]
+      }
+    },
+    "/v1/me/mfa/disable": {
+      "post": {
+        "operationId": "MfaController_disable",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Mfa"
+        ]
+      }
+    },
+    "/v1/me/mfa/challenge": {
+      "post": {
+        "operationId": "MfaController_challenge",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Mfa"
+        ]
+      }
+    },
+    "/v1/me/mfa/recovery-codes/regenerate": {
+      "post": {
+        "operationId": "MfaController_regenerateRecoveryCodes",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Mfa"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/admin/health": {
+      "get": {
+        "operationId": "AdminController_health",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Admin"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Mergecrew API",
+    "description": "",
+    "version": "1.0.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http"
+      }
+    },
+    "schemas": {}
+  }
+}
