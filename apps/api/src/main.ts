@@ -11,6 +11,7 @@ import { buildOpenApiDocumentConfig } from './openapi-config.js';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 import { PrismaService } from './common/prisma.service.js';
 import { stampUserContextOnRequest } from './common/tenant-context.service.js';
+import { API_KEY_PREFIX, hashToken } from './modules/api-key/api-key.service.js';
 import type { Request, Response, NextFunction } from 'express';
 
 async function bootstrap() {
@@ -41,11 +42,63 @@ async function bootstrap() {
       return;
     }
     const auth = req.headers.authorization;
+    const bearer = auth?.startsWith('Bearer ') ? auth.slice(7) : undefined;
+
+    // API-key path: Bearer mc_live_<secret>. Looks up the row by the
+    // sha256(token) digest the DB indexes; on hit, stamps a synthetic
+    // user context with the key's stored role and bypasses the membership
+    // check (the org link lives on the api_key row itself).
+    if (bearer?.startsWith(API_KEY_PREFIX)) {
+      try {
+        const row = await prisma.withSystem((tx) =>
+          tx.apiKey.findUnique({ where: { tokenHash: hashToken(bearer) } }),
+        );
+        if (!row || row.revokedAt) {
+          res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'invalid api key' } });
+          return;
+        }
+        const m = req.path.match(/^\/v1\/orgs\/([^/]+)/);
+        if (m) {
+          const slug = decodeURIComponent(m[1]!);
+          const org = await prisma.withSystem((tx) =>
+            tx.organization.findFirst({ where: { slug, deletedAt: null } }),
+          );
+          if (!org || org.id !== row.organizationId) {
+            res.status(404).json({ error: { code: 'NOT_FOUND', message: 'org not found' } });
+            return;
+          }
+          // Best-effort lastUsedAt update; don't block the request on it.
+          void prisma
+            .withSystem((tx) => tx.apiKey.update({ where: { id: row.id }, data: { lastUsedAt: new Date() } }))
+            .catch(() => {});
+          stampUserContextOnRequest(req, {
+            userId: row.createdByUserId ?? row.id,
+            apiKeyId: row.id,
+            tenant: {
+              organizationId: org.id,
+              organizationSlug: org.slug,
+              userId: row.createdByUserId ?? row.id,
+              role: row.role as any,
+            },
+          });
+          next();
+          return;
+        }
+        // /v1/me/* with an API key: no MFA setup over API keys, so reject
+        // here rather than offering a partial principal.
+        res.status(403).json({ error: { code: 'FORBIDDEN', message: 'api keys cannot access /v1/me/*' } });
+        return;
+      } catch (err) {
+        next(err);
+        return;
+      }
+    }
+
     let userId: string | undefined;
     let mfaChallengedAt: Date | undefined;
-    if (auth?.startsWith('Bearer ')) {
+    if (bearer) {
       try {
-        const decoded = jwt.verify<{ sub: string; mfa_at?: number }>(auth.slice(7));
+        const decoded = jwt.verify<{ sub: string; mfa_at?: number }>(bearer);
         userId = decoded.sub;
         if (typeof decoded.mfa_at === 'number') {
           mfaChallengedAt = new Date(decoded.mfa_at * 1000);

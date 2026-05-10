@@ -1356,6 +1356,46 @@
           "Admin"
         ]
       }
+    },
+    "/v1/orgs/{slug}/api-keys": {
+      "post": {
+        "operationId": "ApiKeyController_issue",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "ApiKey"
+        ]
+      },
+      "get": {
+        "operationId": "ApiKeyController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "ApiKey"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/api-keys/{id}": {
+      "delete": {
+        "operationId": "ApiKeyController_revoke",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "ApiKey"
+        ]
+      }
     }
   },
   "info": {
