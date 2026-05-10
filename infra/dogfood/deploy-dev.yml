@@ -1,0 +1,48 @@
+# Reference `deploy-dev.yml` for a Mergecrew dogfood target repo.
+#
+# Drop this into `.github/workflows/deploy-dev.yml` of the test repo
+# referenced by `scripts/v0-5-dogfood-smoke.ts`. The smoke driver dispatches
+# this workflow via GitHub Actions API and waits for it to complete; what
+# the workflow actually does is up to you — for the V0.5 exit criterion,
+# anything that prints a URL on success is enough.
+#
+# The two contracts the smoke driver depends on:
+#
+#   1. `workflow_dispatch` is the trigger.
+#   2. The job (or one of its steps) eventually exits successfully — that
+#      is what `GitHubActionsProvider.awaitCompletion` polls for.
+#
+# The dev URL is resolved client-side by the smoke driver via the
+# `URL_PATTERN` (or `URL_FIXED`) env var, NOT from workflow output. If you
+# want the URL captured from the workflow itself, switch the smoke driver
+# to `URL_RESOLUTION=workflow_output` and emit the URL via $GITHUB_OUTPUT.
+
+name: deploy-dev
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to deploy'
+        required: true
+        type: string
+      mergecrew_correlation_id:
+        description: 'Correlation id (auto-set by Mergecrew)'
+        required: false
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.branch }}
+
+      # Replace this with the actual deploy step for whatever the test repo
+      # ships — `vercel deploy --prebuilt`, `flyctl deploy`, `gh deploy`,
+      # whatever. The point of the dogfood repo is to be small and boring.
+      - name: Echo would-be deploy
+        run: |
+          echo "Deploying branch '${{ inputs.branch }}' (correlation '${{ inputs.mergecrew_correlation_id }}')"
+          echo "Replace this step with a real deploy invocation."

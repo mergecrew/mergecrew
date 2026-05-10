@@ -1,0 +1,19 @@
+{
+  "name": "@mergecrew/dogfood-smoke",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "smoke": "tsx src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mergecrew/adapters-deploy": "workspace:*",
+    "@mergecrew/adapters-vcs": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
+  }
+}
