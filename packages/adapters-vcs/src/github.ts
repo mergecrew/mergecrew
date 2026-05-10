@@ -22,6 +22,15 @@ interface GitHubProviderConfig {
   privateKey: string;
   clientId?: string;
   clientSecret?: string;
+  /**
+   * GitHub Enterprise Server support (#205). When unset, the adapter
+   * targets github.com via the default api.github.com REST surface.
+   * Set to e.g. `https://github.example.com` for GHES — the adapter
+   * derives the API URL (`<baseUrl>/api/v3`) and clone URL host from
+   * it. The webhook + auth-app machinery is identical between
+   * github.com and GHES, so no other plumbing changes.
+   */
+  baseUrl?: string;
 }
 
 export class GitHubProvider implements VcsProvider {
@@ -29,11 +38,26 @@ export class GitHubProvider implements VcsProvider {
   private auth: ReturnType<typeof createAppAuth>;
   private appId: string;
   private privateKey: string;
+  private apiUrl: string;
+  private host: string;
 
   constructor(cfg: GitHubProviderConfig) {
     this.appId = cfg.appId;
     this.privateKey = cfg.privateKey;
-    this.auth = createAppAuth({ appId: cfg.appId, privateKey: cfg.privateKey, clientId: cfg.clientId, clientSecret: cfg.clientSecret });
+    const { apiUrl, host } = resolveBaseUrls(cfg.baseUrl);
+    this.apiUrl = apiUrl;
+    this.host = host;
+    this.auth = createAppAuth({
+      appId: cfg.appId,
+      privateKey: cfg.privateKey,
+      clientId: cfg.clientId,
+      clientSecret: cfg.clientSecret,
+      // auth-app honors `request.baseUrl` for the token-fetch endpoint;
+      // setting it here keeps GHES auth flowing through the right host.
+      ...(cfg.baseUrl
+        ? { request: { baseUrl: apiUrl } as any }
+        : {}),
+    });
   }
 
   // ─── tokens ─────────────────────────────────────────────────────────────
@@ -45,12 +69,12 @@ export class GitHubProvider implements VcsProvider {
 
   private async kit(installationId: string): Promise<Octokit> {
     const token = await this.tokenFor(installationId);
-    return new Octokit({ auth: token });
+    return new Octokit({ auth: token, baseUrl: this.apiUrl });
   }
 
   private async cloneUrl(repoFullName: string, installationId: string): Promise<string> {
     const token = await this.tokenFor(installationId);
-    return `https://x-access-token:${token}@github.com/${repoFullName}.git`;
+    return `https://x-access-token:${token}@${this.host}/${repoFullName}.git`;
   }
 
   // ─── workspace ──────────────────────────────────────────────────────────
@@ -332,6 +356,30 @@ export class GitHubProvider implements VcsProvider {
         return { kind: 'unknown', raw: json };
     }
   }
+}
+
+/**
+ * Map an optional `baseUrl` to the Octokit API URL + host used in clone
+ * URLs (#205). For github.com the API lives at api.github.com and the
+ * clone host is github.com. For GHES the operator gives us
+ * `https://github.example.com`; the API lives at
+ * `https://github.example.com/api/v3` and the clone host is
+ * `github.example.com`.
+ */
+function resolveBaseUrls(baseUrl: string | undefined): { apiUrl: string; host: string } {
+  if (!baseUrl) {
+    return { apiUrl: 'https://api.github.com', host: 'github.com' };
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    throw new Error(`invalid baseUrl: ${baseUrl}`);
+  }
+  const host = parsed.host;
+  // Strip trailing slash for clean concatenation.
+  const apiUrl = `${parsed.origin}/api/v3`;
+  return { apiUrl, host };
 }
 
 function gitEnv(): NodeJS.ProcessEnv {

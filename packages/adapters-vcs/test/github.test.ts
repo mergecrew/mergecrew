@@ -295,3 +295,42 @@ describe('GitHubProvider — surface', () => {
     ).rejects.toThrow(/invalid repoFullName/);
   });
 });
+
+describe('GitHubProvider — GHES base URL (#205)', () => {
+  it('points Octokit at the GHES /api/v3 endpoint when baseUrl is set', async () => {
+    const ghes = new GitHubProvider({
+      appId: '1',
+      privateKey: 'TEST',
+      baseUrl: 'https://github.example.com',
+    });
+    kitMock.repos.get.mockResolvedValueOnce({ data: { default_branch: 'main' } });
+    await ghes.getDefaultBranch(makeRepoRef());
+
+    // Octokit was constructed with the GHES API URL.
+    const { Octokit } = await import('@octokit/rest');
+    const calls = (Octokit as unknown as { mock: { calls: any[][] } }).mock.calls;
+    const lastCallOpts = calls[calls.length - 1]?.[0];
+    expect(lastCallOpts).toBeDefined();
+    expect(lastCallOpts.baseUrl).toBe('https://github.example.com/api/v3');
+  });
+
+  it('rejects an invalid baseUrl at construction time', () => {
+    expect(
+      () => new GitHubProvider({ appId: '1', privateKey: 'TEST', baseUrl: 'not a url' }),
+    ).toThrow(/invalid baseUrl/);
+  });
+
+  it('defaults to github.com when no baseUrl is provided', async () => {
+    const gh = new GitHubProvider({ appId: '1', privateKey: 'TEST' });
+    kitMock.repos.get.mockResolvedValueOnce({ data: { default_branch: 'main' } });
+    await gh.getDefaultBranch(makeRepoRef());
+
+    const { Octokit } = await import('@octokit/rest');
+    const calls = (Octokit as unknown as { mock: { calls: any[][] } }).mock.calls;
+    const lastCallOpts = calls[calls.length - 1]?.[0];
+    // Octokit's default points at api.github.com; passing baseUrl
+    // explicitly when it isn't needed would be drift, so the
+    // happy-path code path passes only `auth` here.
+    expect(lastCallOpts.baseUrl).toBe('https://api.github.com');
+  });
+});
