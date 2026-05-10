@@ -29,6 +29,7 @@ import {
 import { stockSkills, buildHttpSkill, SkillExecutor, type SkillExecutionContext } from '@mergecrew/skills';
 import { GitHubProvider, type VcsProvider } from '@mergecrew/adapters-vcs';
 import {
+  AwsDirectProvider,
   GitHubActionsProvider,
   VercelProvider,
   NetlifyProvider,
@@ -213,6 +214,18 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     deploy = new NetlifyProvider({ token: process.env.NETLIFY_TOKEN });
   } else if (dt?.adapterId === 'render' && process.env.RENDER_TOKEN) {
     deploy = new RenderProvider({ token: process.env.RENDER_TOKEN });
+  } else if (dt?.adapterId === 'aws-direct') {
+    // Static keys are optional — when absent the SDK uses the default
+    // credential chain (env vars, IMDS, shared config). Operators with
+    // role-based deploys pre-assume the role and pass the temporary
+    // credentials in via the AWS_* env vars; this adapter doesn't manage
+    // STS itself.
+    deploy = new AwsDirectProvider({
+      region: process.env.AWS_REGION,
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      sessionToken: process.env.AWS_SESSION_TOKEN,
+    });
   }
 
   // Tracker adapter — per-project. Reads tracker_targets + the encrypted
