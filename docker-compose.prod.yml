@@ -30,6 +30,19 @@ services:
     networks: [internal]
     command: ["node", "/app/node_modules/.bin/prisma", "migrate", "deploy", "--schema", "/app/packages/db/prisma/schema.prisma"]
 
+  # Per-service `deploy.resources.limits` (#187). In non-swarm Compose v2
+  # these are honored as cgroup limits at `up` time. Runner is the most
+  # important to cap because it executes user-derived agent workloads that
+  # can spawn build / test child processes; an unbounded runner can starve
+  # sibling containers on a shared host.
+  #
+  # Tune via env: `RUNNER_CPU_LIMIT`, `RUNNER_MEM_LIMIT`, etc. Defaults are
+  # sized for a 4-vCPU / 8 GB single-VM deploy.
+  #
+  # For Kubernetes / ECS Fargate: translate these to the equivalent
+  # `resources.limits` block in the relevant manifest. Same numbers carry
+  # over directly.
+
   api:
     build:
       context: .
@@ -45,6 +58,11 @@ services:
       - '127.0.0.1:4000:4000'
     depends_on:
       redis: { condition: service_healthy }
+    deploy:
+      resources:
+        limits:
+          cpus: '${API_CPU_LIMIT:-1}'
+          memory: ${API_MEM_LIMIT:-1g}
 
   orchestrator:
     build:
@@ -59,6 +77,11 @@ services:
     networks: [internal]
     depends_on:
       redis: { condition: service_healthy }
+    deploy:
+      resources:
+        limits:
+          cpus: '${ORCHESTRATOR_CPU_LIMIT:-0.5}'
+          memory: ${ORCHESTRATOR_MEM_LIMIT:-512m}
 
   runner:
     build:
@@ -73,6 +96,11 @@ services:
     networks: [internal]
     depends_on:
       redis: { condition: service_healthy }
+    deploy:
+      resources:
+        limits:
+          cpus: '${RUNNER_CPU_LIMIT:-1}'
+          memory: ${RUNNER_MEM_LIMIT:-1g}
 
   worker-cron:
     build:
@@ -87,6 +115,11 @@ services:
     networks: [internal]
     depends_on:
       redis: { condition: service_healthy }
+    deploy:
+      resources:
+        limits:
+          cpus: '${WORKER_CRON_CPU_LIMIT:-0.25}'
+          memory: ${WORKER_CRON_MEM_LIMIT:-256m}
 
   web:
     build:
@@ -102,6 +135,11 @@ services:
     ports:
       - '127.0.0.1:3000:3000'
     depends_on: [api]
+    deploy:
+      resources:
+        limits:
+          cpus: '${WEB_CPU_LIMIT:-0.5}'
+          memory: ${WEB_MEM_LIMIT:-512m}
 
 networks:
   internal:
