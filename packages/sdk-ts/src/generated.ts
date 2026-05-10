@@ -276,6 +276,22 @@ export interface paths {
         patch: operations["ProjectController_updateSchedule"];
         trace?: never;
     };
+    "/v1/orgs/{slug}/projects/{projectSlug}/auto-promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["ProjectController_getAutoPromote"];
+        put: operations["ProjectController_setAutoPromote"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{slug}/projects/{projectSlug}/lifecycle": {
         parameters: {
             query?: never;
@@ -1741,6 +1757,40 @@ export interface operations {
         };
     };
     ProjectController_updateSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ProjectController_getAutoPromote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ProjectController_setAutoPromote: {
         parameters: {
             query?: never;
             header?: never;

@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { NotFoundError, ValidationError } from '@mergecrew/domain';
+import {
+  AutoPromoteRule,
+  NotFoundError,
+  ValidationError,
+  type AutoPromoteRule as AutoPromoteRuleType,
+} from '@mergecrew/domain';
 import { GitHubIssuesProvider, type TrackerProvider } from '@mergecrew/adapters-tracker';
 import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
@@ -453,6 +458,50 @@ export class ProjectService {
         },
       }),
     );
+  }
+
+  async getAutoPromoteRules(slug: string): Promise<AutoPromoteRuleType[]> {
+    const project = await this.detail(slug);
+    return ((project as any).autoPromoteRules ?? []) as AutoPromoteRuleType[];
+  }
+
+  async setAutoPromoteRules(slug: string, rules: unknown): Promise<AutoPromoteRuleType[]> {
+    if (!Array.isArray(rules)) {
+      throw new ValidationError('autoPromoteRules must be an array');
+    }
+    const parsed: AutoPromoteRuleType[] = [];
+    for (let i = 0; i < rules.length; i++) {
+      const r = AutoPromoteRule.safeParse(rules[i]);
+      if (!r.success) {
+        throw new ValidationError(`rule[${i}]: ${r.error.issues[0]?.message ?? 'invalid'}`);
+      }
+      parsed.push(r.data);
+    }
+    const seen = new Set<string>();
+    for (const r of parsed) {
+      if (seen.has(r.name)) throw new ValidationError(`duplicate rule name "${r.name}"`);
+      seen.add(r.name);
+    }
+    const project = await this.detail(slug);
+    const t = this.tenant.require();
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.project.update({
+        where: { id: project.id },
+        data: { autoPromoteRules: parsed as any },
+      }),
+    );
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.auditLogEntry.create({
+        data: {
+          organizationId: t.organizationId,
+          actorUserId: t.userId,
+          action: 'project.autoPromoteRules.updated',
+          target: { projectId: project.id },
+          metadata: { ruleCount: parsed.length, names: parsed.map((r) => r.name) },
+        },
+      }),
+    );
+    return parsed;
   }
 
   async testTracker(slug: string): Promise<{ ok: boolean; sample?: unknown; error?: string }> {

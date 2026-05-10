@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import { ProjectService } from './project.service.js';
 import { RequireRole, RoleGuard } from '../../common/role.guard.js';
 
@@ -148,5 +148,19 @@ export class ProjectController {
     @Body() body: { cron?: string; timezone?: string; enabled?: boolean; skipDates?: string[] },
   ) {
     return this.projects.updateSchedule(projectSlug, body);
+  }
+
+  @Get(':projectSlug/auto-promote')
+  async getAutoPromote(@Param('projectSlug') projectSlug: string) {
+    return { rules: await this.projects.getAutoPromoteRules(projectSlug) };
+  }
+
+  @Put(':projectSlug/auto-promote')
+  @RequireRole('admin')
+  async setAutoPromote(
+    @Param('projectSlug') projectSlug: string,
+    @Body() body: { rules: unknown },
+  ) {
+    return { rules: await this.projects.setAutoPromoteRules(projectSlug, body?.rules) };
   }
 }

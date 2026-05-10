@@ -145,6 +145,11 @@ model Project {
   /// the worker-cron digest tick to dedup so a flaky tick doesn't
   /// send the same digest twice.
   lastDigestAt   DateTime? @map("last_digest_at") @db.Timestamptz(6)
+  /// Array of `AutoPromoteRule` (#31/#150) defining which changesets
+  /// can auto-promote without human review. Empty array (default) =
+  /// no auto-promotion; every changeset goes through the manual gate.
+  /// Validated against the Zod schema in @mergecrew/domain on writes.
+  autoPromoteRules Json    @default("[]") @map("auto_promote_rules")
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
