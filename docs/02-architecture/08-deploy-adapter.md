@@ -190,3 +190,22 @@ type Deploy = {
 ```
 
 Linked to TimelineEvents (`CHANGESET_DEV_DEPLOYED`, etc.).
+
+## Adding a new adapter
+
+A new vendor adapter (Fly.io, Railway, AWS-direct, …) needs three things:
+
+1. **An implementation of `DeployProvider`** in `packages/adapters-deploy/src/<vendor>.ts`. The interface lives in `types.ts`. Five existing adapters (`github-actions`, `vercel`, `netlify`, `render`) are reference implementations.
+2. **The new adapter id added to the `DeployProvider.id` union** in `types.ts`. The runner picks adapters by id (`apps/runner/src/step.ts:204-215`); the type gate keeps that switch exhaustive.
+3. **A conformance test** in `packages/adapters-deploy/test/<vendor>.test.ts`. Use `test/render.test.ts` as the template — copy the file, swap the fetch mocks for your vendor's HTTP shape, and the helpers in `test/conformance.ts` will catch contract violations:
+   - `triggerDeploy` returns a well-shaped `DeployHandle`.
+   - `getStatus` returns a `DeployStatus` with one of the five valid `kind`s.
+   - `awaitCompletion` bounds total runtime by `timeoutMs` even when the deploy never reaches a terminal state.
+   - `resolveUrlForRef` returns either a string URL or null.
+   - `fetchLogs` returns an array (empty is fine if the vendor doesn't expose logs via API).
+   - `rollbackProduction` returns a well-shaped `DeployHandle`.
+   - Non-2xx HTTP responses propagate as a thrown error.
+
+The conformance helpers stub global `fetch` per test, so adapters that go through the standard `fetch` path are testable without mocking the entire HTTP layer. Adapters that wrap an SDK (e.g., `@octokit/rest` for GitHub Actions) need to mock at the SDK seam instead — same set of contract assertions.
+
+Once the test passes, run `pnpm --filter @mergecrew/adapters-deploy test` locally and CI picks up the rest.
