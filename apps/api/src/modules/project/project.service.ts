@@ -171,6 +171,30 @@ export class ProjectService {
     );
   }
 
+  /**
+   * Returns the repos accessible to the given GitHub App installation
+   * (#184). Used by the BFF after a fresh install to populate a repo
+   * dropdown so the user doesn't have to retype names. Falls back to an
+   * empty list when GITHUB_APP_ID/GITHUB_APP_PRIVATE_KEY aren't set —
+   * the caller's UI degrades to a free-text input in that case.
+   */
+  async listInstallationRepos(installationId: string) {
+    if (!process.env.GITHUB_APP_ID || !process.env.GITHUB_APP_PRIVATE_KEY) {
+      return [];
+    }
+    if (!installationId || !/^\d+$/.test(installationId)) {
+      throw new ValidationError('installationId must be a numeric string');
+    }
+    // Lazy-import so the API doesn't pull execa-via-adapters-vcs into the
+    // module graph until a request actually needs it.
+    const { GitHubProvider } = await import('@mergecrew/adapters-vcs');
+    const gh = new GitHubProvider({
+      appId: process.env.GITHUB_APP_ID,
+      privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
+    });
+    return gh.listInstallationRepos(installationId);
+  }
+
   async listDeployTargets(slug: string) {
     const project = await this.detail(slug);
     return this.prisma.withTenant(project.organizationId, (tx) =>

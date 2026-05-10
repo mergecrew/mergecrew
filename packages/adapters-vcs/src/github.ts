@@ -248,6 +248,29 @@ export class GitHubProvider implements VcsProvider {
     }));
   }
 
+  // ─── installation repos ────────────────────────────────────────────────
+
+  /**
+   * List the repos the App's installation has been granted access to.
+   * Used by the BFF after a fresh install to populate a repo dropdown
+   * (#184) so the user doesn't have to retype names the App already knows.
+   * Pages through GitHub's 100-per-page cap.
+   */
+  async listInstallationRepos(
+    installationId: string,
+  ): Promise<Array<{ repoId: string; repoFullName: string; defaultBranch: string; private: boolean }>> {
+    const kit = await this.kit(installationId);
+    const repos = await kit.paginate(kit.apps.listReposAccessibleToInstallation, {
+      per_page: 100,
+    });
+    return repos.map((r: any) => ({
+      repoId: String(r.id),
+      repoFullName: r.full_name,
+      defaultBranch: r.default_branch ?? 'main',
+      private: !!r.private,
+    }));
+  }
+
   // ─── webhooks ───────────────────────────────────────────────────────────
 
   async verifyWebhookSignature(

@@ -239,6 +239,20 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/projects/{projectSlug}/installation-repos/{installationId}": {
+      "get": {
+        "operationId": "ProjectController_installationRepos",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/projects/{projectSlug}/deploy-targets": {
       "get": {
         "operationId": "ProjectController_deployTargets",

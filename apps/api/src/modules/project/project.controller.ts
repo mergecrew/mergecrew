@@ -59,6 +59,20 @@ export class ProjectController {
     return { ok: true };
   }
 
+  /**
+   * After a fresh GitHub App install, the BFF needs the list of repos
+   * the installation was granted access to so it can render a dropdown
+   * instead of asking the user to type owner/repo (#184). This is
+   * org-scoped via the existing role guard — operator+ only.
+   */
+  @Get(':projectSlug/installation-repos/:installationId')
+  @RequireRole('operator')
+  async installationRepos(
+    @Param('installationId') installationId: string,
+  ) {
+    return { items: await this.projects.listInstallationRepos(installationId) };
+  }
+
   @Get(':projectSlug/deploy-targets')
   async deployTargets(@Param('projectSlug') projectSlug: string) {
     return { items: await this.projects.listDeployTargets(projectSlug) };
