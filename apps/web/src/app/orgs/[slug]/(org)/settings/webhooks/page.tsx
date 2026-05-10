@@ -6,7 +6,7 @@ import { Card, Button } from '@/components/ui';
 import { TestWebhookButton } from '@/components/test-webhook-button';
 import { CreatedSecretCallout } from '@/components/created-secret-callout';
 import { WebhookDeliveriesLog, type DeliveryRow } from '@/components/webhook-deliveries-log';
-import { MfaRequiredCallout, isMfaGateError } from '@/components/mfa-required-callout';
+import { MfaRequiredCallout } from '@/components/mfa-required-callout';
 
 interface WebhookSummary {
   id: string;
@@ -71,20 +71,20 @@ export default async function WebhooksPage({
   const session = await requireSession();
   const canEdit = await hasRole(slug, session, 'admin');
 
-  // List endpoint requires admin → triggers the MFA gate for unenrolled
-  // admins. Catch that specific error so the page lands on a CTA instead
-  // of a 500.
-  let list: { items: WebhookSummary[] };
-  let mfaBlocked = false;
-  try {
-    list = await api<{ items: WebhookSummary[] }>(`/v1/orgs/${slug}/webhooks`, { session });
-  } catch (err) {
-    if (canEdit && isMfaGateError(err)) {
-      mfaBlocked = true;
-      list = { items: [] };
-    } else {
-      throw err;
-    }
+  const list = await api<{ items: WebhookSummary[] }>(
+    `/v1/orgs/${slug}/webhooks`,
+    { session },
+  );
+
+  // MFA is recommended for admin/owner accounts but not enforced. When
+  // the caller is admin and hasn't enrolled, surface a passive nudge —
+  // the form below stays usable.
+  let showMfaNudge = false;
+  if (canEdit) {
+    const mfa = await api<{ enrolled: boolean }>('/v1/me/mfa', { session }).catch(
+      () => ({ enrolled: false }),
+    );
+    showMfaNudge = !mfa.enrolled;
   }
 
   const { cookies } = await import('next/headers');
@@ -110,9 +110,9 @@ export default async function WebhooksPage({
         />
       )}
 
-      {mfaBlocked && <MfaRequiredCallout />}
+      {showMfaNudge && <MfaRequiredCallout />}
 
-      {canEdit && !mfaBlocked && (
+      {canEdit && (
         <Card>
           <h2 className="font-medium">Add webhook</h2>
           <form action={createWebhookAction} className="mt-3 space-y-2 text-sm">

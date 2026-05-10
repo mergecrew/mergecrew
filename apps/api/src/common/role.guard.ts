@@ -2,28 +2,31 @@ import { CanActivate, ExecutionContext, ForbiddenException, Injectable, SetMetad
 import { Reflector } from '@nestjs/core';
 import { roleAtLeast, type OrgRole } from '@mergecrew/domain';
 import { TenantContextService } from './tenant-context.service.js';
-import { PrismaService } from './prisma.service.js';
 
 export const ROLE_KEY = 'requiredRole';
 export const RequireRole = (role: OrgRole) => SetMetadata(ROLE_KEY, role);
 
 /**
- * MFA freshness window. Once a user passes a TOTP/recovery challenge, the
- * resulting JWT's `mfa_at` claim is considered fresh for this long; after
- * that admin/owner routes throw `MFA_CHALLENGE_REQUIRED` and the frontend
- * has to re-prompt via `POST /v1/me/mfa/challenge`.
+ * Role-based authorization gate.
+ *
+ * MFA is **recommended** for admin/owner accounts but not enforced — the
+ * BFF surfaces a passive nudge when an admin-or-above user hasn't
+ * enrolled. Hard-blocking the API path made local development impossible
+ * (a fresh checkout couldn't even create an org without standing up an
+ * authenticator app + scanning a QR), and that friction outweighs the
+ * marginal protection on a self-hostable OSS tool. If you need
+ * MFA-required policy on a managed deployment, treat it as a deploy-time
+ * config layer (e.g. an enforce-mfa middleware turned on by env), not a
+ * code-level guard that ships in the OSS path.
  */
-export const MFA_FRESHNESS_MS = 15 * 60 * 1000;
-
 @Injectable()
 export class RoleGuard implements CanActivate {
   constructor(
     private reflector: Reflector,
     private tenant: TenantContextService,
-    private prisma: PrismaService,
   ) {}
 
-  async canActivate(ctx: ExecutionContext): Promise<boolean> {
+  canActivate(ctx: ExecutionContext): boolean {
     const required = this.reflector.getAllAndOverride<OrgRole>(ROLE_KEY, [
       ctx.getHandler(),
       ctx.getClass(),
@@ -33,41 +36,6 @@ export class RoleGuard implements CanActivate {
     if (!t) throw new ForbiddenException();
     if (!roleAtLeast(t.role, required)) {
       throw new ForbiddenException(`requires role ${required}`);
-    }
-
-    // MFA gate: any admin-or-above route requires a fresh MFA challenge
-    // when the user is enrolled. Unenrolled admins/owners get a distinct
-    // error code so the frontend can route them to setup instead of
-    // prompting for a code that doesn't exist.
-    //
-    // API-key requests skip this gate: an admin user already passed MFA
-    // at the moment the key was issued, and the key itself can't satisfy
-    // a TOTP challenge. Authorization for the request still flows through
-    // the role check above (a key minted with role=operator can't admin).
-    const viaApiKey = !!this.tenant.user()?.apiKeyId;
-    if (roleAtLeast(t.role, 'admin') && !viaApiKey) {
-      const user = await this.prisma.withSystem((tx) =>
-        tx.user.findUnique({
-          where: { id: t.userId },
-          select: { mfaEnrolledAt: true },
-        }),
-      );
-      if (!user) throw new ForbiddenException();
-
-      if (!user.mfaEnrolledAt) {
-        throw new ForbiddenException({
-          code: 'MFA_REQUIRED_NOT_ENROLLED',
-          message: 'MFA enrollment is required for admin and owner roles',
-        } as any);
-      }
-
-      const challenged = this.tenant.user()?.mfaChallengedAt;
-      if (!challenged || Date.now() - challenged.getTime() > MFA_FRESHNESS_MS) {
-        throw new ForbiddenException({
-          code: 'MFA_CHALLENGE_REQUIRED',
-          message: 'MFA challenge required',
-        } as any);
-      }
     }
     return true;
   }
