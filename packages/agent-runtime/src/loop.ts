@@ -37,7 +37,20 @@ export interface RunCtx {
   abortSignal: AbortSignal;
   capabilityFromAgent: () => ModelCapability;
   initialInput: unknown;
-  onGateRequired: (decision: PolicyDecision, args: { skillName: string; input: unknown }) => Promise<'approved' | 'rejected'>;
+  /**
+   * Soft-gate callback. Return:
+   * - `'approved'` to let the tool call proceed.
+   * - `'rejected'` to stop the iteration with a `gated_reject` outcome
+   *   (no human-in-the-loop — e.g. an inline confirmation that timed out).
+   * - `{ pending: true, approvalId }` when the runner has persisted an
+   *   `ApprovalRequest` and wants the orchestrator to pause the run
+   *   until a human resolves it. The loop returns `gate_pending` and the
+   *   step is re-dispatched on approve.
+   */
+  onGateRequired: (
+    decision: PolicyDecision,
+    args: { skillName: string; input: unknown },
+  ) => Promise<'approved' | 'rejected' | { pending: true; approvalId: string }>;
   recordModelTurn: (turn: {
     providerId: string;
     modelId: string;
@@ -195,6 +208,15 @@ export async function runAgentStep(ctx: RunCtx): Promise<StepOutcome> {
         const verdict = await ctx.onGateRequired(decision, { skillName, input });
         if (verdict === 'rejected') {
           return { outcome: { kind: 'gated_reject', reason: decision.detail ?? 'rejected' } };
+        }
+        if (typeof verdict === 'object' && verdict.pending) {
+          return {
+            outcome: {
+              kind: 'gate_pending',
+              approvalId: verdict.approvalId,
+              reason: decision.detail ?? 'awaiting human approval',
+            },
+          };
         }
       }
 

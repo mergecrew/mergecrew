@@ -387,7 +387,6 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     capabilityFromAgent: () => ({ tools: agentDef.skills.length > 0, longContext: 200_000 }),
     initialInput,
     onGateRequired: async (decision, args2) => {
-      // Persist an approval, mark the daily run paused-gate, return 'rejected' to halt.
       const ar = await withTenant(organizationId, (tx) =>
         tx.approvalRequest.create({
           data: {
@@ -421,9 +420,11 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
         actor: { kind: 'system' },
         payload: { reason: decision.reason, approvalRequestId: ar.id },
       });
-      // V1: synchronous wait would block the runner; we instead reject this iteration and
-      // let the user resolve the gate; the orchestrator re-dispatches on approve.
-      return 'rejected';
+      // Synchronous wait would tie up a runner slot indefinitely. Instead
+      // hand control back to the orchestrator with the approval id; it
+      // pauses the run and re-dispatches this same step once a human
+      // resolves the approval.
+      return { pending: true, approvalId: ar.id };
     },
     recordModelTurn: async (turn) => {
       const usd = turn.usdEstimate;
