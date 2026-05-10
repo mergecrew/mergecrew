@@ -2,7 +2,7 @@ import { revalidatePath } from 'next/cache';
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { hasRole } from '@/lib/role';
-import { Card, Button } from '@/components/ui';
+import { Card, Button, LinkButton } from '@/components/ui';
 import { LlmProvidersCard } from '@/components/llm-providers-card';
 import { LlmProfilesCard } from '@/components/llm-profiles-card';
 
@@ -114,6 +114,18 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
         ) : (
           <p className="mt-4 text-xs text-zinc-500">Only admins can change this.</p>
         )}
+      </Card>
+
+      <Card>
+        <div className="flex items-baseline justify-between">
+          <h2 className="font-medium">Outbound webhooks</h2>
+          <LinkButton href={`/orgs/${slug}/settings/webhooks`} variant="secondary">
+            Manage →
+          </LinkButton>
+        </div>
+        <p className="mt-1 text-sm text-zinc-500">
+          POST run/changeset events to your endpoints. Each delivery is HMAC-signed.
+        </p>
       </Card>
 
       <Card>

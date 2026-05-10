@@ -3,6 +3,8 @@ import type { paths } from './generated.js';
 
 export type { paths } from './generated.js';
 export type MergecrewClient = Client<paths>;
+export { verifyWebhook, WebhookVerificationError } from './webhook.js';
+export type { VerifyWebhookOptions } from './webhook.js';
 
 export interface MergecrewOptions {
   /** Bearer token. Either a `mc_live_…` API key (#138) or a user JWT. */

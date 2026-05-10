@@ -3,6 +3,7 @@ import IORedis from 'ioredis';
 import pino from 'pino';
 import { Eventlog, RedisPubSub } from '@mergecrew/eventlog';
 import { Orchestrator } from './orchestrator.js';
+import { deliverOutboundWebhook, type OutboundJob } from './outbound-webhook-worker.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
@@ -74,6 +75,15 @@ const digestEmailWorker = new Worker(
   { connection: conn, concurrency: 2 },
 );
 
+// Outbound webhook delivery (#141 / #142). BullMQ owns retries — the
+// worker throws on non-2xx and the queue's exponential backoff fires.
+// Backoff schedule: 1s, 4s, 16s, 1m, 5m, 30m, drop (after 6 attempts).
+const outboundWebhookWorker = new Worker<OutboundJob>(
+  'webhook.outbound',
+  async (job) => deliverOutboundWebhook(job.data, logger, job.attemptsMade + 1),
+  { connection: conn, concurrency: 8 },
+);
+
 logger.info('orchestrator started');
 
 async function shutdown() {
@@ -88,6 +98,7 @@ async function shutdown() {
     digestWorker.close(),
     digestSlackWorker.close(),
     digestEmailWorker.close(),
+    outboundWebhookWorker.close(),
     pubsub.close(),
     conn.quit(),
   ]);
