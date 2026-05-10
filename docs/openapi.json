@@ -463,6 +463,20 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/projects/{projectSlug}/smoke-test": {
+      "post": {
+        "operationId": "ProjectController_runSmokeTest",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/projects/{projectSlug}/lifecycle": {
       "get": {
         "operationId": "LifecycleController_current",

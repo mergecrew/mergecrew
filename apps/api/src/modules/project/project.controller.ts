@@ -1,12 +1,17 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import { ProjectService } from './project.service.js';
 import { InceptionService } from './inception.service.js';
+import { SmokeTestService } from './smoke-test.service.js';
 import { RequireRole, RoleGuard } from '../../common/role.guard.js';
 
 @Controller('v1/orgs/:slug/projects')
 @UseGuards(RoleGuard)
 export class ProjectController {
-  constructor(private projects: ProjectService, private inception: InceptionService) {}
+  constructor(
+    private projects: ProjectService,
+    private inception: InceptionService,
+    private smokeTest: SmokeTestService,
+  ) {}
 
   @Get()
   async list() {
@@ -179,5 +184,11 @@ export class ProjectController {
   @RequireRole('admin')
   async runInception(@Param('projectSlug') projectSlug: string) {
     return this.inception.run(projectSlug);
+  }
+
+  @Post(':projectSlug/smoke-test')
+  @RequireRole('admin')
+  async runSmokeTest(@Param('projectSlug') projectSlug: string) {
+    return this.smokeTest.run(projectSlug);
   }
 }
