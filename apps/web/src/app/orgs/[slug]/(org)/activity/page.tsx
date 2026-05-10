@@ -29,6 +29,7 @@ function summary(e: any): string {
   const p = e.payload ?? {};
   if (e.type === 'AGENT_TOOL_CALL') return `${p.name}${p.brief ? ' — ' + p.brief : ''}`;
   if (e.type === 'CHANGESET_PROMOTED') return `promoted ${p.changesetId}`;
+  if (e.type === 'CHANGESET_AUTO_PROMOTED') return `auto-promoted via "${p.ruleName}" (PR #${p.prNumber})`;
   if (e.type === 'WORKFLOW_STARTED') return `workflow ${p.workflowId}`;
   return JSON.stringify(p).slice(0, 200);
 }
