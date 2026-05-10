@@ -31,6 +31,7 @@ import {
   GitHubActionsProvider,
   VercelProvider,
   NetlifyProvider,
+  RenderProvider,
   type DeployProvider,
 } from '@mergecrew/adapters-deploy';
 import { LinearProvider, GitHubIssuesProvider, type TrackerProvider } from '@mergecrew/adapters-tracker';
@@ -142,6 +143,8 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     deploy = new VercelProvider({ token: process.env.VERCEL_TOKEN });
   } else if (dt?.adapterId === 'netlify' && process.env.NETLIFY_TOKEN) {
     deploy = new NetlifyProvider({ token: process.env.NETLIFY_TOKEN });
+  } else if (dt?.adapterId === 'render' && process.env.RENDER_TOKEN) {
+    deploy = new RenderProvider({ token: process.env.RENDER_TOKEN });
   }
 
   // Tracker adapter — per-project. Reads tracker_targets + the encrypted
