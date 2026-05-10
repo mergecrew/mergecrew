@@ -129,6 +129,18 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
       </Card>
 
       <Card>
+        <div className="flex items-baseline justify-between">
+          <h2 className="font-medium">API keys</h2>
+          <LinkButton href={`/orgs/${slug}/settings/api-keys`} variant="secondary">
+            Manage →
+          </LinkButton>
+        </div>
+        <p className="mt-1 text-sm text-zinc-500">
+          Programmatic <code>mc_live_…</code> tokens for the TS/Python SDKs and CI tooling.
+        </p>
+      </Card>
+
+      <Card>
         <h2 className="font-medium">Members</h2>
         <ul className="mt-2 space-y-1 text-sm">
           {members.items.map((m: any) => (
