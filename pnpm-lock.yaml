@@ -494,13 +494,22 @@ importers:
 
   packages/domain:
     dependencies:
+      picomatch:
+        specifier: ^4.0.2
+        version: 4.0.4
       zod:
         specifier: ^3.23.8
         version: 3.25.76
     devDependencies:
+      '@types/picomatch':
+        specifier: ^4.0.0
+        version: 4.0.3
       typescript:
         specifier: ^5.6.2
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.1
+        version: 2.1.9(@types/node@25.6.2)(terser@5.47.1)
 
   packages/eventlog:
     dependencies:
@@ -2572,6 +2581,9 @@ packages:
 
   '@types/nodemailer@6.4.23':
     resolution: {integrity: sha512-aFV3/NsYFLSx9mbb5gtirBSXJnAlrusoKNuPbxsASWc7vrKLmIrTQRpdcxNcSFL3VW2A2XpeLEavwb2qMi6nlQ==}
+
+  '@types/picomatch@4.0.3':
+    resolution: {integrity: sha512-iG0T6+nYJ9FAPmx9SsUlnwcq1ZVRuCXcVEvWnntoPlrOpwtSTKNDC9uVAxTsC3PUvJ+99n4RpAcNgBbHX3JSnQ==}
 
   '@types/qrcode@1.5.6':
     resolution: {integrity: sha512-te7NQcV2BOvdj2b1hCAHzAoMNuj65kNBMz0KBaxM6c3VGBOhU0dURQKOtH8CFNI/dsKkwlv32p26qYQTWoB5bw==}
@@ -7738,6 +7750,8 @@ snapshots:
   '@types/nodemailer@6.4.23':
     dependencies:
       '@types/node': 25.6.2
+
+  '@types/picomatch@4.0.3': {}
 
   '@types/qrcode@1.5.6':
     dependencies:
