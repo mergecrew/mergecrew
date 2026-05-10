@@ -41,6 +41,7 @@ const ERROR_TRACKER_TOKEN_SECRET = 'ERROR_TRACKER_TOKEN';
 import { CompositeCommsProvider } from '@mergecrew/adapters-comms';
 import { runAgentStep, BudgetTracker, PolicyEngine } from '@mergecrew/agent-runtime';
 import { transcriptStoreFromEnv } from '@mergecrew/transcript-store';
+import type { CancellationCoordinator } from './cancellation.js';
 
 interface StepArgs {
   organizationId: string;
@@ -51,10 +52,44 @@ interface StepArgs {
   agentRef: string;
   eventlog: Eventlog;
   logger: Logger;
+  /**
+   * Optional in V1.3: when present, the runner registers the step's
+   * AbortController so an external `run-cancel` pubsub message can stop it
+   * mid-flight. Tests that exercise runStep() in isolation can omit this.
+   */
+  cancellation?: CancellationCoordinator;
 }
 
 export async function runStep(args: StepArgs): Promise<StepOutcome> {
-  const { organizationId, projectId, runId, workflowRunId, stepId, agentRef, eventlog, logger } = args;
+  const { organizationId, projectId, runId, workflowRunId, stepId, agentRef, eventlog, logger, cancellation } = args;
+
+  // Defense in depth: a step might have been queued before the user
+  // cancelled the run. Don't waste an LLM call on it. The orchestrator
+  // also checks at dispatch, but a queued job that was already in flight
+  // when the user clicked cancel still arrives here.
+  const runRow = await withTenant(organizationId, (tx) =>
+    tx.dailyRun.findUnique({ where: { id: runId }, select: { status: true } }),
+  );
+  if (runRow?.status === 'cancelled') {
+    await withTenant(organizationId, (tx) =>
+      tx.agentStep.update({
+        where: { id: stepId },
+        data: { status: 'cancelled', finishedAt: new Date(), heartbeatAt: null },
+      }),
+    );
+    await eventlog.emit({
+      organizationId,
+      projectId,
+      dailyRunId: runId,
+      workflowRunId,
+      agentStepId: stepId,
+      type: 'AGENT_STEP_FAILED',
+      actor: { kind: 'system' },
+      payload: { reason: 'run_cancelled', agentRef },
+    });
+    return { kind: 'cancelled' };
+  }
+
   await withTenant(organizationId, (tx) =>
     tx.agentStep.update({
       where: { id: stepId },
@@ -244,6 +279,10 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
 
   const budget = new BudgetTracker(agentDef.budget);
   const abortController = new AbortController();
+  // Hook into the runner-wide cancellation coordinator so a `run-cancel`
+  // pubsub message aborts this step mid-flight. The agent runtime already
+  // returns `{ kind: 'cancelled' }` when the signal fires.
+  const unregisterCancellation = cancellation?.register(runId, abortController);
 
   const buildSkillContext: (extra: { skillName: string; toolUseId: string }) => SkillExecutionContext = (extra) => ({
     organizationId,
@@ -307,6 +346,7 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   const budgetGate = await checkDailyBudget(organizationId);
   if (budgetGate.exceeded) {
     stopHeartbeat();
+    unregisterCancellation?.();
     await eventlog.emit({
       organizationId,
       projectId,
@@ -558,6 +598,9 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
 
   // Stop liveness heartbeat — the step is terminal.
   stopHeartbeat();
+  // Unregister from the cancellation coordinator so a stale entry doesn't
+  // leak across BullMQ jobs in this process.
+  unregisterCancellation?.();
 
   // We export a price helper so the runtime can attach $ to model turns.
   void priceFor;

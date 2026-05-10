@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { NotFoundError } from '@mergecrew/domain';
+import { RUN_CANCEL_CHANNEL, type RunCancelMessage } from '@mergecrew/eventlog';
 import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
 import { QueueService } from '../../common/queue.service.js';
@@ -68,6 +69,23 @@ export class RunService {
       type: 'RUN_CANCELLED',
       actor: { kind: 'user', id: t.userId },
     });
+
+    // V1.3: tell every runner to abort in-flight steps for this run, and
+    // every orchestrator to drop queued dispatches. Best-effort fire and
+    // forget — the DB status flip above is the source of truth, the
+    // pubsub is just the fast path.
+    const cancelMsg: RunCancelMessage = {
+      organizationId: t.organizationId,
+      runId,
+      reason: `cancelled by user ${t.userId}`,
+    };
+    await this.eventlogSvc
+      .pubsubHandle()
+      .publish(RUN_CANCEL_CHANNEL, cancelMsg)
+      .catch(() => {
+        /* the DB flip already persisted; runners will pick up at next heartbeat sweep */
+      });
+
     return { cancelled: true };
   }
 
