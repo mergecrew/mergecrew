@@ -1,10 +1,13 @@
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { hasRole } from '@/lib/role';
 import { Card, Button, LinkButton } from '@/components/ui';
 import { LlmProvidersCard } from '@/components/llm-providers-card';
 import { LlmProfilesCard } from '@/components/llm-profiles-card';
+import { MfaRequiredCallout } from '@/components/mfa-required-callout';
+import { OrgGeneralForm } from './org-general-form';
 
 interface BudgetInfo {
   dailyBudgetUsd: number | null;
@@ -40,7 +43,9 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
     hasRole(slug, session, 'admin'),
     api<{ enrolled: boolean }>(`/v1/me/mfa`, { session }).catch(() => ({ enrolled: false })),
   ]);
-  const needsMfaEnrollment = canEdit && !mfaStatus.enrolled;
+  // MFA is recommended for admin/owner accounts but not enforced (see
+  // RoleGuard). Surface a passive nudge for admins who haven't enrolled.
+  const showMfaNudge = canEdit && !mfaStatus.enrolled;
 
   return (
     <main className="mx-auto max-w-3xl space-y-4 p-6">
@@ -49,19 +54,46 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
         <p className="text-sm text-zinc-500">Org &nbsp;<code>{org.slug}</code></p>
       </header>
 
-      {needsMfaEnrollment && (
-        <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
-          <div className="font-medium">MFA required for your role</div>
-          <p className="mt-1">
-            As an admin or owner, you must enable two-factor authentication before any
-            write actions on this org will succeed. Set it up in{' '}
-            <a className="underline" href="/account/security">
-              account security
-            </a>
-            .
-          </p>
+      {showMfaNudge && <MfaRequiredCallout />}
+
+      <Card>
+        <h2 className="font-medium">General</h2>
+        <p className="mt-1 text-sm text-zinc-500">
+          Display name and URL slug. Changing the slug rewrites every URL under
+          this org — bookmarks and any tooling that references{' '}
+          <code>/orgs/{org.slug}/…</code> will need to be updated.
+        </p>
+        <div className="mt-3">
+          <OrgGeneralForm
+            initialName={org.name}
+            initialSlug={org.slug}
+            canEdit={canEdit}
+            onSave={async (input) => {
+              'use server';
+              try {
+                const updated = await api<{ name: string; slug: string }>(
+                  `/v1/orgs/${slug}/`,
+                  {
+                    method: 'PATCH',
+                    body: JSON.stringify(input),
+                    session: await requireSession(),
+                  },
+                );
+                revalidatePath(`/orgs/${slug}/settings`);
+                if (updated.slug !== slug) {
+                  // Slug changed — caller's URL is now stale. Hop to the
+                  // new path so subsequent actions on this page hit the
+                  // right tenant.
+                  redirect(`/orgs/${updated.slug}/settings?renamed=1`);
+                }
+                return { ok: true, newSlug: updated.slug };
+              } catch (e: any) {
+                return { ok: false, error: String(e?.message ?? e) };
+              }
+            }}
+          />
         </div>
-      )}
+      </Card>
 
       <Card>
         <div className="flex items-baseline justify-between">

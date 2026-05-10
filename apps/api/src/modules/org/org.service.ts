@@ -70,6 +70,58 @@ export class OrgService {
     return Number(rows._sum.usdEstimate ?? 0);
   }
 
+  /**
+   * Rename the org or change its slug. Both fields are optional; pass
+   * only what changed. Slug must be lowercase a-z0-9-, 2–48 chars, and
+   * unique across all orgs (it's already a Postgres unique key but we
+   * surface the conflict as a friendly ValidationError).
+   *
+   * Cascade: nothing else references org by slug — projects, runs,
+   * changesets, etc. all key on the org's UUID — so a slug change is
+   * safe DB-wise. Callers (BFF) need to redirect the user to the new
+   * URL after the response.
+   */
+  async update(patch: { name?: string; slug?: string }) {
+    const t = this.tenant.require();
+    const data: { name?: string; slug?: string } = {};
+
+    if (patch.name !== undefined) {
+      const trimmed = patch.name.trim();
+      if (!trimmed) throw new ValidationError('name cannot be empty');
+      if (trimmed.length > 80) throw new ValidationError('name is too long (max 80 chars)');
+      data.name = trimmed;
+    }
+
+    if (patch.slug !== undefined) {
+      const next = patch.slug.trim().toLowerCase();
+      if (!/^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/.test(next)) {
+        throw new ValidationError(
+          'slug must be 2–48 chars, lowercase a-z0-9, with hyphens between (no leading/trailing hyphen)',
+        );
+      }
+      // Unique-check up front so the error code is clear; the DB unique
+      // index is the actual enforcement.
+      const conflict = await this.prisma.withSystem((tx) =>
+        tx.organization.findFirst({
+          where: { slug: next, NOT: { id: t.organizationId } },
+          select: { id: true },
+        }),
+      );
+      if (conflict) throw new ValidationError(`slug "${next}" is taken`);
+      data.slug = next;
+    }
+
+    if (Object.keys(data).length === 0) {
+      // No-op patch — return the current row rather than hit the DB for
+      // an empty update.
+      return this.detail();
+    }
+
+    return this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.organization.update({ where: { id: t.organizationId }, data }),
+    );
+  }
+
   async updateBudget(dailyBudgetUsd: number | null) {
     const t = this.tenant.require();
     if (dailyBudgetUsd !== null && (!Number.isFinite(dailyBudgetUsd) || dailyBudgetUsd < 0)) {

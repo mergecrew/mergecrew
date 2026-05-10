@@ -67,6 +67,18 @@
         "tags": [
           "Org"
         ]
+      },
+      "patch": {
+        "operationId": "OrgController_update",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
       }
     },
     "/v1/orgs/{slug}/members": {
