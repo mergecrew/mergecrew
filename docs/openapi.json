@@ -1502,6 +1502,34 @@
           "OutboundWebhook"
         ]
       }
+    },
+    "/v1/auth/magic-link/request": {
+      "post": {
+        "operationId": "MagicLinkController_request",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "MagicLink"
+        ]
+      }
+    },
+    "/v1/auth/magic-link/verify": {
+      "post": {
+        "operationId": "MagicLinkController_verify",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "MagicLink"
+        ]
+      }
     }
   },
   "info": {

@@ -10,6 +10,13 @@ export const SIGNED_OUT_COOKIE = 'mergecrew_signed_out';
  * or the dev-mode exchange cache.
  */
 export const JWT_OVERRIDE_COOKIE = 'mergecrew_jwt';
+/**
+ * Cookie carrying the signed-in user profile (id/email/name) for sessions
+ * minted outside NextAuth — namely the magic-link flow (#1). When set
+ * alongside `mergecrew_jwt`, `getSession()` returns the override identity
+ * directly without going through NextAuth.
+ */
+export const USER_OVERRIDE_COOKIE = 'mergecrew_user';
 
 export function isDevAutoLogin(): boolean {
   const raw =
@@ -65,13 +72,36 @@ async function jwtOverride(): Promise<string | null> {
   return c.get(JWT_OVERRIDE_COOKIE)?.value ?? null;
 }
 
+async function userOverride(): Promise<{ userId: string; email: string; name?: string } | null> {
+  const c = await cookies();
+  const raw = c.get(USER_OVERRIDE_COOKIE)?.value;
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { id?: string; email?: string; name?: string | null };
+    if (!parsed.id || !parsed.email) return null;
+    return {
+      userId: parsed.id,
+      email: parsed.email,
+      ...(parsed.name ? { name: parsed.name } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function getSession(): Promise<Session | null> {
   if (await isManuallySignedOut()) return null;
   const override = await jwtOverride();
+  const userOv = await userOverride();
   if (isDevAutoLogin()) {
     const base = await devExchange();
     if (!base) return null;
     return override ? { ...base, jwt: override } : base;
+  }
+  // Magic-link flow (#1): we have a JWT + user cookie set by the BFF
+  // verify route. That's a complete session on its own — bypass NextAuth.
+  if (override && userOv) {
+    return { userId: userOv.userId, email: userOv.email, name: userOv.name, jwt: override };
   }
   const s = await auth();
   if (!s?.user?.email) return null;
