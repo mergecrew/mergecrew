@@ -21,6 +21,7 @@
     "@mergecrew/db": "workspace:*",
     "@mergecrew/domain": "workspace:*",
     "@mergecrew/eventlog": "workspace:*",
+    "@mergecrew/inception": "workspace:*",
     "@mergecrew/llm": "workspace:*",
     "@mergecrew/skills": "workspace:*",
     "@nestjs/common": "^11.1.19",

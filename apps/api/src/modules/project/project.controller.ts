@@ -1,11 +1,12 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import { ProjectService } from './project.service.js';
+import { InceptionService } from './inception.service.js';
 import { RequireRole, RoleGuard } from '../../common/role.guard.js';
 
 @Controller('v1/orgs/:slug/projects')
 @UseGuards(RoleGuard)
 export class ProjectController {
-  constructor(private projects: ProjectService) {}
+  constructor(private projects: ProjectService, private inception: InceptionService) {}
 
   @Get()
   async list() {
@@ -162,5 +163,11 @@ export class ProjectController {
     @Body() body: { rules: unknown },
   ) {
     return { rules: await this.projects.setAutoPromoteRules(projectSlug, body?.rules) };
+  }
+
+  @Post(':projectSlug/inception')
+  @RequireRole('admin')
+  async runInception(@Param('projectSlug') projectSlug: string) {
+    return this.inception.run(projectSlug);
   }
 }
