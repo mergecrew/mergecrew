@@ -17,12 +17,21 @@ interface Status {
   recoveryCodesRemaining: number;
 }
 
-export function MfaPanel({ status }: { status: Status }) {
+interface PendingSetup {
+  qrDataUrl: string;
+  otpauthUrl: string;
+}
+
+export function MfaPanel({
+  status,
+  pendingSetup,
+}: {
+  status: Status;
+  pendingSetup?: PendingSetup | null;
+}) {
   const [, startTx] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [setupState, setSetupState] = useState<{ qrDataUrl: string; otpauthUrl: string } | null>(
-    null,
-  );
+  const [setupState, setSetupState] = useState<PendingSetup | null>(pendingSetup ?? null);
   const [setupCode, setSetupCode] = useState('');
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
   const [disableCode, setDisableCode] = useState('');
@@ -170,25 +179,49 @@ export function MfaPanel({ status }: { status: Status }) {
         {recoveryCodes ? (
           <RecoveryCodesPanel codes={recoveryCodes} onClose={() => setRecoveryCodes(null)} />
         ) : (
-          <CodeForm
-            placeholder="123456"
-            value={setupCode}
-            onChange={setSetupCode}
-            disabled={pending}
-            onSubmit={() =>
-              run(
-                () => verifyAction(setupCode),
-                (r) => {
-                  if (r.ok) {
-                    setSetupCode('');
-                    setRecoveryCodes(r.recoveryCodes);
-                    setSetupState(null);
-                  } else setError(r.error);
-                },
-              )
-            }
-            submitLabel="Verify and enable"
-          />
+          <>
+            <CodeForm
+              placeholder="123456"
+              value={setupCode}
+              onChange={setSetupCode}
+              disabled={pending}
+              onSubmit={() =>
+                run(
+                  () => verifyAction(setupCode),
+                  (r) => {
+                    if (r.ok) {
+                      setSetupCode('');
+                      setRecoveryCodes(r.recoveryCodes);
+                      setSetupState(null);
+                    } else setError(r.error);
+                  },
+                )
+              }
+              submitLabel="Verify and enable"
+            />
+            <p className="text-xs text-zinc-500">
+              Lost the QR code or want to start over?{' '}
+              <button
+                type="button"
+                className="underline hover:text-zinc-700 dark:hover:text-zinc-300"
+                disabled={pending}
+                onClick={() =>
+                  run(
+                    () => startSetup({ force: true }),
+                    (r) => {
+                      if (r.ok) {
+                        setSetupState({ qrDataUrl: r.qrDataUrl, otpauthUrl: r.otpauthUrl });
+                        setSetupCode('');
+                      } else setError(r.error);
+                    },
+                  )
+                }
+              >
+                Restart setup
+              </button>{' '}
+              to generate a new QR.
+            </p>
+          </>
         )}
 
         {error && <ErrorRow message={error} />}
