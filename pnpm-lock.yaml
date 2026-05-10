@@ -62,6 +62,9 @@ importers:
       '@mergecrew/eventlog':
         specifier: workspace:*
         version: link:../../packages/eventlog
+      '@mergecrew/inception':
+        specifier: workspace:*
+        version: link:../../packages/inception
       '@mergecrew/llm':
         specifier: workspace:*
         version: link:../../packages/llm
