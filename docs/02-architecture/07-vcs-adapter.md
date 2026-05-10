@@ -159,6 +159,25 @@ Force-pushed base-branch rebase and cross-changeset file-conflict resolution are
 - All git operations run inside the per-step abort signal scope.
 - All operations are logged to the `eventlog` with skill-level grain (no raw secrets, no full diffs at log level).
 
+## Adding a new VCS adapter
+
+A new vendor adapter (GitLab, Gitea, GitHub Enterprise on a custom base URL, …) needs three things:
+
+1. **An implementation of `VcsProvider`** in `packages/adapters-vcs/src/<vendor>.ts`. The interface lives in `types.ts`; `github.ts` is the reference implementation.
+2. **The new adapter id added to the `VcsProvider.id` union** in `types.ts`. Callers select adapters by id; the type union keeps the switch exhaustive.
+3. **A conformance test** in `packages/adapters-vcs/test/<vendor>.test.ts`. Use `test/github.test.ts` as the template — copy the file, swap the SDK / fetch mocks for your vendor's shape, and the helpers in `test/conformance.ts` will catch contract violations:
+   - `openPullRequest` returns a well-shaped `PullRequest` with a valid `state`.
+   - `mergePullRequest` returns a well-shaped `MergeResult`.
+   - `getPullRequestFiles` returns parsed `PullRequestFile`s with a recognized `status`.
+   - `verifyWebhookSignature` is HMAC-correct and timing-safe.
+   - `parseWebhookEvent` extracts a valid `VcsEvent` discriminator and preserves the raw payload.
+
+Git-shell methods (`cloneIntoWorkspace`, `createBranch`, `commit`, `push`, `fetchUpdate`) are intentionally **out of scope** for the conformance suite — they wrap `git` under `execa` and mocking the subprocess interface adds noise without much signal. The dogfood smoke (`apps/dogfood-smoke`) exercises them end-to-end against a real test repo, which catches the regressions that matter.
+
+GitHub goes through `@octokit/rest` + `@octokit/auth-app`, so the reference test mocks both modules at the SDK seam. Adapters that hit the vendor REST API directly (no SDK) should `vi.stubGlobal('fetch', …)` instead — see `packages/adapters-deploy/test/render.test.ts` for that pattern.
+
+Once the test passes, run `pnpm --filter @mergecrew/adapters-vcs test` locally and CI picks up the rest.
+
 ## Planned extensions
 
 - **GitLab adapter.** Same interface; webhook differences are encapsulated.
