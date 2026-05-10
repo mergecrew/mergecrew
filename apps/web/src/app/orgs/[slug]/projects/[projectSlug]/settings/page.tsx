@@ -8,6 +8,7 @@ import { RepoForm } from './repo-form';
 import { TrackerForm } from './tracker-form';
 import { ErrorTargetForm } from './error-target-form';
 import { ScheduleForm } from './schedule-form';
+import { InceptionForm } from './inception-form';
 
 export default async function ProjectSettings({
   params,
@@ -157,6 +158,17 @@ export default async function ProjectSettings({
               return { ok: false, error: String(e?.message ?? e) };
             }
           }}
+        />
+      </Section>
+
+      <Section
+        title="Project Inception"
+        description="Detect the stack, scripts, and deploy workflows by scanning a fresh clone of the connected repo. Use the draft mergecrew.yaml as the starting point for the first daily run."
+      >
+        <InceptionForm
+          slug={slug}
+          projectSlug={projectSlug}
+          hasRepo={Boolean(project.connectedRepo)}
         />
       </Section>
 

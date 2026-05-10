@@ -46,3 +46,16 @@ export async function disconnectRepoAction(slug: string, projectSlug: string) {
   });
   revalidatePath(`/orgs/${slug}/projects/${projectSlug}/settings`);
 }
+
+/**
+ * V1.1 Project Inception (#7): clones the connected repo, runs the
+ * `@mergecrew/inception` detector, returns the structured summary +
+ * draft `mergecrew.yaml` for the setup wizard to display.
+ */
+export async function runInceptionAction(slug: string, projectSlug: string) {
+  const session = await requireSession();
+  return api(`/v1/orgs/${slug}/projects/${projectSlug}/inception`, {
+    method: 'POST',
+    session,
+  });
+}
