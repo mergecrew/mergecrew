@@ -15,6 +15,7 @@ import {
   type TestSummary,
 } from '@mergecrew/domain';
 import { parseTestOutput, mergeIntoSummary } from './test-summary.js';
+import { computeRiskChip, type RiskLevel } from './risk-chip.js';
 import { Eventlog } from '@mergecrew/eventlog';
 import {
   CapabilityRouter,
@@ -765,12 +766,27 @@ async function openPendingChangesetPrs(opts: {
         body,
         draft: cs.status === 'tests_failed',
       });
+      // #193: compute a risk chip from PR file stats + test summary so
+      // reviewers see at a glance how much attention the change needs.
+      // Best-effort — a fetch failure leaves the chip null and the UI
+      // defaults to 'low'.
+      let riskChip: RiskLevel | null = null;
+      try {
+        const files = await vcs.getPullRequestFiles(repoRef, pr.number);
+        riskChip = computeRiskChip(files, cs.testSummary);
+      } catch (riskErr: any) {
+        logger.warn(
+          { changesetId: cs.id, err: riskErr?.message ?? riskErr },
+          'risk-chip: file fetch failed; leaving chip null',
+        );
+      }
       await withTenant(organizationId, (tx) =>
         tx.changeset.update({
           where: { id: cs.id },
           data: {
             prNumber: pr.number,
             prUrl: pr.url,
+            riskChip,
             status: cs.status === 'tests_failed' ? cs.status : 'pr_open',
             updatedAt: new Date(),
           },
