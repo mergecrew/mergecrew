@@ -1,0 +1,70 @@
+name: Deploy web (Vercel)
+
+# Builds the Vercel artifact in CI (pinned Node + pnpm versions, same
+# environment as the regular CI jobs) and ships it via `vercel deploy
+# --prebuilt`. Doing the build here instead of letting Vercel handle it
+# keeps the deploy reproducible against the exact lockfile this repo
+# committed, and gives us auditable build logs in GitHub alongside the
+# rest of CI.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/deploy-web.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Required Vercel secrets (configure in repo settings):
+    #   VERCEL_TOKEN       — personal/team token from vercel.com/account/tokens
+    #   VERCEL_ORG_ID      — `vc whoami` or "Settings → General" in the Vercel dashboard
+    #   VERCEL_PROJECT_ID  — Project Settings → General → Project ID
+    # The runtime API_BASE_URL the BFF talks to is set as a Vercel
+    # environment variable (Settings → Environment Variables), not here.
+    if: ${{ vars.VERCEL_DEPLOY_ENABLED == 'true' || github.event_name == 'workflow_dispatch' }}
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2 # Vercel's ignoreCommand uses HEAD^..HEAD; we need both.
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - name: Install Vercel CLI
+        run: npm i -g vercel@latest
+      - name: Pull Vercel environment (production)
+        working-directory: apps/web
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+      - name: Build (prebuilt artifact)
+        working-directory: apps/web
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+      - name: Deploy
+        working-directory: apps/web
+        run: |
+          DEPLOY_URL=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "Deployed: $DEPLOY_URL"
+          echo "deploy_url=$DEPLOY_URL" >> "$GITHUB_OUTPUT"
+        id: deploy
+      - name: Summarize
+        run: |
+          {
+            echo "### Vercel deploy"
+            echo ""
+            echo "- branch: \`${{ github.ref_name }}\`"
+            echo "- commit: \`${{ github.sha }}\`"
+            echo "- url: ${{ steps.deploy.outputs.deploy_url }}"
+          } >> "$GITHUB_STEP_SUMMARY"
