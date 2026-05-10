@@ -32,6 +32,13 @@ export interface SkillExecutionContext {
   adapters: SkillAdapters;
   /** Per-skill instance config (e.g., deploy adapter id, GH workflow filename). */
   config?: Record<string, unknown>;
+  /**
+   * Egress host allowlist (#10). When present, web/http skills must
+   * call `assertEgressAllowed()` on the target URL before fetching.
+   * Undefined = no restriction (back-compat); empty array = block all;
+   * see `egress-policy.ts` for the matching rules.
+   */
+  egressAllowlist?: string[] | null;
 }
 
 export interface SkillAdapters {
