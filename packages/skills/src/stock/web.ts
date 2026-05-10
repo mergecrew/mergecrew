@@ -1,4 +1,5 @@
 import type { AnySkill } from '../types.js';
+import { assertEgressAllowed } from '../egress-policy.js';
 
 const webFetchUrl: AnySkill = {
   name: 'web.fetch_url',
@@ -17,6 +18,7 @@ const webFetchUrl: AnySkill = {
   capabilities: ['net.outbound'],
   timeoutMs: 30_000,
   async execute(input: any, ctx) {
+    assertEgressAllowed(input.url, ctx.egressAllowlist);
     ctx.logger.info('web.fetch_url', { url: input.url });
     const r = await fetch(input.url, { headers: input.headers, signal: ctx.abortSignal });
     const max = input.max_bytes ?? 200_000;
@@ -65,6 +67,7 @@ const webScreenshotUrl: AnySkill = {
   capabilities: ['net.outbound'],
   timeoutMs: 60_000,
   async execute(input: any, ctx) {
+    assertEgressAllowed(input.url, ctx.egressAllowlist);
     let chromium: any;
     try {
       ({ chromium } = await import('playwright-core'));
@@ -103,7 +106,8 @@ const webLighthouse: AnySkill = {
   sideEffectClass: 'read',
   capabilities: ['net.outbound'],
   timeoutMs: 90_000,
-  async execute(input: any, _ctx) {
+  async execute(input: any, ctx) {
+    assertEgressAllowed(input.url, ctx.egressAllowlist);
     // V1 placeholder: a real Lighthouse integration is V1.x.
     // We surface load timings + key headers as a useful approximation.
     const start = Date.now();
@@ -150,6 +154,7 @@ const webSmokeCheck: AnySkill = {
   timeoutMs: 60_000,
   async execute(input: any, ctx) {
     const url = String(input.url);
+    assertEgressAllowed(url, ctx.egressAllowlist);
     const timeoutMs = Number(input.timeoutMs ?? 15_000);
     const mustContain: string[] = Array.isArray(input.mustContain) ? input.mustContain : [];
     const mustNotContain: string[] = Array.isArray(input.mustNotContain) ? input.mustNotContain : [];

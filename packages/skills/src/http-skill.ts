@@ -1,5 +1,6 @@
 import type { CustomSkillDef } from '@mergecrew/domain';
 import type { AnySkill } from './types.js';
+import { assertEgressAllowed } from './egress-policy.js';
 
 /**
  * Build a runnable skill from a `CustomSkillDef` declared in `mergecrew.yaml`.
@@ -27,6 +28,7 @@ export function buildHttpSkill(name: string, def: CustomSkillDef): AnySkill {
           `custom skill "${name}" has no endpoint configured in mergecrew.yaml`,
         );
       }
+      assertEgressAllowed(def.endpoint, ctx.egressAllowlist);
       const headers: Record<string, string> = {
         'content-type': 'application/json',
         'x-mergecrew-org-id': ctx.organizationId,

@@ -150,6 +150,11 @@ model Project {
   /// no auto-promotion; every changeset goes through the manual gate.
   /// Validated against the Zod schema in @mergecrew/domain on writes.
   autoPromoteRules Json    @default("[]") @map("auto_promote_rules")
+  /// Egress allowlist for outbound HTTP from agent skills (#10).
+  /// `null` (the default) = no restriction (back-compat). Empty array =
+  /// block all. Otherwise host patterns ('example.com', '*.example.com',
+  /// '*' for explicit allow-all). See packages/skills/src/egress-policy.
+  egressAllowlist  Json?   @map("egress_allowlist")
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)

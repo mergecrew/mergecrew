@@ -205,6 +205,13 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     skills.register(buildHttpSkill(name, def));
   }
 
+  // Read the project's egress allowlist (#10). NULL = no restriction
+  // (back-compat); the skill execution layer honors the value as-is.
+  const projectRow = await withTenant(organizationId, (tx) =>
+    tx.project.findUnique({ where: { id: projectId }, select: { egressAllowlist: true } }),
+  );
+  const egressAllowlist = (projectRow?.egressAllowlist as string[] | null | undefined) ?? null;
+
   const policy = new PolicyEngine({
     agentDoNotTouch: agentDef.do_not_touch,
     projectSensitivePatterns: cfg.lifecycle?.human_gates?.sensitive_path_patterns ?? [],
@@ -230,6 +237,7 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
       /* runner doesn't push extra events from skills in V1 */
     },
     adapters: { vcs, deploy, tracker, comms },
+    egressAllowlist,
     config: {
       // Per-skill / per-step config bag the runner injects.
       adapterConfig: dt?.config ?? {},
