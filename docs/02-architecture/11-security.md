@@ -83,6 +83,25 @@ Hosted-tier / operator-supplied (not enforced by OSS code):
 - Skills cannot use raw `child_process` or shell. Skills that run external commands (`build.run_unit_tests`, etc.) use a constrained executor with allowlisted commands.
 - Custom skills (defined in `mergecrew.yaml`) declare an OpenAPI/JSON-schema spec, an auth ref, and an HTTPS endpoint. The runtime won't execute a custom skill that targets an internal IP without explicit org-level opt-in.
 
+### Egress allowlist scope (#188)
+
+The per-project `egressAllowlist` (configured on the Project row) is enforced by `packages/skills/src/egress-policy.ts` against the **HTTP-bound** skills:
+
+- `web.fetch_url`, `web.parse_url`, `web.fetch_image`, `web.fetch_html` (`packages/skills/src/stock/web.ts`).
+- Custom skills declared in `mergecrew.yaml` with an HTTPS endpoint (`packages/skills/src/http-skill.ts`).
+
+It is **not** enforced against:
+
+- **Shell-based stock skills** that wrap `execa` — `build.run_install`, `build.run_unit_tests`, `build.run_integration_tests`, `build.run_lint`, `build.run_typecheck`, `repo.git.*`. A build script can `curl` / `wget` / `npm install` from anywhere reachable from the runner host. The same shell can pipe data out via standard tooling.
+- Anything the underlying tools reach without going through Node's network APIs (DNS, raw sockets, etc.).
+
+The implication: the allowlist is a **soft control** today — it stops an agent from calling `web.fetch_url("evil.com")`, but doesn't stop a build script the agent commits and runs from doing the same. Operators who need a hard control should either:
+
+- Reduce the surface — gate `build.*` and `repo.git.*` skills behind explicit project policy and audit each command's network access.
+- Apply network policy at a layer below the runner (k8s NetworkPolicy, AWS VPC egress controls, host-level iptables / nftables) — the OSS doesn't run shell commands inside a network namespace today.
+
+This is a known gap and is tracked alongside the broader runner-isolation work (#187, #188).
+
 ## Prompt injection mitigations
 
 - Inputs from external content (issues, customer feedback, docs) are wrapped in `<external_content>` tags in the system prompt and explicitly described as untrusted.
