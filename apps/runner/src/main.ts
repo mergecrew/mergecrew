@@ -2,6 +2,7 @@ import { Worker, Queue, type Job } from 'bullmq';
 import IORedis from 'ioredis';
 import pino from 'pino';
 import { Eventlog, RedisPubSub, fanoutToBullmq } from '@mergecrew/eventlog';
+import { withTenant } from '@mergecrew/db';
 import { runStep } from './step.js';
 
 const logger = pino({
@@ -41,6 +42,28 @@ const worker = new Worker(
 
 worker.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, err: String(err?.message ?? err) }, 'step worker failed');
+  // If runStep threw before reaching its terminal cleanup, the heartbeat
+  // and status would be stuck mid-flight. Stamp a terminal heartbeatAt of
+  // null so the orchestrator's sweeper doesn't keep "recovering" a step
+  // that's already abandoned, and surface the error to operators via
+  // the agent_steps row. Best-effort — DB outage during shutdown is OK,
+  // the sweeper will eventually pick up.
+  const data = job?.data as { organizationId?: string; stepId?: string } | undefined;
+  if (data?.organizationId && data.stepId) {
+    withTenant(data.organizationId, (tx) =>
+      tx.agentStep.updateMany({
+        where: { id: data.stepId, status: 'running' },
+        data: {
+          status: 'failed',
+          finishedAt: new Date(),
+          heartbeatAt: null,
+          failureReason: `runner_threw: ${String(err?.message ?? err).slice(0, 500)}`,
+        },
+      }),
+    ).catch((dbErr: any) =>
+      logger.warn({ stepId: data.stepId, dbErr: dbErr?.message ?? dbErr }, 'failed to mark step as failed'),
+    );
+  }
 });
 
 logger.info({ concurrency }, 'runner started');

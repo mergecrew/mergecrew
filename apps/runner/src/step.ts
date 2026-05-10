@@ -58,9 +58,33 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   await withTenant(organizationId, (tx) =>
     tx.agentStep.update({
       where: { id: stepId },
-      data: { status: 'running', startedAt: new Date(), attempt: { increment: 1 } },
+      data: {
+        status: 'running',
+        startedAt: new Date(),
+        heartbeatAt: new Date(),
+        attempt: { increment: 1 },
+      },
     }),
   );
+
+  // Liveness heartbeat (V1.4 dead-runner recovery, #10). The orchestrator's
+  // sweeper re-dispatches steps whose heartbeat goes stale on the assumption
+  // the runner died. We tick every 15s by default — well under the sweeper's
+  // 90s staleness threshold so a brief DB hiccup doesn't trigger recovery.
+  const heartbeatIntervalMs = Number(process.env.RUNNER_HEARTBEAT_INTERVAL_MS ?? 15_000);
+  const heartbeatTimer = setInterval(() => {
+    withTenant(organizationId, (tx) =>
+      tx.agentStep.update({
+        where: { id: stepId },
+        data: { heartbeatAt: new Date() },
+      }),
+    ).catch((err: any) =>
+      logger.warn({ stepId, err: err?.message ?? err }, 'heartbeat write failed'),
+    );
+  }, heartbeatIntervalMs);
+  // Don't keep the process alive just for the heartbeat.
+  if (typeof heartbeatTimer.unref === 'function') heartbeatTimer.unref();
+  const stopHeartbeat = () => clearInterval(heartbeatTimer);
   await eventlog.emit({
     organizationId,
     projectId,
@@ -282,6 +306,7 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   // a single step can't be more than one model turn over budget.
   const budgetGate = await checkDailyBudget(organizationId);
   if (budgetGate.exceeded) {
+    stopHeartbeat();
     await eventlog.emit({
       organizationId,
       projectId,
@@ -530,6 +555,9 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
 
   // Cleanup workspace.
   await fs.rm(workspacePath, { recursive: true, force: true }).catch(() => {});
+
+  // Stop liveness heartbeat — the step is terminal.
+  stopHeartbeat();
 
   // We export a price helper so the runtime can attach $ to model turns.
   void priceFor;
