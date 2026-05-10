@@ -5,10 +5,12 @@ import { withTenant } from '@mergecrew/db';
 import {
   AutoPromoteRule,
   autoPromoteMatches,
+  parsePackageJsonDiff,
   type AgentDefinition,
   type AutoPromoteRule as AutoPromoteRuleType,
   type MergecrewConfig,
   type ModelCapability,
+  type PackageJsonVersionChange,
   type StepOutcome,
   type TestSummary,
 } from '@mergecrew/domain';
@@ -716,8 +718,47 @@ async function applyAutoPromoteIfMatches(opts: {
     files: files.map((f) => ({ path: f.path, additions: f.additions, deletions: f.deletions })),
   };
 
+  // Parse package.json version diffs lazily — only when at least one rule
+  // requires them and at least one package.json is in the diff. We accept
+  // the parse result only if EVERY changed package.json yields a clean
+  // parse; any single failure leaves `packageJsonChanges` undefined and
+  // the matcher's safety rule (#154) rejects requirePackageJsonPatchOnly.
+  const needsPkgDiff = rules.some((r) => r.requirePackageJsonPatchOnly);
+  const packageFiles = files.filter((f) => /(^|\/)package\.json$/.test(f.path));
+  let packageJsonChanges: PackageJsonVersionChange[] | undefined;
+  if (needsPkgDiff && packageFiles.length > 0) {
+    try {
+      const accumulated: PackageJsonVersionChange[] = [];
+      let parseFailed = false;
+      for (const f of packageFiles) {
+        const [before, after] = await Promise.all([
+          opts.vcs.getFileAt(opts.repoRef, opts.repoRef.defaultBranch, f.path),
+          opts.vcs.getFileAt(opts.repoRef, `refs/pull/${opts.prNumber}/head`, f.path),
+        ]);
+        const parsed = parsePackageJsonDiff(
+          Buffer.from(before.contentBase64, 'base64').toString('utf8'),
+          Buffer.from(after.contentBase64, 'base64').toString('utf8'),
+        );
+        if (parsed === null) {
+          parseFailed = true;
+          break;
+        }
+        accumulated.push(...parsed);
+      }
+      if (!parseFailed) packageJsonChanges = accumulated;
+    } catch (err: any) {
+      opts.logger.warn(
+        { changesetId: opts.changesetId, err: err?.message ?? err },
+        'auto-promote: package.json fetch/parse failed; falling back to safe reject',
+      );
+    }
+  }
+  const fullCandidate = packageJsonChanges !== undefined
+    ? { ...candidate, packageJsonChanges }
+    : candidate;
+
   for (const rule of rules) {
-    const result = autoPromoteMatches(rule, candidate);
+    const result = autoPromoteMatches(rule, fullCandidate);
     if (!result.matched) continue;
 
     await withTenant(opts.organizationId, (tx) =>
