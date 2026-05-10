@@ -39,7 +39,13 @@ export class RoleGuard implements CanActivate {
     // when the user is enrolled. Unenrolled admins/owners get a distinct
     // error code so the frontend can route them to setup instead of
     // prompting for a code that doesn't exist.
-    if (roleAtLeast(t.role, 'admin')) {
+    //
+    // API-key requests skip this gate: an admin user already passed MFA
+    // at the moment the key was issued, and the key itself can't satisfy
+    // a TOTP challenge. Authorization for the request still flows through
+    // the role check above (a key minted with role=operator can't admin).
+    const viaApiKey = !!this.tenant.user()?.apiKeyId;
+    if (roleAtLeast(t.role, 'admin') && !viaApiKey) {
       const user = await this.prisma.withSystem((tx) =>
         tx.user.findUnique({
           where: { id: t.userId },

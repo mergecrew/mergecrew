@@ -20,6 +20,12 @@ export interface UserContext {
    * routes when the user is enrolled.
    */
   mfaChallengedAt?: Date;
+  /**
+   * Set when the request authenticated via an API key (`mc_*` bearer) rather
+   * than a user JWT. RoleGuard skips the per-request MFA freshness gate in
+   * this case — the issuing admin already passed MFA when minting the key.
+   */
+  apiKeyId?: string;
 }
 
 /**

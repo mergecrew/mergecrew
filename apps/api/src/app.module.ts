@@ -17,6 +17,7 @@ import { IntegrationModule } from './modules/integration/integration.module.js';
 import { WebhookModule } from './modules/webhook/webhook.module.js';
 import { MfaModule } from './modules/mfa/mfa.module.js';
 import { AdminModule } from './modules/admin/admin.module.js';
+import { ApiKeyModule } from './modules/api-key/api-key.module.js';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { AdminModule } from './modules/admin/admin.module.js';
     WebhookModule,
     MfaModule,
     AdminModule,
+    ApiKeyModule,
   ],
 })
 export class AppModule implements NestModule {
