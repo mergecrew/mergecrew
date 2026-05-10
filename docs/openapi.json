@@ -109,6 +109,32 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/concurrency-cap": {
+      "get": {
+        "operationId": "OrgController_concurrencyCap",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
+      },
+      "patch": {
+        "operationId": "OrgController_updateConcurrencyCap",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/audit-log": {
       "get": {
         "operationId": "OrgController_auditLog",
