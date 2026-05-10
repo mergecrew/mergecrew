@@ -11,10 +11,15 @@ import { ScheduleForm } from './schedule-form';
 
 export default async function ProjectSettings({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string; projectSlug: string }>;
+  searchParams: Promise<{ installation_id?: string; from?: string }>;
 }) {
   const { slug, projectSlug } = await params;
+  const sp = await searchParams;
+  const installedInstallationId =
+    sp.from === 'github_install' && sp.installation_id ? sp.installation_id : null;
   const session = await requireSession();
   const project = await api<{
     name: string;
@@ -82,6 +87,7 @@ export default async function ProjectSettings({
             slug={slug}
             projectSlug={projectSlug}
             initial={project.connectedRepo ?? null}
+            installedInstallationId={installedInstallationId}
           />
         </Subsection>
 

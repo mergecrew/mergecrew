@@ -1255,6 +1255,20 @@
         ]
       }
     },
+    "/v1/integrations/github/install/callback": {
+      "get": {
+        "operationId": "GitHubAppController_callback",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "GitHubApp"
+        ]
+      }
+    },
     "/v1/webhooks/github": {
       "post": {
         "operationId": "GitHubWebhookController_receive",
