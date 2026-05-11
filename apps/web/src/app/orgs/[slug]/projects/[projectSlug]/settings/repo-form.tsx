@@ -112,6 +112,13 @@ export function RepoForm({
           during install are shown.
         </div>
       )}
+      {!installedInstallationId && hasDropdown && (
+        <div className="rounded bg-zinc-50 p-2 text-xs text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+          Picking a different repo from this installation will rewire the
+          project. Repos shown are the ones the saved installation has access
+          to.
+        </div>
+      )}
       {installedInstallationId && !hasDropdown && (
         <div className="rounded bg-amber-50 p-2 text-xs text-amber-900 dark:bg-amber-900/20 dark:text-amber-200">
           GitHub App installed, but the server couldn&apos;t list its
