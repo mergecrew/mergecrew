@@ -16,6 +16,13 @@ interface BudgetInfo {
   exceeded: boolean;
 }
 
+interface SpendCapInfo {
+  monthlySpendCapUsd: number | null;
+  monthToDateUsd: number;
+  remainingUsd: number | null;
+  exceeded: boolean;
+}
+
 async function setBudgetAction(formData: FormData) {
   'use server';
   const slug = String(formData.get('slug') ?? '');
@@ -26,6 +33,21 @@ async function setBudgetAction(formData: FormData) {
   await api(`/v1/orgs/${slug}/budget`, {
     method: 'PATCH',
     body: JSON.stringify({ dailyBudgetUsd: parsed }),
+    session,
+  });
+  revalidatePath(`/orgs/${slug}/settings`);
+}
+
+async function setSpendCapAction(formData: FormData) {
+  'use server';
+  const slug = String(formData.get('slug') ?? '');
+  const raw = String(formData.get('monthlySpendCapUsd') ?? '').trim();
+  const parsed = raw === '' ? null : Number(raw);
+  if (parsed !== null && (!Number.isFinite(parsed) || parsed < 0)) return;
+  const session = await requireSession();
+  await api(`/v1/orgs/${slug}/spend-cap`, {
+    method: 'PATCH',
+    body: JSON.stringify({ monthlySpendCapUsd: parsed }),
     session,
   });
   revalidatePath(`/orgs/${slug}/settings`);
@@ -47,12 +69,13 @@ async function setTelemetryAction(formData: FormData) {
 export default async function OrgSettingsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const session = await requireSession();
-  const [org, members, providers, profiles, budget, canEdit, mfaStatus, telemetry, telemetryRecent] = await Promise.all([
+  const [org, members, providers, profiles, budget, spendCap, canEdit, mfaStatus, telemetry, telemetryRecent] = await Promise.all([
     api<any>(`/v1/orgs/${slug}`, { session }),
     api<{ items: any[] }>(`/v1/orgs/${slug}/members`, { session }),
     api<{ items: any[] }>(`/v1/orgs/${slug}/llm/providers`, { session }),
     api<{ items: any[] }>(`/v1/orgs/${slug}/llm/profiles`, { session }),
     api<BudgetInfo>(`/v1/orgs/${slug}/budget`, { session }),
+    api<SpendCapInfo>(`/v1/orgs/${slug}/spend-cap`, { session }),
     hasRole(slug, session, 'admin'),
     api<{ enrolled: boolean }>(`/v1/me/mfa`, { session }).catch(() => ({ enrolled: false })),
     api<{ enabled: boolean; installId: string | null }>(`/v1/orgs/${slug}/telemetry`, { session }).catch(
@@ -63,6 +86,10 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
       { session },
     ).catch(() => ({ items: [] })),
   ]);
+  const monthlyPct =
+    spendCap.monthlySpendCapUsd && spendCap.monthlySpendCapUsd > 0
+      ? Math.min(100, (spendCap.monthToDateUsd / spendCap.monthlySpendCapUsd) * 100)
+      : 0;
   // MFA is recommended for admin/owner accounts but not enforced (see
   // RoleGuard). Surface a passive nudge for admins who haven't enrolled.
   const showMfaNudge = canEdit && !mfaStatus.enrolled;
@@ -157,6 +184,82 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
                 min="0"
                 name="dailyBudgetUsd"
                 defaultValue={budget.dailyBudgetUsd ?? ''}
+                placeholder="(no cap)"
+                className="mt-1 w-full rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700"
+              />
+            </label>
+            <Button variant="primary" type="submit">Save</Button>
+          </form>
+        ) : (
+          <p className="mt-4 text-xs text-zinc-500">Only admins can change this.</p>
+        )}
+      </Card>
+
+      <Card>
+        <div className="flex items-baseline justify-between">
+          <h2 className="font-medium">Monthly LLM spend cap</h2>
+          {spendCap.exceeded && (
+            <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/40 dark:text-red-300">
+              exhausted
+            </span>
+          )}
+        </div>
+        <p className="mt-1 text-sm text-zinc-500">
+          Hard ceiling on LLM spend per calendar month (UTC) across this organization. New agent
+          steps are refused with reason <code>cap_exceeded</code> when the cap is reached, so a
+          runaway loop can&apos;t burn past it. Leave empty to remove the cap.{' '}
+          <a
+            href="https://github.com/mergecrew/mergecrew/blob/main/docs/03-infrastructure/08-monthly-spend-cap.md"
+            className="text-zinc-700 underline decoration-dotted hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
+          >
+            Learn more
+          </a>
+        </p>
+        <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
+          <div>
+            <div className="text-xs uppercase tracking-wide text-zinc-500">Month-to-date</div>
+            <div className="font-mono tabular-nums">${spendCap.monthToDateUsd.toFixed(2)}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-wide text-zinc-500">Cap</div>
+            <div className="font-mono tabular-nums">
+              {spendCap.monthlySpendCapUsd === null ? '—' : `$${spendCap.monthlySpendCapUsd.toFixed(2)}`}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-wide text-zinc-500">Remaining</div>
+            <div className="font-mono tabular-nums">
+              {spendCap.remainingUsd === null ? '—' : `$${spendCap.remainingUsd.toFixed(2)}`}
+            </div>
+          </div>
+        </div>
+        {spendCap.monthlySpendCapUsd !== null && (
+          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+            <div
+              className={
+                'h-full transition-[width] ' +
+                (monthlyPct >= 100
+                  ? 'bg-red-600'
+                  : monthlyPct >= 80
+                    ? 'bg-amber-500'
+                    : 'bg-emerald-500')
+              }
+              style={{ width: `${monthlyPct}%` }}
+              aria-label={`${monthlyPct.toFixed(0)}% of cap used`}
+            />
+          </div>
+        )}
+        {canEdit ? (
+          <form action={setSpendCapAction} className="mt-4 flex items-end gap-2">
+            <input type="hidden" name="slug" value={slug} />
+            <label className="flex-1 text-sm">
+              <span className="block text-zinc-600 dark:text-zinc-400">Monthly cap (USD)</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                name="monthlySpendCapUsd"
+                defaultValue={spendCap.monthlySpendCapUsd ?? ''}
                 placeholder="(no cap)"
                 className="mt-1 w-full rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700"
               />

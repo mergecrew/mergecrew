@@ -21,17 +21,23 @@ What to do when something looks wrong in a self-hosted Mergecrew. Each entry is 
 ### Run terminated as `budget_exhausted`
 <a id="budget-exhausted"></a>
 
-**Symptom.** Run row reaches a terminal state with status `budget_exhausted` and the eventlog shows `AGENT_STEP_FAILED reason=org_daily_budget_exhausted`. The cost dashboard shows today's org spend at or above the configured cap.
+**Symptom.** Run row reaches a terminal state with status `budget_exhausted`. The eventlog shows `AGENT_STEP_FAILED` with one of three reasons: `org_monthly_cap_exceeded`, `org_daily_budget_exhausted`, or a per-step `BudgetTracker` exhaustion.
 
-**Likely cause.** Either the org-wide daily budget (`organizations.dailyBudgetUsd`) or the per-step budget on the agent definition (`agents.<ref>.budget`) was exhausted. Mergecrew gates both at *step* entry so a single LLM call can't push you arbitrarily over.
+**Likely cause.** One of three gates fired:
+- The org-wide **monthly cap** (`organizations.monthlySpendCapUsd`, #282) — month-to-date spend met or exceeded the cap.
+- The org-wide **daily budget** (`organizations.dailyBudgetUsd`) — same idea, scoped to today.
+- The **per-step budget** on the agent definition (`agents.<ref>.budget`) — the step exhausted its own tokens/usd allowance mid-iteration.
+
+Mergecrew checks the org-level gates at *step entry* so one LLM call can't push you arbitrarily over either ceiling. The per-step budget is checked per iteration inside `agent-runtime`.
 
 **Recovery.**
-1. Confirm which gate fired: `org_daily_budget_exhausted` in the eventlog means the org cap; otherwise the step's own `BudgetTracker` ran out.
-2. To bump the org cap: `update organizations set daily_budget_usd = <new value> where id = '<org-id>'`, or via the org settings page → Budget.
-3. To bump the per-step cap: edit `agents.<ref>.budget.{tokens,usd}` in `mergecrew.yaml` and save (creates a new lifecycle version).
-4. To leave the cap untouched and just let *today's* run through: the cap resets at UTC midnight per `checkDailyBudget`. There's no override.
+1. Read the eventlog payload to identify which gate fired.
+2. To bump the monthly cap: org settings page → "Monthly LLM spend cap" → set a new value (or empty for unlimited). SQL: `update organizations set monthly_spend_cap_usd = <new value> where id = '<org-id>'`. See [08-monthly-spend-cap.md](08-monthly-spend-cap.md).
+3. To bump the daily budget: org settings page → "Daily LLM budget" or `update organizations set daily_budget_usd = <new value> where id = '<org-id>'`.
+4. To bump the per-step cap: edit `agents.<ref>.budget.{tokens,usd}` in `mergecrew.yaml` and save (creates a new lifecycle version).
+5. To wait it out: the daily budget resets at UTC midnight, the monthly cap on the 1st of the next month (UTC). There's no override.
 
-**Source.** Org cap: `apps/runner/src/step.ts` (look for `checkDailyBudget`). Per-step cap: `packages/agent-runtime/src/budget.ts`.
+**Source.** Org caps: `apps/runner/src/step.ts` (`checkDailyBudget`, `checkMonthlyCap`). Per-step cap: `packages/agent-runtime/src/budget.ts`.
 
 ### Deploy adapter timeout
 <a id="deploy-timeout"></a>

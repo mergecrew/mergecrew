@@ -11,6 +11,10 @@ function startOfUtcDay(d: Date): Date {
   return r;
 }
 
+function startOfUtcMonth(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+}
+
 @Injectable()
 export class OrgService {
   constructor(
@@ -141,6 +145,58 @@ export class OrgService {
       tx.organization.update({
         where: { id: t.organizationId },
         data: { dailyBudgetUsd: dailyBudgetUsd as any },
+      }),
+    );
+  }
+
+  /**
+   * Sum of `usd_estimate` for the current org's LLM invocations since
+   * UTC midnight on the 1st of the current month. Used to enforce
+   * `monthlySpendCapUsd` (#282).
+   */
+  async monthToDateSpendUsd(): Promise<number> {
+    const t = this.tenant.require();
+    const since = startOfUtcMonth(new Date());
+    const rows = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.llmInvocation.aggregate({
+        where: { organizationId: t.organizationId, occurredAt: { gte: since } },
+        _sum: { usdEstimate: true },
+      }),
+    );
+    return Number(rows._sum.usdEstimate ?? 0);
+  }
+
+  /**
+   * Returns the current cap setting + month-to-date spend. The web
+   * settings card renders both at once so the operator can see how
+   * close they are to the cap (#282).
+   */
+  async getSpendCap(): Promise<{ monthlySpendCapUsd: number | null; monthToDateUsd: number }> {
+    const t = this.tenant.require();
+    const row = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.organization.findUnique({
+        where: { id: t.organizationId },
+        select: { monthlySpendCapUsd: true },
+      }),
+    );
+    const monthToDateUsd = await this.monthToDateSpendUsd();
+    return {
+      monthlySpendCapUsd: row?.monthlySpendCapUsd === null || row?.monthlySpendCapUsd === undefined
+        ? null
+        : Number(row.monthlySpendCapUsd),
+      monthToDateUsd,
+    };
+  }
+
+  async updateSpendCap(monthlySpendCapUsd: number | null) {
+    const t = this.tenant.require();
+    if (monthlySpendCapUsd !== null && (!Number.isFinite(monthlySpendCapUsd) || monthlySpendCapUsd < 0)) {
+      throw new ValidationError('monthlySpendCapUsd must be null or a non-negative number');
+    }
+    return this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.organization.update({
+        where: { id: t.organizationId },
+        data: { monthlySpendCapUsd: monthlySpendCapUsd as any },
       }),
     );
   }
