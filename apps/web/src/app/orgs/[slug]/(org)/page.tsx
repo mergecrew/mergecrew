@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { Card, StatusDot, LinkButton, Chip } from '@/components/ui';
+import { FirstRunEmptyState } from '@/components/first-run-empty-state';
 import { relativeTime, runStatusToDot } from '@/lib/format';
 
 type Project = {
@@ -105,14 +106,7 @@ export default async function OrgHomePage({
           )}
         </div>
         {projects.length === 0 ? (
-          <Card>
-            <p className="text-zinc-500">No projects yet.</p>
-            <div className="mt-3">
-              <LinkButton href={`/orgs/${slug}/projects/new`} variant="primary">
-                Connect your first GitHub repo
-              </LinkButton>
-            </div>
-          </Card>
+          <FirstRunEmptyState orgSlug={slug} />
         ) : (
           <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {projects.map((p, i) => {
