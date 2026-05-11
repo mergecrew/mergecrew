@@ -295,6 +295,11 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
 
       <LlmProfilesCard
         profiles={profiles.items as any}
+        availableRefs={(providers.items as Array<{ kind?: string; capabilityOverrides?: { models?: string[] } }>)
+          .flatMap((p) =>
+            (p.capabilityOverrides?.models ?? []).map((m) => `${p.kind ?? ''}/${m}`),
+          )
+          .filter((r) => r.includes('/') && !r.startsWith('/'))}
         canEdit={canEdit}
         onCreate={async (input) => {
           'use server';
