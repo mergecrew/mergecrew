@@ -74,6 +74,33 @@ export class OrgController {
     };
   }
 
+  @Get('orgs/:slug/spend-cap')
+  @UseGuards(RoleGuard)
+  async spendCap(@Param('slug') _slug: string) {
+    const { monthlySpendCapUsd, monthToDateUsd } = await this.orgs.getSpendCap();
+    return {
+      monthlySpendCapUsd,
+      monthToDateUsd,
+      remainingUsd:
+        monthlySpendCapUsd === null ? null : Math.max(0, monthlySpendCapUsd - monthToDateUsd),
+      exceeded: monthlySpendCapUsd !== null && monthToDateUsd >= monthlySpendCapUsd,
+    };
+  }
+
+  @Patch('orgs/:slug/spend-cap')
+  @UseGuards(RoleGuard)
+  @RequireRole('admin')
+  async updateSpendCap(
+    @Param('slug') _slug: string,
+    @Body() body: { monthlySpendCapUsd: number | null },
+  ) {
+    const updated = await this.orgs.updateSpendCap(body.monthlySpendCapUsd);
+    return {
+      monthlySpendCapUsd:
+        updated.monthlySpendCapUsd === null ? null : Number(updated.monthlySpendCapUsd),
+    };
+  }
+
   @Get('orgs/:slug/concurrency-cap')
   @UseGuards(RoleGuard)
   async concurrencyCap(@Param('slug') _slug: string) {

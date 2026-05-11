@@ -121,6 +121,32 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/spend-cap": {
+      "get": {
+        "operationId": "OrgController_spendCap",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
+      },
+      "patch": {
+        "operationId": "OrgController_updateSpendCap",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/concurrency-cap": {
       "get": {
         "operationId": "OrgController_concurrencyCap",

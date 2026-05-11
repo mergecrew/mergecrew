@@ -17,7 +17,8 @@ export type TelemetryEvent =
   | ProjectCreatedEvent
   | IntegrationConnectedEvent
   | RunCompletedEvent
-  | WizardBailedEvent;
+  | WizardBailedEvent
+  | OrgCapHitEvent;
 
 interface BaseEvent {
   /** Per-install random UUID — the only identifier on the payload. */
@@ -75,4 +76,19 @@ export interface WizardBailedEvent extends BaseEvent {
    * onboarding flow loses people without recording who left.
    */
   step: 'create-project' | 'connect-repo' | 'deploy-target' | 'tracker';
+}
+
+export interface OrgCapHitEvent extends BaseEvent {
+  type: 'org.cap_hit';
+  /**
+   * Which guardrail blocked the run. Today only monthly_spend; future
+   * caps (daily_spend, blast_radius, risk_score) will join this union
+   * rather than spawning new event types — keeps the telemetry surface
+   * small (#282).
+   */
+  capKind: 'monthly_spend';
+  /** Bucketed to the nearest \$10 to avoid leaking precise per-org cost. */
+  spentUsdBucket: number;
+  /** The cap value at the time of the hit, also bucketed to \$10. */
+  capUsdBucket: number;
 }

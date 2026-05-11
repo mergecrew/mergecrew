@@ -360,11 +360,36 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     },
   });
 
-  // Hard daily budget gate. If today's org-wide spend already meets or
-  // exceeds the configured cap, refuse the step before any LLM call. The
-  // budget is intentionally checked at step entry (not per-iteration) so
-  // a single step can't be more than one model turn over budget.
-  const budgetGate = await checkDailyBudget(organizationId);
+  // Hard spend gates. Daily budget and monthly cap (#282) are both
+  // checked once at step entry — not per-iteration — so a single step
+  // can't be more than one model turn over either limit. Monthly cap
+  // takes priority in the log message because it's the harder ceiling.
+  const [budgetGate, monthlyGate] = await Promise.all([
+    checkDailyBudget(organizationId),
+    checkMonthlyCap(organizationId),
+  ]);
+  if (monthlyGate.exceeded) {
+    stopHeartbeat();
+    unregisterCancellation?.();
+    await eventlog.emit({
+      organizationId,
+      projectId,
+      dailyRunId: runId,
+      workflowRunId,
+      agentStepId: stepId,
+      type: 'AGENT_STEP_FAILED',
+      actor: { kind: 'system' },
+      payload: {
+        reason: 'org_monthly_cap_exceeded',
+        spentUsd: monthlyGate.spent,
+        capUsd: monthlyGate.cap,
+      },
+    });
+    return {
+      kind: 'budget_exhausted',
+      reason: `org monthly spend cap exhausted: spent $${monthlyGate.spent.toFixed(2)} of $${monthlyGate.cap?.toFixed(2)}`,
+    };
+  }
   if (budgetGate.exceeded) {
     stopHeartbeat();
     unregisterCancellation?.();
@@ -1169,6 +1194,36 @@ async function checkDailyBudget(
   );
   const spent = Number(agg._sum.usdEstimate ?? 0);
   return { exceeded: spent >= budget, spent, budget };
+}
+
+/**
+ * Monthly cap check (#282). Mirrors checkDailyBudget but anchored to
+ * the 1st of the current calendar month (UTC). NULL cap = unlimited.
+ * Calendar-month boundary is independent of org timezone — billing
+ * periods on the LLM-provider side are calendar UTC, so this matches
+ * what the operator sees on their Anthropic/OpenAI invoice.
+ */
+async function checkMonthlyCap(
+  organizationId: string,
+): Promise<{ exceeded: boolean; spent: number; cap: number | null }> {
+  const now = new Date();
+  const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const org = await withTenant(organizationId, (tx) =>
+    tx.organization.findUnique({ where: { id: organizationId } }),
+  );
+  const cap =
+    org?.monthlySpendCapUsd === null || org?.monthlySpendCapUsd === undefined
+      ? null
+      : Number(org.monthlySpendCapUsd);
+  if (cap === null) return { exceeded: false, spent: 0, cap: null };
+  const agg = await withTenant(organizationId, (tx) =>
+    tx.llmInvocation.aggregate({
+      where: { organizationId, occurredAt: { gte: since } },
+      _sum: { usdEstimate: true },
+    }),
+  );
+  const spent = Number(agg._sum.usdEstimate ?? 0);
+  return { exceeded: spent >= cap, spent, cap };
 }
 
 async function nextSequence(kind: 'model' | 'tool', stepId: string): Promise<number> {

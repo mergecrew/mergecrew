@@ -100,6 +100,22 @@ export interface paths {
         patch: operations["OrgController_updateBudget"];
         trace?: never;
     };
+    "/v1/orgs/{slug}/spend-cap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["OrgController_spendCap"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["OrgController_updateSpendCap"];
+        trace?: never;
+    };
     "/v1/orgs/{slug}/concurrency-cap": {
         parameters: {
             query?: never;
@@ -1657,6 +1673,40 @@ export interface operations {
         };
     };
     OrgController_updateBudget: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    OrgController_spendCap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    OrgController_updateSpendCap: {
         parameters: {
             query?: never;
             header?: never;
