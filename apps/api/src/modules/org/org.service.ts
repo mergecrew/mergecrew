@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { NotFoundError, ValidationError } from '@mergecrew/domain';
 import { PrismaService } from '../../common/prisma.service.js';
@@ -133,6 +134,56 @@ export class OrgService {
         data: { dailyBudgetUsd: dailyBudgetUsd as any },
       }),
     );
+  }
+
+  /**
+   * Anonymous-usage telemetry opt-in (#253). Toggling on lazily
+   * generates the per-install random UUID stored in
+   * `telemetry_install_id`; toggling off leaves the id intact so a
+   * later re-opt-in stays under the same id (lets the receiver
+   * de-duplicate flap without us recording anything else).
+   */
+  async getTelemetrySettings(): Promise<{ enabled: boolean; installId: string | null }> {
+    const t = this.tenant.require();
+    const row = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.organization.findUnique({
+        where: { id: t.organizationId },
+        select: { telemetryEnabled: true, telemetryInstallId: true },
+      }),
+    );
+    return {
+      enabled: row?.telemetryEnabled ?? false,
+      installId: row?.telemetryInstallId ?? null,
+    };
+  }
+
+  async updateTelemetry(enabled: boolean): Promise<{ enabled: boolean; installId: string | null }> {
+    const t = this.tenant.require();
+    const current = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.organization.findUnique({
+        where: { id: t.organizationId },
+        select: { telemetryInstallId: true },
+      }),
+    );
+    const installId = enabled && !current?.telemetryInstallId ? randomUUID() : current?.telemetryInstallId ?? null;
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.organization.update({
+        where: { id: t.organizationId },
+        data: { telemetryEnabled: enabled, telemetryInstallId: installId },
+      }),
+    );
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.auditLogEntry.create({
+        data: {
+          organizationId: t.organizationId,
+          actorUserId: t.userId,
+          action: enabled ? 'org.telemetry.enabled' : 'org.telemetry.disabled',
+          target: { organizationId: t.organizationId },
+          metadata: {},
+        },
+      }),
+    );
+    return { enabled, installId };
   }
 
   async updateConcurrencyCap(orgConcurrencyCap: number) {

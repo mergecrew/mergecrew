@@ -31,10 +31,23 @@ async function setBudgetAction(formData: FormData) {
   revalidatePath(`/orgs/${slug}/settings`);
 }
 
+async function setTelemetryAction(formData: FormData) {
+  'use server';
+  const slug = String(formData.get('slug') ?? '');
+  const enabled = formData.get('enabled') === 'on';
+  const session = await requireSession();
+  await api(`/v1/orgs/${slug}/telemetry`, {
+    method: 'PATCH',
+    body: JSON.stringify({ enabled }),
+    session,
+  });
+  revalidatePath(`/orgs/${slug}/settings`);
+}
+
 export default async function OrgSettingsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const session = await requireSession();
-  const [org, members, providers, profiles, budget, canEdit, mfaStatus] = await Promise.all([
+  const [org, members, providers, profiles, budget, canEdit, mfaStatus, telemetry] = await Promise.all([
     api<any>(`/v1/orgs/${slug}`, { session }),
     api<{ items: any[] }>(`/v1/orgs/${slug}/members`, { session }),
     api<{ items: any[] }>(`/v1/orgs/${slug}/llm/providers`, { session }),
@@ -42,6 +55,9 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
     api<BudgetInfo>(`/v1/orgs/${slug}/budget`, { session }),
     hasRole(slug, session, 'admin'),
     api<{ enrolled: boolean }>(`/v1/me/mfa`, { session }).catch(() => ({ enrolled: false })),
+    api<{ enabled: boolean; installId: string | null }>(`/v1/orgs/${slug}/telemetry`, { session }).catch(
+      () => ({ enabled: false, installId: null }),
+    ),
   ]);
   // MFA is recommended for admin/owner accounts but not enforced (see
   // RoleGuard). Surface a passive nudge for admins who haven't enrolled.
@@ -318,6 +334,55 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
           }
         }}
       />
+
+      <Card>
+        <div className="flex items-baseline justify-between">
+          <h2 className="font-medium">Anonymous usage telemetry</h2>
+          <span
+            className={
+              telemetry.enabled
+                ? 'rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                : 'rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+            }
+          >
+            {telemetry.enabled ? 'on' : 'off'}
+          </span>
+        </div>
+        <p className="mt-1 text-sm text-zinc-500">
+          Helps us see whether adoption changes are working: which adapters get picked, where the
+          onboarding wizard loses people, how often runs complete. Off by default. No PII, no org
+          or project names, no repo content — just the documented event fields. Read the{' '}
+          <a
+            href="https://github.com/mergecrew/mergecrew/blob/main/docs/03-infrastructure/07-telemetry.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-accent underline decoration-dotted"
+          >
+            schema doc
+          </a>{' '}
+          before opting in.
+        </p>
+        {telemetry.enabled && telemetry.installId && (
+          <p className="mt-2 font-mono text-xs text-zinc-500">
+            Install id: {telemetry.installId}
+          </p>
+        )}
+        <p className="mt-2 text-xs text-zinc-500">
+          Note: no outbound transport is wired yet. Opting in records the preference and generates an
+          install id; actual event emission lands in a follow-up PR once the receiving endpoint is
+          chosen. You can audit exactly what would be sent in the schema doc above.
+        </p>
+        {canEdit ? (
+          <form action={setTelemetryAction} className="mt-4 flex items-center gap-2">
+            <input type="hidden" name="slug" value={slug} />
+            <Button variant={telemetry.enabled ? 'secondary' : 'primary'} type="submit" name="enabled" value={telemetry.enabled ? 'off' : 'on'}>
+              {telemetry.enabled ? 'Turn off telemetry' : 'Opt in to telemetry'}
+            </Button>
+          </form>
+        ) : (
+          <p className="mt-4 text-xs text-zinc-500">Only admins can change this.</p>
+        )}
+      </Card>
     </main>
   );
 }

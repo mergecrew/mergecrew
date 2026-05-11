@@ -73,6 +73,15 @@ model Organization {
   /// default is set in SQL not Prisma so the migration is idempotent.
   orgConcurrencyCap        Int       @default(4) @map("org_concurrency_cap")
   complianceAuditRetention Int       @default(365) @map("compliance_audit_retention_days")
+  /// Anonymous-usage telemetry opt-in (#253). Off by default — even on
+  /// docker-compose.full.yml. When true, packages/telemetry emits a
+  /// fixed schema of events documented in docs/03-infrastructure/07.
+  telemetryEnabled         Boolean   @default(false) @map("telemetry_enabled")
+  /// Per-install random uuid used as the only "identifier" on emitted
+  /// telemetry events when telemetryEnabled is true. Generated lazily
+  /// when the org first toggles telemetry on, so disabled orgs never
+  /// pin an id at all. Never leaves this row except as the event uuid.
+  telemetryInstallId       String?   @map("telemetry_install_id") @db.Uuid
   createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt                DateTime? @map("deleted_at") @db.Timestamptz(6)

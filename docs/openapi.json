@@ -161,6 +161,32 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/telemetry": {
+      "get": {
+        "operationId": "OrgController_telemetry",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
+      },
+      "patch": {
+        "operationId": "OrgController_updateTelemetry",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/projects": {
       "get": {
         "operationId": "ProjectController_list",
