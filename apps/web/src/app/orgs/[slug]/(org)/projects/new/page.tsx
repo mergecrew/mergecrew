@@ -39,10 +39,18 @@ export default async function NewProjectPage({ params }: { params: Promise<{ slu
           </div>
         </form>
       </Card>
-      <p className="text-sm text-zinc-500">
-        Once the project exists, connect a GitHub repo and an issue tracker from the project's
-        Settings → Integrations page.
-      </p>
+      <div className="space-y-2 text-sm text-zinc-500">
+        <p>
+          New projects start <span className="font-medium text-amber-700 dark:text-amber-400">paused</span> —
+          no scheduled or on-demand runs fire until you finish setup. You can poke
+          around the dashboard, lifecycle, and agent roster right away.
+        </p>
+        <p>
+          To turn runs on, connect a GitHub repository and add a dev deploy target
+          from <span className="font-mono text-zinc-600 dark:text-zinc-300">Settings → Integrations</span>.
+          The project overview will walk you there.
+        </p>
+      </div>
     </main>
   );
 }

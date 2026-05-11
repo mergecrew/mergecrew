@@ -79,7 +79,9 @@ async function main() {
 
   // Demo project so the local-stack e2e (#228) and dev clicks-through
   // both have somewhere to land. Lifecycle rows are created lazily by
-  // the API on the first GET; deploy/tracker targets stay empty in dev.
+  // the API on the first GET. The project ships paused (no repo, no
+  // deploy target) per #229 — the e2e branch below wires fakes only
+  // when MERGECREW_AGENT_STUB + MERGECREW_E2E_LOCAL_API_KEY are set.
   const demoProject = await prisma.project.upsert({
     where: { organizationId_slug: { organizationId: demoOrg.id, slug: 'acme' } },
     update: {},
@@ -134,6 +136,44 @@ async function main() {
       },
     });
     console.log(`[seed] Seed lifecycle v1 created for project "${demoProject.slug}".`);
+  }
+
+  // The demo project ships **paused** for trial users (#229) — no
+  // connectedRepo, no deployTargets, so /v1/.../runs and the cron
+  // scheduler both stay disabled until the operator wires them up.
+  //
+  // For the local e2e (#228) we need the project to be runnable: the
+  // harness flips MERGECREW_AGENT_STUB=1 and MERGECREW_E2E_LOCAL_API_KEY
+  // together, so we only fill in fake repo + dev target when both are
+  // set. The stub agent path never actually hits GitHub or the deploy
+  // adapter, so these dummy values exist purely to satisfy the new
+  // runNow / cron preconditions.
+  if (process.env.MERGECREW_AGENT_STUB === '1' && process.env.MERGECREW_E2E_LOCAL_API_KEY) {
+    await prisma.connectedRepo.upsert({
+      where: { projectId: demoProject.id },
+      update: {},
+      create: {
+        organizationId: demoOrg.id,
+        projectId: demoProject.id,
+        vcsProvider: 'github',
+        installationId: '0',
+        repoId: '0',
+        repoFullName: 'mergecrew/e2e-stub',
+        defaultBranch: 'main',
+      },
+    });
+    await prisma.deployTarget.upsert({
+      where: { projectId_kind: { projectId: demoProject.id, kind: 'dev' } },
+      update: {},
+      create: {
+        organizationId: demoOrg.id,
+        projectId: demoProject.id,
+        kind: 'dev',
+        adapterId: 'github-actions',
+        config: { workflowFile: 'deploy.yml' },
+      },
+    });
+    console.log(`[seed] e2e stub repo + dev deploy target wired for project "${demoProject.slug}".`);
   }
 
   // Optional: pre-issue an API key whose plaintext matches

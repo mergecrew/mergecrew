@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { NotFoundError } from '@mergecrew/domain';
+import { NotFoundError, ValidationError } from '@mergecrew/domain';
 import { RUN_CANCEL_CHANNEL, type RunCancelMessage } from '@mergecrew/eventlog';
 import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
@@ -39,13 +39,36 @@ export class RunService {
     return run;
   }
 
-  /** Enqueue a "Run now" event for the orchestrator. */
+  /**
+   * Enqueue a "Run now" event for the orchestrator.
+   *
+   * Preconditions checked here (rather than letting orchestrator silently
+   * skip): the project must have a connected repo and a dev deploy target.
+   * #229 lets the onboarding wizard finish without these — but the run
+   * surfaces (this and the cron scheduler) stay disabled until the
+   * operator wires them up, so we return a clear ValidationError instead
+   * of a vague 500 / dropped job.
+   */
   async runNow(projectSlug: string) {
     const t = this.tenant.require();
     const project = await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.project.findFirst({ where: { slug: projectSlug, organizationId: t.organizationId } }),
+      tx.project.findFirst({
+        where: { slug: projectSlug, organizationId: t.organizationId },
+        include: { connectedRepo: true, deployTargets: true },
+      }),
     );
     if (!project) throw new NotFoundError();
+    if (!project.connectedRepo) {
+      throw new ValidationError(
+        'project is paused — connect a GitHub repo from Settings → Integrations to enable runs',
+      );
+    }
+    const hasDevTarget = project.deployTargets.some((dt) => dt.kind === 'dev');
+    if (!hasDevTarget) {
+      throw new ValidationError(
+        'project is paused — add a dev deploy target from Settings → Deploy targets to enable runs',
+      );
+    }
     await this.queue.get('run.due').add(
       'run.due',
       { organizationId: t.organizationId, projectId: project.id, manual: true },
