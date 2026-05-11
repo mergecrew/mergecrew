@@ -64,21 +64,28 @@ export default async function ProjectSettings({
   // and live under /orgs/<slug>/settings, not here.
   const canEdit = await hasRole(slug, session, 'operator');
 
-  // After a fresh GitHub App install (#184), fetch the list of repos the
-  // installation was granted access to so the form can render a dropdown
-  // instead of asking the user to retype owner/repo. Best-effort: if the
-  // endpoint fails (no GITHUB_APP_* env, transient error), the UI falls
-  // back to free-text inputs.
+  // Fetch the list of repos the operator's GitHub App installation can
+  // access so the form renders a dropdown instead of free-text input.
+  // Two paths feed the installation id:
+  //   - Fresh install: `installation_id` query param from the callback
+  //     (#184, the original V1.1 wiring).
+  //   - Already connected: re-use the saved row's installationId so an
+  //     operator returning to settings later still gets the dropdown
+  //     (#267 — closes the "only on first install" gap).
+  // Best-effort: if the endpoint fails (no GITHUB_APP_* env, transient
+  // error), the UI falls back to free-text inputs.
   let availableRepos: Array<{
     repoId: string;
     repoFullName: string;
     defaultBranch: string;
     private: boolean;
   }> = [];
-  if (installedInstallationId && canEdit) {
+  const lookupInstallationId =
+    installedInstallationId ?? project.connectedRepo?.installationId ?? null;
+  if (lookupInstallationId && canEdit) {
     try {
       const r = await api<{ items: typeof availableRepos }>(
-        `/v1/orgs/${slug}/projects/${projectSlug}/installation-repos/${encodeURIComponent(installedInstallationId)}`,
+        `/v1/orgs/${slug}/projects/${projectSlug}/installation-repos/${encodeURIComponent(lookupInstallationId)}`,
         { session },
       );
       availableRepos = r.items;
