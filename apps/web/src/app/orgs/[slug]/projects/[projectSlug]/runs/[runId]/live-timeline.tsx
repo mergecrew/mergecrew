@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { runbookLinkFor } from '@/lib/runbook-links';
 
 export interface Ev {
   id: string;
@@ -49,15 +50,33 @@ export function LiveTimeline({ initial, streamUrl }: { initial: Ev[]; streamUrl:
 function TimelineRows({ events }: { events: Ev[] }) {
   return (
     <ol className="space-y-1">
-      {events.map((e) => (
-        <li key={e.id} className="flex gap-3 text-sm">
-          <span className="text-zinc-400 w-20 shrink-0 font-mono">
-            {new Date(e.occurredAt).toLocaleTimeString()}
-          </span>
-          <span className="font-mono text-xs text-zinc-500 w-44 shrink-0">{e.type}</span>
-          <span className="text-zinc-800 dark:text-zinc-200">{briefFor(e)}</span>
-        </li>
-      ))}
+      {events.map((e) => {
+        const link = runbookLinkFor(e);
+        return (
+          <li key={e.id} className="flex gap-3 text-sm">
+            <span className="text-zinc-400 w-20 shrink-0 font-mono">
+              {new Date(e.occurredAt).toLocaleTimeString()}
+            </span>
+            <span className="font-mono text-xs text-zinc-500 w-44 shrink-0">{e.type}</span>
+            <span className="text-zinc-800 dark:text-zinc-200">
+              {briefFor(e)}
+              {link && (
+                <>
+                  {' '}
+                  <a
+                    href={link.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-accent underline decoration-dotted hover:opacity-80"
+                  >
+                    {link.label}
+                  </a>
+                </>
+              )}
+            </span>
+          </li>
+        );
+      })}
     </ol>
   );
 }
