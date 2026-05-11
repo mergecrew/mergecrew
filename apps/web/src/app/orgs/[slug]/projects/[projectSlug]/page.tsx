@@ -10,6 +10,7 @@ type Project = {
   name: string;
   description?: string | null;
   connectedRepo?: { repoFullName: string; defaultBranch: string } | null;
+  deployTargets?: Array<{ kind: 'dev' | 'staging' | 'prod' }>;
 };
 
 type Run = {
@@ -69,8 +70,17 @@ export default async function ProjectOverview({
   const approvals = approvalsRes?.items ?? [];
   const latestRun = runs[0];
 
+  const hasRepo = Boolean(project.connectedRepo);
+  const hasDevTarget = (project.deployTargets ?? []).some((d) => d.kind === 'dev');
+  const isPaused = !hasRepo || !hasDevTarget;
+  const settingsHref = `/orgs/${slug}/projects/${projectSlug}/settings`;
+
   return (
     <main className="mx-auto max-w-5xl space-y-8 p-6">
+      {isPaused && (
+        <PausedBanner hasRepo={hasRepo} hasDevTarget={hasDevTarget} settingsHref={settingsHref} />
+      )}
+
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold">{project.name}</h1>
@@ -90,7 +100,16 @@ export default async function ProjectOverview({
           <LinkButton href={`/orgs/${slug}/projects/${projectSlug}/digest`}>
             Today's digest
           </LinkButton>
-          <RunNowForm orgSlug={slug} projectSlug={projectSlug} />
+          <RunNowForm
+            orgSlug={slug}
+            projectSlug={projectSlug}
+            disabled={isPaused}
+            disabledReason={
+              !hasRepo
+                ? 'Connect a GitHub repo to enable runs'
+                : 'Add a dev deploy target to enable runs'
+            }
+          />
         </div>
       </header>
 
@@ -302,18 +321,63 @@ async function runNowAction(formData: FormData) {
   });
 }
 
-function RunNowForm({ orgSlug, projectSlug }: { orgSlug: string; projectSlug: string }) {
+function RunNowForm({
+  orgSlug,
+  projectSlug,
+  disabled = false,
+  disabledReason,
+}: {
+  orgSlug: string;
+  projectSlug: string;
+  disabled?: boolean;
+  disabledReason?: string;
+}) {
   return (
     <form action={runNowAction}>
       <input type="hidden" name="orgSlug" value={orgSlug} />
       <input type="hidden" name="projectSlug" value={projectSlug} />
       <button
-        className="inline-flex items-center justify-center rounded-md bg-accent px-3 py-1.5 text-sm text-accent-fg transition-colors hover:opacity-90"
+        className="inline-flex items-center justify-center rounded-md bg-accent px-3 py-1.5 text-sm text-accent-fg transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:opacity-40"
         type="submit"
+        disabled={disabled}
+        title={disabled ? disabledReason : undefined}
+        aria-disabled={disabled}
       >
         Run now
       </button>
     </form>
+  );
+}
+
+function PausedBanner({
+  hasRepo,
+  hasDevTarget,
+  settingsHref,
+}: {
+  hasRepo: boolean;
+  hasDevTarget: boolean;
+  settingsHref: string;
+}) {
+  const missing: string[] = [];
+  if (!hasRepo) missing.push('a connected GitHub repository');
+  if (!hasDevTarget) missing.push('a dev deploy target');
+  return (
+    <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-700/40 dark:bg-amber-950/30 dark:text-amber-100">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="font-medium">Project paused</div>
+          <div className="mt-0.5">
+            Scheduled and on-demand runs are disabled until you configure {missing.join(' and ')}.
+          </div>
+        </div>
+        <Link
+          href={settingsHref}
+          className="inline-flex shrink-0 items-center justify-center rounded-md bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700"
+        >
+          Open Settings
+        </Link>
+      </div>
+    </div>
   );
 }
 

@@ -28,8 +28,23 @@ const eventlog = new Eventlog(pubsub, fanoutToBullmq(fanoutQueue));
 const TICK_MS = Number(process.env.WORKER_CRON_TICK_MS ?? 60_000);
 
 async function tick() {
+  // Pull the project's connectedRepo + deployTargets alongside the
+  // schedule so we can short-circuit paused projects (#229) — onboarding
+  // can finish without a deploy target, and the project stays paused
+  // until the operator wires both up. We still keep `lastFiredAt` ticking
+  // for skipDates, but never enqueue for a paused project.
   const schedules = await withSystem((tx) =>
-    tx.schedule.findMany({ where: { enabled: true } }),
+    tx.schedule.findMany({
+      where: { enabled: true },
+      include: {
+        project: {
+          select: {
+            connectedRepo: { select: { id: true } },
+            deployTargets: { select: { kind: true } },
+          },
+        },
+      },
+    }),
   );
   const now = new Date();
   for (const s of schedules) {
@@ -44,6 +59,22 @@ async function tick() {
       continue;
     }
     if (!due) continue;
+
+    const hasRepo = s.project?.connectedRepo != null;
+    const hasDevTarget = (s.project?.deployTargets ?? []).some((d) => d.kind === 'dev');
+    if (!hasRepo || !hasDevTarget) {
+      // Paused project: bump lastFiredAt so we don't recompute "due" on
+      // every tick, and log once so an operator wondering "why didn't my
+      // daily run fire" has a breadcrumb in the worker-cron output.
+      await withTenant(s.organizationId, (tx) =>
+        tx.schedule.update({ where: { id: s.id }, data: { lastFiredAt: now } }),
+      );
+      logger.info(
+        { projectId: s.projectId, hasRepo, hasDevTarget },
+        'skipping run.due: project paused (missing repo or dev deploy target)',
+      );
+      continue;
+    }
 
     if (isSkipped(s.skipDates ?? [], s.timezone, now)) {
       // Bump lastFiredAt so the cron iterator doesn't think we're permanently
