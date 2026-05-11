@@ -74,6 +74,9 @@ importers:
       '@mergecrew/skills':
         specifier: workspace:*
         version: link:../../packages/skills
+      '@mergecrew/telemetry':
+        specifier: workspace:*
+        version: link:../../packages/telemetry
       '@nestjs/common':
         specifier: ^11.1.19
         version: 11.1.19(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -217,6 +220,9 @@ importers:
       '@mergecrew/eventlog':
         specifier: workspace:*
         version: link:../../packages/eventlog
+      '@mergecrew/telemetry':
+        specifier: workspace:*
+        version: link:../../packages/telemetry
       '@prisma/client':
         specifier: ^5.22.0
         version: 5.22.0(prisma@5.22.0)

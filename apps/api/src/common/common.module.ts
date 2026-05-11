@@ -5,6 +5,7 @@ import { EventlogService } from './eventlog.service.js';
 import { QueueService } from './queue.service.js';
 import { LoggerService } from './logger.service.js';
 import { CryptoService } from './crypto.service.js';
+import { TelemetryService } from './telemetry.service.js';
 
 @Global()
 @Module({
@@ -15,6 +16,7 @@ import { CryptoService } from './crypto.service.js';
     QueueService,
     LoggerService,
     CryptoService,
+    TelemetryService,
   ],
   exports: [
     PrismaService,
@@ -23,6 +25,7 @@ import { CryptoService } from './crypto.service.js';
     QueueService,
     LoggerService,
     CryptoService,
+    TelemetryService,
   ],
 })
 export class CommonModule {}

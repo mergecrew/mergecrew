@@ -9,11 +9,23 @@ import { GitHubIssuesProvider, type TrackerProvider } from '@mergecrew/adapters-
 import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
 import { CryptoService } from '../../common/crypto.service.js';
+import { TelemetryService } from '../../common/telemetry.service.js';
 import { defaultConfig } from '@mergecrew/config-yaml';
 
 const TRACKER_TOKEN_SECRET = 'TRACKER_TOKEN';
 const SUPPORTED_TRACKERS = ['github-issues', 'linear'] as const;
 type TrackerAdapterId = (typeof SUPPORTED_TRACKERS)[number];
+
+/** Adapter ids that match the telemetry `integration.connected` provider enum. */
+const TELEMETRY_DEPLOY_PROVIDERS = new Set<string>([
+  'github-actions',
+  'vercel',
+  'netlify',
+  'aws-direct',
+  'fly',
+  'render',
+  'railway',
+]);
 
 const ERROR_TRACKER_TOKEN_SECRET = 'ERROR_TRACKER_TOKEN';
 const SUPPORTED_ERROR_TRACKERS = ['sentry'] as const;
@@ -30,6 +42,7 @@ export class ProjectService {
     private prisma: PrismaService,
     private tenant: TenantContextService,
     private crypto: CryptoService,
+    private telemetry: TelemetryService,
   ) {}
 
   async list() {
@@ -89,6 +102,10 @@ export class ProjectService {
       }),
     );
 
+    // New projects always start paused (#229) — no repo, no deploy
+    // target yet. The `paused` field lets us measure onboarding
+    // completion rate over time without recording which projects.
+    void this.telemetry.emit(t.organizationId, 'project.created', { paused: true });
     return project;
   }
 
@@ -142,7 +159,7 @@ export class ProjectService {
       throw new ValidationError('repoFullName must be "owner/repo"');
     }
     const project = await this.detail(slug);
-    return this.prisma.withTenant(project.organizationId, (tx) =>
+    const result = await this.prisma.withTenant(project.organizationId, (tx) =>
       tx.connectedRepo.upsert({
         where: { projectId: project.id },
         update: {
@@ -162,6 +179,10 @@ export class ProjectService {
         },
       }),
     );
+    void this.telemetry.emit(project.organizationId, 'integration.connected', {
+      provider: 'github',
+    });
+    return result;
   }
 
   async disconnectRepo(slug: string) {
@@ -215,7 +236,7 @@ export class ProjectService {
     config: Record<string, unknown>;
   }) {
     const project = await this.detail(slug);
-    return this.prisma.withTenant(project.organizationId, (tx) =>
+    const result = await this.prisma.withTenant(project.organizationId, (tx) =>
       tx.deployTarget.upsert({
         where: { projectId_kind: { projectId: project.id, kind: input.kind } },
         update: { adapterId: input.adapterId, config: input.config as any },
@@ -228,6 +249,16 @@ export class ProjectService {
         },
       }),
     );
+    // Telemetry's `provider` enum is the union of every adapter id we
+    // ship — see packages/telemetry/src/events.ts. Only emit when the
+    // adapterId is in the enum so a future custom adapter doesn't
+    // smuggle an undocumented value into the event stream.
+    if (TELEMETRY_DEPLOY_PROVIDERS.has(input.adapterId)) {
+      void this.telemetry.emit(project.organizationId, 'integration.connected', {
+        provider: input.adapterId,
+      });
+    }
+    return result;
   }
 
   async listSecrets(slug: string) {
@@ -325,6 +356,9 @@ export class ProjectService {
     if (input.token && input.token.length > 0) {
       await this.setSecret(slug, TRACKER_TOKEN_SECRET, input.token);
     }
+    void this.telemetry.emit(project.organizationId, 'integration.connected', {
+      provider: input.adapterId,
+    });
     return target;
   }
 
@@ -413,6 +447,9 @@ export class ProjectService {
     if (input.token && input.token.length > 0) {
       await this.setSecret(slug, ERROR_TRACKER_TOKEN_SECRET, input.token);
     }
+    void this.telemetry.emit(project.organizationId, 'integration.connected', {
+      provider: input.adapterId,
+    });
     return target;
   }
 

@@ -2,7 +2,7 @@
 
 Mergecrew supports an **opt-in, off-by-default** stream of anonymous usage events. This page documents exactly which events exist, what fields they carry, and what's not collected — so an operator can audit before opting in.
 
-> **Status (V2.y #253).** The package, the org-level opt-in toggle, and this schema doc are landed. **No outbound transport is wired yet** — opting in records the preference and generates a per-install id but emits to a stub that only buffers in memory. The follow-up PR wires actual event emission at the listed surfaces and ships a receiving backend.
+> **Status (V2.y #253).** Foundation + emit surfaces + transport are all landed. Telemetry stays **off** unless **both**: (a) the org has flipped the toggle under Settings → Anonymous usage telemetry, and (b) `MERGECREW_TELEMETRY_URL` is set on the API and orchestrator processes. When the env var is empty (default), the transport is `NoopTransport` and no outbound HTTP is made regardless of the org-level flag.
 
 ## Invariants
 
@@ -75,12 +75,24 @@ Helps us see where the onboarding flow loses people without recording who left.
 - Schema (and the only place new event types are defined): [`packages/telemetry/src/events.ts`](../../packages/telemetry/src/events.ts)
 - Emitter with the privacy short-circuit: [`packages/telemetry/src/emitter.ts`](../../packages/telemetry/src/emitter.ts)
 - Buffer/no-op transports: [`packages/telemetry/src/transport.ts`](../../packages/telemetry/src/transport.ts)
+- HTTP transport: [`packages/telemetry/src/http-transport.ts`](../../packages/telemetry/src/http-transport.ts)
+- Reference receiver (operator-run): [`infra/telemetry/server.mjs`](../../infra/telemetry/server.mjs)
 - Org opt-in column: `organizations.telemetry_enabled` / `telemetry_install_id` ([`schema.prisma`](../../packages/db/prisma/schema.prisma))
 - API endpoints: `GET / PATCH /v1/orgs/:slug/telemetry` ([`apps/api/src/modules/org/org.controller.ts`](../../apps/api/src/modules/org/org.controller.ts))
 - UI: Settings → Anonymous usage telemetry ([`apps/web/src/app/orgs/[slug]/(org)/settings/page.tsx`](../../apps/web/src/app/orgs/[slug]/(org)/settings/page.tsx))
+- API-side emit wiring: [`apps/api/src/common/telemetry.service.ts`](../../apps/api/src/common/telemetry.service.ts) + call sites in `OrgService.create`, `ProjectService.create` / `connectRepo` / `upsertDeployTarget` / `upsertTracker` / `upsertErrorTarget`, `RunService.cancel`.
+- Orchestrator-side emit wiring: [`apps/orchestrator/src/telemetry.ts`](../../apps/orchestrator/src/telemetry.ts) + call in `Orchestrator.completeRun`.
+
+## Configuring the receiver
+
+`MERGECREW_TELEMETRY_URL` selects the transport at process start on the API and orchestrator:
+
+- **Unset / empty (default):** `NoopTransport`. No outbound HTTP regardless of any org-level toggle.
+- **Set to a URL:** `HttpTransport` POSTs JSON-array batches to that URL. Failures are swallowed.
+
+We do not host a default receiver. Operators run their own — typically the small reference server under [`infra/telemetry/`](../../infra/telemetry/), which appends each event to a JSONL file on the same VM. See [`infra/telemetry/README.md`](../../infra/telemetry/README.md) for the contract and run instructions.
 
 ## What's still ahead
 
-- Real outbound transport. PR 2 of #253 wires an HTTP transport once the receiving backend is chosen (likely a Cloudflare Worker writing to a flat file).
-- Hook the existing service-layer call sites (`OrgService.create`, `ProjectService.create`, deploy-target upsert, `OrchestratorService.completeRun`, wizard exit) to call `emitter.emit(...)`.
-- A live audit panel on the settings page that surfaces the last N events the buffer has seen since the page loaded.
+- `wizard.bailed` — needs a UI hook for beforeunload / explicit cancel from the create-project flow.
+- A live audit panel on the settings page that surfaces the last N events the local buffer has seen since the page loaded. (The Settings card already shows the install id and toggle.)

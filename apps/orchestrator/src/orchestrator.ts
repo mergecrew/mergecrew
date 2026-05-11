@@ -10,6 +10,7 @@ import { dispatchSlackDigest } from './digest-slack.js';
 import { dispatchEmailDigest } from './digest-email.js';
 import { handleSlackInteractivity } from './slack-interactivity.js';
 import { handleSentryWebhook } from './sentry-webhook.js';
+import { telemetry } from './telemetry.js';
 
 interface OrchestratorDeps {
   connection: Redis;
@@ -522,6 +523,7 @@ export class Orchestrator {
       actor: { kind: 'system' },
       payload: {},
     });
+    void telemetry.emit(organizationId, 'run.completed', { status: 'done' });
   }
 
   // ─── 5. Resumes ─────────────────────────────────────────────────────────

@@ -72,6 +72,12 @@ services:
         # trial use; set to `1` by scripts/e2e-local.sh so the agent loop
         # returns deterministic `completed` outcomes without an LLM call.
         MERGECREW_AGENT_STUB: '${MERGECREW_AGENT_STUB:-}'
+        # Opt-in telemetry receiver URL (#253). Empty by default — the
+        # transport stays NoopTransport, no events leave the box. Point
+        # at infra/telemetry/server.mjs or your own collector to opt in.
+        # Org-level enable also still required (Settings → Anonymous
+        # usage telemetry).
+        MERGECREW_TELEMETRY_URL: '${MERGECREW_TELEMETRY_URL:-}'
         # Same — passed only when the e2e harness pre-issues an API key
         # via the seed and needs the operator-role token available later.
         MERGECREW_E2E_LOCAL_API_KEY: '${MERGECREW_E2E_LOCAL_API_KEY:-}'
