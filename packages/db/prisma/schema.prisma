@@ -762,6 +762,12 @@ model Schedule {
   /// freezes, etc.). Compared in the schedule's tz by the worker-cron tick.
   skipDates      String[] @default([]) @map("skip_dates")
   lastFiredAt    DateTime? @map("last_fired_at") @db.Timestamptz(6)
+  /// Set by worker-cron when a tick that would have fired was skipped
+  /// (currently: project paused — no connectedRepo or no dev deploy
+  /// target, per #246). UI reads this to tell the operator "your cron
+  /// did run, but nothing happened, and here's why" instead of just
+  /// showing a stale `lastFiredAt`.
+  lastSkippedAt  DateTime? @map("last_skipped_at") @db.Timestamptz(6)
   nextFireAt     DateTime? @map("next_fire_at") @db.Timestamptz(6)
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)

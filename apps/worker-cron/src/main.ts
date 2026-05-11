@@ -64,10 +64,15 @@ async function tick() {
     const hasDevTarget = (s.project?.deployTargets ?? []).some((d) => d.kind === 'dev');
     if (!hasRepo || !hasDevTarget) {
       // Paused project: bump lastFiredAt so we don't recompute "due" on
-      // every tick, and log once so an operator wondering "why didn't my
-      // daily run fire" has a breadcrumb in the worker-cron output.
+      // every tick, set lastSkippedAt so the UI's paused banner can
+      // show "your cron ran but nothing happened, here's when" (#246),
+      // and log once so an operator wondering "why didn't my daily
+      // run fire" has a breadcrumb in the worker-cron output.
       await withTenant(s.organizationId, (tx) =>
-        tx.schedule.update({ where: { id: s.id }, data: { lastFiredAt: now } }),
+        tx.schedule.update({
+          where: { id: s.id },
+          data: { lastFiredAt: now, lastSkippedAt: now },
+        }),
       );
       logger.info(
         { projectId: s.projectId, hasRepo, hasDevTarget },
