@@ -84,6 +84,24 @@ docs/                  Spec set (read this first)
 
 ## Quick start
 
+Two paths, pick whichever fits.
+
+### One command (trial, all-in-Docker)
+
+If you just want to **see Mergecrew running**, the fastest path is the bundled compose stack — Postgres, Redis, API, orchestrator, runner, worker-cron, and web all start together. Migrations apply on boot and a `demo` org + user are seeded so the web UI is usable immediately.
+
+```bash
+git clone https://github.com/mergecrew/mergecrew.git
+cd mergecrew
+pnpm compose:full     # or: docker compose -f docker-compose.full.yml up
+```
+
+Open <http://localhost:3000>. Auto-login signs you in as `demo@mergecrew.local`. Add an LLM provider in the org settings to start triggering runs. Stop with `pnpm compose:full:down`; wipe state with `docker compose -f docker-compose.full.yml down -v`.
+
+This path uses dev-mode defaults (zero JWT secret, no OAuth, no TLS) and is for local trials only. Production self-host uses `docker-compose.prod.yml` — see [docs/03-infrastructure](docs/03-infrastructure).
+
+### Hacking on the code (recommended for contributors)
+
 You'll be running everything locally with **Docker for Postgres/Redis**, **Homebrew Ollama for a local LLM**, and **Node + pnpm for the apps**. No paid services are required, no OAuth setup is required to log in.
 
 ### 1. Prereqs

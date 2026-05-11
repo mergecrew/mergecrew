@@ -19,7 +19,9 @@
     "db:seed": "dotenv -e .env -- pnpm --filter @mergecrew/db seed",
     "db:reset": "dotenv -e .env -- pnpm --filter @mergecrew/db reset",
     "compose:up": "docker compose -f docker-compose.yml up -d",
-    "compose:down": "docker compose -f docker-compose.yml down"
+    "compose:down": "docker compose -f docker-compose.yml down",
+    "compose:full": "docker compose -f docker-compose.full.yml up",
+    "compose:full:down": "docker compose -f docker-compose.full.yml down"
   },
   "devDependencies": {
     "@types/node": "^25.6.2",

@@ -18,11 +18,28 @@ RUN pnpm --filter @mergecrew/api... build
 
 FROM node:${NODE_VERSION} AS runtime
 WORKDIR /app
+# Prisma's migration + query engines link against libssl at runtime;
+# node:bookworm-slim doesn't ship it. Install it before copying node_modules.
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
+# pnpm with node-linker=hoisted keeps each workspace's specific dep
+# symlinks in <workspace>/node_modules. The root /repo/node_modules only
+# carries root-package + public-hoist-pattern entries — copying it alone
+# leaves apps/api with no @nestjs/*, no reflect-metadata, etc. Lay both
+# under /app/apps/api/ so Node's module resolution walks up from
+# /app/apps/api/dist/main.js into /app/apps/api/node_modules first, then
+# into /app/node_modules as a fallback for any deps that did hoist.
 COPY --from=build /repo/node_modules /app/node_modules
-COPY --from=build /repo/apps/api/dist /app/dist
-COPY --from=build /repo/apps/api/package.json /app/package.json
+COPY --from=build /repo/apps/api/node_modules /app/apps/api/node_modules
+COPY --from=build /repo/apps/api/dist /app/apps/api/dist
+COPY --from=build /repo/apps/api/package.json /app/apps/api/package.json
 COPY --from=build /repo/packages /app/packages
+# Prisma occasionally writes engine binaries into node_modules at startup
+# (first run after a libssl bump, for instance). Hand the tree over to
+# the runtime user so that path doesn't EPERM under `USER node`.
+RUN chown -R node:node /app
 EXPOSE 4000
 USER node
+WORKDIR /app/apps/api
 CMD ["node", "dist/main.js"]

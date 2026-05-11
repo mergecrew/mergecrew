@@ -12,13 +12,17 @@ RUN pnpm install --frozen-lockfile=false
 
 FROM deps AS build
 COPY . .
-RUN pnpm --filter @mergecrew/web build
+# `@mergecrew/web...` (trailing dots = pnpm filter syntax for "this and
+# its workspace dependencies") so @mergecrew/domain et al. emit their
+# dist/ before next build tries to resolve them.
+RUN pnpm --filter @mergecrew/web... build
 
 FROM node:${NODE_VERSION} AS runtime
 WORKDIR /app
 COPY --from=build /repo/apps/web/.next/standalone /app
-COPY --from=build /repo/apps/web/.next/static /app/.next/static
-COPY --from=build /repo/apps/web/public /app/public
+COPY --from=build /repo/apps/web/.next/static /app/apps/web/.next/static
+# No `public/` directory today — re-add a `COPY --from=build
+# /repo/apps/web/public /app/apps/web/public` line if/when one lands.
 EXPOSE 3000
 USER node
-CMD ["node", "server.js"]
+CMD ["node", "apps/web/server.js"]

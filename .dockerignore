@@ -1,0 +1,32 @@
+# Heavy host-only directories — keep them out of the build context so
+# buildkit's `COPY . .` doesn't smash the deps stage's own node_modules
+# and so we don't ship local build output / secrets into images.
+
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/coverage
+**/.nyc_output
+
+# Local secrets and editor scratch.
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+.logs/
+
+# Git metadata (not needed at runtime; included via build args if we ever care).
+.git
+.gitignore
+
+# Docker tooling output.
+docker-compose.override.yml
+
+# IDE
+.vscode
+.idea
+
+# Dev-only artifacts
+.claude
