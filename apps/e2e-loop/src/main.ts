@@ -26,7 +26,10 @@
  *   2 — config / env error
  */
 
-const TERMINAL_STATUSES = new Set(['succeeded', 'success', 'failed', 'cancelled']);
+// Terminal states from the `daily_run_status` Postgres enum
+// (`packages/db/prisma/schema.prisma`). `paused_*` are not terminal —
+// they resume when the gate clears.
+const TERMINAL_STATUSES = new Set(['done', 'failed', 'cancelled']);
 
 interface RunRow {
   id: string;
@@ -127,13 +130,14 @@ async function main(): Promise<void> {
   const detail = await getJson<RunDetail>(`${projectBase}/runs/${runId}/full`, headers);
   const workflowCount = detail.workflows.length;
   const stepCount = detail.workflows.reduce((sum, w) => sum + w.agentSteps.length, 0);
+  // Agent-step status mirrors the run-level enum: `done` is success.
   const completedSteps = detail.workflows.reduce(
-    (sum, w) => sum + w.agentSteps.filter((s) => s.status === 'completed').length,
+    (sum, w) => sum + w.agentSteps.filter((s) => s.status === 'done').length,
     0,
   );
 
   const failures: string[] = [];
-  if (lastStatus === 'failed') failures.push(`run terminated as failed`);
+  if (lastStatus !== 'done') failures.push(`run terminated as ${lastStatus} (expected done)`);
   if (workflowCount === 0) failures.push('no workflows ran');
   if (stepCount === 0) failures.push('no agent steps ran');
   if (completedSteps === 0) failures.push('no agent step completed cleanly');

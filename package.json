@@ -21,7 +21,8 @@
     "compose:up": "docker compose -f docker-compose.yml up -d",
     "compose:down": "docker compose -f docker-compose.yml down",
     "compose:full": "docker compose -f docker-compose.full.yml up",
-    "compose:full:down": "docker compose -f docker-compose.full.yml down"
+    "compose:full:down": "docker compose -f docker-compose.full.yml down",
+    "e2e:local": "bash scripts/e2e-local.sh"
   },
   "devDependencies": {
     "@types/node": "^25.6.2",
