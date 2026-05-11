@@ -41,6 +41,12 @@ export interface HeartbeatSweeperDeps {
   staleAfterMs?: number;
   /** Hard cap on total attempts before we give up. */
   maxAttempts?: number;
+  /**
+   * Invoked after every successful tick (including ticks that found no
+   * stale steps). The observability server uses this to surface a
+   * `last successful tick` age in /healthz + /metrics.
+   */
+  onTick?: () => void;
 }
 
 export class HeartbeatSweeper {
@@ -115,11 +121,15 @@ export class HeartbeatSweeper {
           take: 50, // bounded per tick
         }),
       );
-      if (stale.length === 0) return;
-      this.deps.logger.info({ count: stale.length }, 'sweeper: stale steps detected');
-      for (const step of stale) {
-        await this.recoverStep(step);
+      if (stale.length > 0) {
+        this.deps.logger.info({ count: stale.length }, 'sweeper: stale steps detected');
+        for (const step of stale) {
+          await this.recoverStep(step);
+        }
       }
+      // Record a successful tick — readiness probes use this to detect a
+      // wedged orchestrator that's still alive but no longer scanning.
+      this.deps.onTick?.();
     } catch (err: any) {
       this.deps.logger.error({ err: err?.message ?? err }, 'sweeper tick failed');
     } finally {

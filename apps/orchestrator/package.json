@@ -22,7 +22,8 @@
     "bullmq": "^5.21.0",
     "ioredis": "^5.4.1",
     "pino": "^9.5.0",
-    "pino-pretty": "^11.2.2"
+    "pino-pretty": "^11.2.2",
+    "prom-client": "^15.1.3"
   },
   "devDependencies": {
     "@types/node": "^25.6.2",

@@ -6,6 +6,7 @@ import { Orchestrator } from './orchestrator.js';
 import { deliverOutboundWebhook, type OutboundJob } from './outbound-webhook-worker.js';
 import { handleFanout } from './webhook-fanout-worker.js';
 import { HeartbeatSweeper } from './heartbeat-sweeper.js';
+import { markTick, startObservabilityServer } from './observability.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
@@ -109,21 +110,45 @@ const fanoutWorker = new Worker<FanoutPayload>(
 // writing heartbeats. Reuses the same `runner.step` queue the orchestrator
 // dispatches to.
 const runnerQueue = new Queue('runner.step', { connection: conn });
+const sweeperIntervalMs = Number(process.env.ORCHESTRATOR_HEARTBEAT_SWEEPER_INTERVAL_MS ?? 30_000);
 const heartbeatSweeper = new HeartbeatSweeper({
   runnerQueue,
   eventlog,
   logger,
-  intervalMs: Number(process.env.ORCHESTRATOR_HEARTBEAT_SWEEPER_INTERVAL_MS ?? 30_000),
+  intervalMs: sweeperIntervalMs,
   staleAfterMs: Number(process.env.ORCHESTRATOR_HEARTBEAT_STALE_AFTER_MS ?? 90_000),
   maxAttempts: Number(process.env.ORCHESTRATOR_HEARTBEAT_MAX_ATTEMPTS ?? 3),
+  onTick: markTick,
 });
 heartbeatSweeper.start();
+
+// Observability HTTP server: /healthz + /metrics on its own port so the
+// orchestrator stays free of an inbound HTTP listener for app traffic.
+// The staleness threshold is 4× the sweeper interval; one missed tick
+// shouldn't alarm.
+const observabilityServer = startObservabilityServer({
+  port: Number(process.env.ORCHESTRATOR_METRICS_PORT ?? 9090),
+  redis: conn,
+  queues: [
+    'run.due',
+    'runner.step',
+    'webhook.fanout',
+    'webhook.outbound',
+    'gate.wait',
+    'rate.wait',
+    'org-cap.wait',
+    'digest',
+  ],
+  staleTickMs: sweeperIntervalMs * 4,
+  logger,
+});
 
 logger.info('orchestrator started');
 
 async function shutdown() {
   logger.info('shutting down');
   heartbeatSweeper.stop();
+  await new Promise<void>((resolve) => observabilityServer.close(() => resolve()));
   await Promise.all([
     dueWorker.close(),
     dispatchWorker.close(),

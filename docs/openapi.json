@@ -1692,6 +1692,34 @@
           "MagicLink"
         ]
       }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "HealthController_healthz",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "HealthController_metrics",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Health"
+        ]
+      }
     }
   },
   "info": {
