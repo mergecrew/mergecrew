@@ -47,8 +47,8 @@ Mergecrew is a pnpm-workspace monorepo. Four NestJS services (`api`, `orchestrat
 
 ## Stack
 
-- **Backend.** NestJS 10 across four services: `api`, `orchestrator`, `runner`, `worker-cron`.
-- **Frontend.** Next.js 15 (App Router), shadcn/ui, Tailwind.
+- **Backend.** NestJS 11 across four services: `api`, `orchestrator`, `runner`, `worker-cron`.
+- **Frontend.** Next.js 16 (App Router), Tailwind, lucide-react.
 - **Data.** Postgres 16 (pgvector + RLS) and Redis (BullMQ + pubsub).
 - **Agent runtime.** [LangGraph.js](https://github.com/langchain-ai/langgraphjs) graph + [LangChain.js](https://github.com/langchain-ai/langchainjs) provider integrations (Anthropic, OpenAI, AWS Bedrock, Ollama).
 - **Tooling.** pnpm workspaces, Turbo, TypeScript, Prisma.

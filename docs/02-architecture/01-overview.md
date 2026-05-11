@@ -70,7 +70,7 @@ Mergecrew is a layered system. Each layer has a single responsibility and one we
 
 | Layer | Concern | Implementation |
 |---|---|---|
-| **UI** | rendering, input, real-time view | Next.js 15 (App Router) + Tailwind + lucide-react |
+| **UI** | rendering, input, real-time view | Next.js 16 (App Router) + Tailwind + lucide-react |
 | **BFF** | session, per-org guarding, SSR data, SSE proxy | Next.js route handlers; trust-token exchange with API |
 | **API** | tenant-aware CRUD, business rules, gate evaluation, cost tracking | NestJS modules (`apps/api`) |
 | **Orchestration** | durable run scheduling, retries, rate-limit pause/resume, idempotency | Custom engine on BullMQ + Postgres (`apps/orchestrator`) |
@@ -87,7 +87,7 @@ Layers above can call layers below. Below cannot call above (events bubble up vi
 ```
 mergecrew/
   apps/
-    web/                  Next.js 15 (App Router)
+    web/                  Next.js 16 (App Router)
     api/                  NestJS HTTP + SSE (port 4000)
     orchestrator/         BullMQ workers + custom durable engine
     runner/               BullMQ consumer of `runner.step`

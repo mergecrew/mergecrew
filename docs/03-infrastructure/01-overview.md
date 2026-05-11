@@ -12,7 +12,7 @@ How Mergecrew is run today. Mergecrew is open source and self-hosted; there is n
             │                                                          │
             │  ┌────────────┐  ┌──────────────┐  ┌───────────────────┐ │
             │  │ apps/web   │  │ apps/api     │  │ apps/orchestrator │ │
-            │  │ Next.js 15 │  │ NestJS HTTP  │  │ BullMQ workers    │ │
+            │  │ Next.js 16 │  │ NestJS HTTP  │  │ BullMQ workers    │ │
             │  │ :3000      │  │ + SSE :4000  │  │                   │ │
             │  └────────────┘  └──────────────┘  └───────────────────┘ │
             │                                                          │
