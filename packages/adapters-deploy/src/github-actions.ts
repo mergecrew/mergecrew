@@ -23,8 +23,42 @@ interface GhTargetConfig {
   urlResolution: 'workflow_output' | 'pattern' | 'fixed';
   urlPattern?: string;
   urlFixed?: string;
+  /**
+   * - `'dispatch'` (default): Mergecrew calls `workflowDispatch` to start
+   *   the deploy. Suits manual-button workflows (typical for prod).
+   * - `'observe'`: Mergecrew does **not** dispatch; instead it waits for
+   *   the operator's existing push/pull-request triggered run to appear
+   *   and watches it. Suits "merge to main → CI auto-deploys" repos.
+   */
+  triggerMode?: 'dispatch' | 'observe';
+  /**
+   * How long to wait for the operator's CI to produce a matching run
+   * before giving up in `observe` mode (ms). GitHub Actions typically
+   * queues a run within a few seconds of the push; the default 60s
+   * covers cold-runner / queue lag without hanging Mergecrew forever.
+   */
+  observeFindTimeoutMs?: number;
 }
 
+/**
+ * GitHub Actions deploy adapter. Supports two trigger modes:
+ *
+ *   `triggerMode: 'dispatch'` (default)
+ *     Mergecrew calls `workflowDispatch` to start the deploy. Suits
+ *     manual-button workflows — typical for production where the
+ *     operator wants an explicit gate.
+ *
+ *   `triggerMode: 'observe'` (#259)
+ *     Mergecrew does **not** dispatch. It waits for the operator's
+ *     existing push/pull-request triggered workflow run to appear on
+ *     the agent-pushed branch and watches it. Suits the common
+ *     "merge to main → CI auto-deploys" pattern; this is the path
+ *     to use when a real repo already has dev deploys wired up.
+ *
+ * Both modes return the same `DeployHandle` shape — only the trigger
+ * semantics differ. The downstream `getStatus` / `awaitCompletion` /
+ * `fetchLogs` calls are identical.
+ */
 export class GitHubActionsProvider implements DeployProvider {
   readonly id = 'github-actions' as const;
   private auth: ReturnType<typeof createAppAuth>;
@@ -47,6 +81,24 @@ export class GitHubActionsProvider implements DeployProvider {
     const kit = await this.kit(cfg.installationId);
     const [owner, name] = cfg.repoFullName.split('/');
     if (!owner || !name) throw new Error(`bad repoFullName ${cfg.repoFullName}`);
+
+    const mode = cfg.triggerMode ?? 'dispatch';
+    if (mode === 'observe') {
+      const findTimeoutMs = cfg.observeFindTimeoutMs ?? 60_000;
+      const runId = await this.findRecentRunForBranch(
+        kit,
+        owner,
+        name,
+        cfg.workflowFilename,
+        opts.branch,
+        findTimeoutMs,
+      );
+      return {
+        externalRunId: String(runId),
+        targetId: target.id,
+        correlationId: opts.correlationId,
+      };
+    }
 
     const inputs = renderTemplate(cfg.inputsTemplate, {
       ref: { branch: opts.branch, sha: opts.ref },
@@ -125,6 +177,46 @@ export class GitHubActionsProvider implements DeployProvider {
   }
 
   // ─── helpers ────────────────────────────────────────────────────────────
+
+  /**
+   * Observe mode: wait for a push/pull_request-triggered run on the
+   * given branch + workflow to appear. The agent has just pushed, so
+   * the run should materialize within a handful of seconds; we poll
+   * until it does or the deadline expires.
+   */
+  private async findRecentRunForBranch(
+    kit: Octokit,
+    owner: string,
+    name: string,
+    workflowFilename: string,
+    branch: string,
+    timeoutMs: number,
+  ): Promise<number> {
+    const deadline = Date.now() + timeoutMs;
+    let delay = 2_000;
+    while (Date.now() < deadline) {
+      const r = await kit.actions.listWorkflowRuns({
+        owner,
+        repo: name,
+        workflow_id: workflowFilename,
+        branch,
+        per_page: 5,
+      });
+      // Match any run kicked off within the timeout window so we don't
+      // pick up yesterday's stale success.
+      const fresh = r.data.workflow_runs.find(
+        (run) =>
+          run.head_branch === branch &&
+          Date.now() - new Date(run.created_at).getTime() < timeoutMs * 2,
+      );
+      if (fresh) return fresh.id;
+      await sleep(Math.min(delay, deadline - Date.now()));
+      delay = Math.min(delay * 1.5, 8_000);
+    }
+    throw new Error(
+      `observe: no workflow run for ${workflowFilename} on branch ${branch} within ${timeoutMs}ms (operator's CI may not be configured to fire on this branch)`,
+    );
+  }
 
   private async findRunByCorrelation(
     kit: Octokit,

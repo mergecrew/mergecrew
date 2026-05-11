@@ -211,6 +211,70 @@ describe('GitHubActionsProvider — conformance (URL resolution + logs + rollbac
   });
 });
 
+describe('GitHubActionsProvider — observe mode (#259)', () => {
+  const observeTarget = makeTarget('github-actions', {
+    installationId: '12345',
+    repoFullName: 'acme/web',
+    workflowFilename: 'deploy-dev.yml',
+    inputsTemplate: {},
+    urlResolution: 'pattern',
+    urlPattern: 'https://${branch}.preview.example.com',
+    triggerMode: 'observe',
+    observeFindTimeoutMs: 100,
+  });
+
+  it('returns a handle bound to the operator-initiated run id without dispatching', async () => {
+    kitMock.actions.listWorkflowRuns.mockResolvedValueOnce({
+      data: {
+        workflow_runs: [
+          { id: 4242, head_branch: 'feature-x', created_at: new Date().toISOString() },
+        ],
+      },
+    });
+
+    const handle = await provider.triggerDeploy(observeTarget, {
+      ref: 'sha-abc',
+      branch: 'feature-x',
+      correlationId: 'cid-obs',
+    });
+
+    expectValidHandle(handle, { targetId: observeTarget.id, correlationId: 'cid-obs' });
+    expect(handle.externalRunId).toBe('4242');
+    expect(kitMock.actions.createWorkflowDispatch).not.toHaveBeenCalled();
+  });
+
+  it('throws a clear error if no run materializes within the timeout', async () => {
+    kitMock.actions.listWorkflowRuns.mockResolvedValue({ data: { workflow_runs: [] } });
+
+    await expect(
+      provider.triggerDeploy(observeTarget, {
+        ref: 'sha-abc',
+        branch: 'feature-x',
+        correlationId: 'cid-obs',
+      }),
+    ).rejects.toThrow(/no workflow run for deploy-dev\.yml on branch feature-x/);
+    expect(kitMock.actions.createWorkflowDispatch).not.toHaveBeenCalled();
+  });
+
+  it('ignores stale runs from another branch even if they are recent', async () => {
+    kitMock.actions.listWorkflowRuns.mockResolvedValue({
+      data: {
+        workflow_runs: [
+          { id: 1, head_branch: 'main', created_at: new Date().toISOString() },
+        ],
+      },
+    });
+
+    await expect(
+      provider.triggerDeploy(observeTarget, {
+        ref: 'sha-abc',
+        branch: 'feature-x',
+        correlationId: 'cid-obs',
+      }),
+    ).rejects.toThrow(/no workflow run for deploy-dev\.yml on branch feature-x/);
+  });
+});
+
 describe('GitHubActionsProvider — surface', () => {
   it('exposes id "github-actions"', () => {
     expect(provider.id).toBe('github-actions');
