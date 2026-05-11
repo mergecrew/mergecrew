@@ -5,6 +5,7 @@ import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
 import { QueueService } from '../../common/queue.service.js';
 import { EventlogService } from '../../common/eventlog.service.js';
+import { TelemetryService } from '../../common/telemetry.service.js';
 
 @Injectable()
 export class RunService {
@@ -13,6 +14,7 @@ export class RunService {
     private tenant: TenantContextService,
     private queue: QueueService,
     private eventlogSvc: EventlogService,
+    private telemetry: TelemetryService,
   ) {}
 
   async list(projectSlug: string, opts: { limit?: number }) {
@@ -124,6 +126,7 @@ export class RunService {
         /* the DB flip already persisted; runners will pick up at next heartbeat sweep */
       });
 
+    void this.telemetry.emit(t.organizationId, 'run.completed', { status: 'cancelled' });
     return { cancelled: true };
   }
 

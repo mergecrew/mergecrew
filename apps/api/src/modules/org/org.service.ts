@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { NotFoundError, ValidationError } from '@mergecrew/domain';
 import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
+import { TelemetryService } from '../../common/telemetry.service.js';
 
 function startOfUtcDay(d: Date): Date {
   const r = new Date(d);
@@ -12,7 +13,11 @@ function startOfUtcDay(d: Date): Date {
 
 @Injectable()
 export class OrgService {
-  constructor(private prisma: PrismaService, private tenant: TenantContextService) {}
+  constructor(
+    private prisma: PrismaService,
+    private tenant: TenantContextService,
+    private telemetry: TelemetryService,
+  ) {}
 
   async listForUser(userId: string) {
     const ms = await this.prisma.withSystem((tx) =>
@@ -43,6 +48,10 @@ export class OrgService {
     await this.prisma.withSystem((tx) =>
       tx.membership.create({ data: { organizationId: org.id, userId, role: 'owner' } }),
     );
+    // No-op unless this org later opts in to telemetry (#253). The
+    // emit is fire-and-forget so a misconfigured transport can't
+    // affect the create return path.
+    void this.telemetry.emit(org.id, 'org.created', {});
     return { id: org.id, slug: org.slug, name: org.name, role: 'owner' as const };
   }
 
