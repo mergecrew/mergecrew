@@ -5,6 +5,7 @@ Thank you for considering a contribution. Mergecrew is alpha; APIs and the datab
 ## Before you start
 
 - Read the project [README](README.md) and the architecture docs in [`docs/`](docs/README.md). The architecture docs describe the system as it is — if your change requires a doc update, plan to include it in the PR.
+- Adding a custom skill / integration? Start at [docs/02-architecture/12-skill-sdk.md](docs/02-architecture/12-skill-sdk.md) — it covers both extension paths (HTTP-backed in `mergecrew.yaml` and TypeScript stock skills) with a step-by-step walkthrough.
 - Check the [issue tracker](https://github.com/mergecrew/mergecrew/issues) and the [project board](https://github.com/orgs/mergecrew/projects). The roadmap items are pre-filed; pick one labeled `roadmap` if you want a substantial first contribution, or one labeled `good first issue` for a smaller starter.
 - For non-trivial design changes (anything that touches the agent runtime, multi-tenancy, deploy adapters, or the human approval gate), open a [Discussion](https://github.com/mergecrew/mergecrew/discussions) first so we can align before code is written.
 
