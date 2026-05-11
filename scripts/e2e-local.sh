@@ -26,6 +26,33 @@ if [ -z "${MERGECREW_E2E_LOCAL_API_KEY:-}" ]; then
 fi
 export MERGECREW_AGENT_STUB=1
 
+# Pre-flight: docker-compose.full.yml binds host :3000 (web) and :4000 (API).
+# A stale `pnpm dev` or a leftover compose run blocking either port leads to
+# either an opaque `docker compose up` failure or — worse — the healthz curl
+# below hitting the stale process and spinning forever (#247).
+check_port_free() {
+  local port=$1
+  local pids
+  if ! command -v lsof >/dev/null 2>&1; then
+    return 0
+  fi
+  pids=$(lsof -t -i ":$port" -sTCP:LISTEN 2>/dev/null || true)
+  if [ -n "$pids" ]; then
+    echo "[e2e-local] FAIL: port $port is already in use by:"
+    for pid in $pids; do
+      local cmd
+      cmd=$(ps -o command= -p "$pid" 2>/dev/null || echo "<unknown>")
+      echo "  pid $pid  $cmd"
+    done
+    echo "[e2e-local] Free the port and re-run. Common fixes:"
+    echo "  - kill the stale process:  kill $pids"
+    echo "  - stop a prior compose run: pnpm compose:full:down"
+    return 1
+  fi
+}
+check_port_free 3000 || exit 1
+check_port_free 4000 || exit 1
+
 teardown_done=0
 teardown() {
   if [ "$teardown_done" -eq 1 ]; then
