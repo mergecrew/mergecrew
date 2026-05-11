@@ -12,11 +12,40 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 import { PrismaService } from './common/prisma.service.js';
 import { stampUserContextOnRequest } from './common/tenant-context.service.js';
 import { API_KEY_PREFIX, hashToken } from './modules/api-key/api-key.service.js';
+import {
+  httpRequestDurationSeconds,
+  httpRequestsTotal,
+  initMetrics,
+} from './modules/health/metrics.js';
 import type { Request, Response, NextFunction } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     bodyParser: false,
+  });
+
+  // Metrics: initialize registry + default node/process collectors. The
+  // request-timing middleware below feeds the per-route histogram +
+  // counter; /metrics on the HealthController serves the exposition.
+  initMetrics({ service: 'api' });
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.path === '/metrics' || req.path === '/healthz') {
+      next();
+      return;
+    }
+    const startNs = process.hrtime.bigint();
+    res.on('finish', () => {
+      const durationSec = Number(process.hrtime.bigint() - startNs) / 1e9;
+      // Use `req.route?.path` when NestJS resolved a controller route, fall
+      // back to a normalized path so we don't unbounded-cardinality the
+      // labels with raw `/v1/orgs/abc-123` ids.
+      const route = (req as Request & { route?: { path?: string } }).route?.path ?? normalizeRoute(req.path);
+      const status = `${Math.floor(res.statusCode / 100)}xx`;
+      const labels = { method: req.method, route, status };
+      httpRequestsTotal.inc(labels);
+      httpRequestDurationSeconds.observe(labels, durationSec);
+    });
+    next();
   });
 
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
@@ -162,6 +191,14 @@ async function bootstrap() {
   await app.listen(port);
   // eslint-disable-next-line no-console
   console.log(`[api] listening on :${port}`);
+}
+
+// Collapse uuid / slug / numeric segments so the `route` label stays bounded.
+// Anything that survives matches a real route shape — `/v1/orgs/:slug/...`.
+function normalizeRoute(path: string): string {
+  return path
+    .replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '/:uuid')
+    .replace(/\/\d+/g, '/:id');
 }
 
 bootstrap().catch((err) => {
