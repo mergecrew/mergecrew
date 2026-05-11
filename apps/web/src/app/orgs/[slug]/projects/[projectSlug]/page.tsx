@@ -350,7 +350,7 @@ function RunNowForm({
   disabledReason?: string;
 }) {
   return (
-    <form action={runNowAction}>
+    <form action={runNowAction} className="flex flex-col items-end gap-1">
       <input type="hidden" name="orgSlug" value={orgSlug} />
       <input type="hidden" name="projectSlug" value={projectSlug} />
       <button
@@ -362,6 +362,11 @@ function RunNowForm({
       >
         Run now
       </button>
+      {disabled && disabledReason && (
+        <p className="max-w-[16rem] text-right text-xs text-zinc-500 dark:text-zinc-400">
+          {disabledReason}
+        </p>
+      )}
     </form>
   );
 }
