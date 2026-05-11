@@ -93,4 +93,20 @@ export class OrgController {
   async auditLog(@Query('limit') limit?: string) {
     return { items: await this.orgs.listAuditLog({ limit: limit ? Number(limit) : 100 }) };
   }
+
+  @UseGuards(RoleGuard)
+  @Get('orgs/:slug/telemetry')
+  async telemetry(@Param('slug') _slug: string) {
+    return this.orgs.getTelemetrySettings();
+  }
+
+  @UseGuards(RoleGuard)
+  @RequireRole('admin')
+  @Patch('orgs/:slug/telemetry')
+  async updateTelemetry(
+    @Param('slug') _slug: string,
+    @Body() body: { enabled: boolean },
+  ) {
+    return this.orgs.updateTelemetry(Boolean(body.enabled));
+  }
 }
