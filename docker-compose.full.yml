@@ -1,0 +1,175 @@
+# One-command self-host for trial use (#223). Boots the whole stack —
+# Postgres, Redis, API, orchestrator, runner, worker-cron, web — plus a
+# one-shot migrate + seed so the operator lands on a usable web UI at
+# http://localhost:3000 with a pre-created `demo` org.
+#
+# Usage:
+#   docker compose -f docker-compose.full.yml up
+#
+# For production self-host use docker-compose.prod.yml instead — it
+# expects host-installed Postgres, an external reverse proxy, and
+# per-service resource limits.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: mergecrew-postgres
+    environment:
+      POSTGRES_USER: mergecrew
+      POSTGRES_PASSWORD: mergecrew
+      POSTGRES_DB: mergecrew
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/sql/init:/docker-entrypoint-initdb.d:ro
+    networks: [internal]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U mergecrew -d mergecrew']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: mergecrew-redis
+    volumes:
+      - redis_data:/data
+    networks: [internal]
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-shot: applies the Prisma migration set, then exits. Every app
+  # service waits on this completing successfully via depends_on, so the
+  # API never starts against a schema-less DB.
+  migrate:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    image: mergecrew/api:latest
+    container_name: mergecrew-migrate
+    environment:
+      <<: &default_env
+        NODE_ENV: development
+        DATABASE_URL: postgresql://mergecrew:mergecrew@postgres:5432/mergecrew?schema=public
+        DATABASE_MIGRATE_URL: postgresql://mergecrew_migrator:mergecrew_migrator@postgres:5432/mergecrew?schema=public
+        REDIS_URL: redis://redis:6379
+        KMS_MASTER_KEY: 'base64:0000000000000000000000000000000000000000000='
+        JWT_SECRET: dev-secret
+        NEXTAUTH_SECRET: dev-secret
+        NEXTAUTH_URL: http://localhost:3000
+        API_BASE_URL: http://api:4000
+        WEB_BASE_URL: http://localhost:3000
+        # Dev auto-login wires the seeded demo user without OAuth setup
+        # so the operator lands directly on a usable UI.
+        MERGECREW_DEV_AUTO_LOGIN: 'true'
+        MERGECREW_DEV_USER_EMAIL: demo@mergecrew.local
+        MERGECREW_DEV_USER_NAME: Demo User
+        BFF_TRUST_TOKEN: dev-trust-token
+        LOG_LEVEL: info
+    networks: [internal]
+    depends_on:
+      postgres: { condition: service_healthy }
+    # The hoisted-linker pnpm install drops the prisma binary into
+    # packages/db's own node_modules rather than at the root .bin
+    # (since `prisma` isn't in `.npmrc`'s public-hoist-pattern). The
+    # Dockerfile sets WORKDIR to /app/apps/api, so go up to /app to
+    # find packages/db.
+    working_dir: /app
+    command: ['packages/db/node_modules/.bin/prisma', 'migrate', 'deploy', '--schema', 'packages/db/prisma/schema.prisma']
+    restart: 'no'
+
+  # One-shot: seeds the price table + a `demo` org + `demo@mergecrew.local`
+  # user, so MERGECREW_DEV_AUTO_LOGIN drops the operator straight onto a
+  # working dashboard with no manual signup.
+  seed:
+    image: mergecrew/api:latest
+    container_name: mergecrew-seed
+    environment:
+      <<: *default_env
+    networks: [internal]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    working_dir: /app
+    command:
+      - node
+      - packages/db/dist/seed.js
+    restart: 'no'
+
+  api:
+    image: mergecrew/api:latest
+    container_name: mergecrew-api
+    restart: unless-stopped
+    environment:
+      <<: *default_env
+    networks: [internal]
+    ports:
+      - '127.0.0.1:4000:4000'
+    depends_on:
+      seed: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.orchestrator
+    image: mergecrew/orchestrator:latest
+    container_name: mergecrew-orchestrator
+    restart: unless-stopped
+    environment:
+      <<: *default_env
+    networks: [internal]
+    depends_on:
+      seed: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  runner:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.runner
+    image: mergecrew/runner:latest
+    container_name: mergecrew-runner
+    restart: unless-stopped
+    environment:
+      <<: *default_env
+    networks: [internal]
+    depends_on:
+      seed: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  worker-cron:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.worker-cron
+    image: mergecrew/worker-cron:latest
+    container_name: mergecrew-worker-cron
+    restart: unless-stopped
+    environment:
+      <<: *default_env
+    networks: [internal]
+    depends_on:
+      seed: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.web
+    image: mergecrew/web:latest
+    container_name: mergecrew-web
+    restart: unless-stopped
+    environment:
+      <<: *default_env
+      API_BASE_URL: http://api:4000
+    networks: [internal]
+    ports:
+      - '127.0.0.1:3000:3000'
+    depends_on: [api]
+
+networks:
+  internal:
+
+volumes:
+  postgres_data:
+  redis_data:

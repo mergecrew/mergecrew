@@ -20,9 +20,12 @@ FROM node:${NODE_VERSION} AS runtime
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=build /repo/node_modules /app/node_modules
-COPY --from=build /repo/apps/runner/dist /app/dist
-COPY --from=build /repo/apps/runner/package.json /app/package.json
+COPY --from=build /repo/apps/runner/node_modules /app/apps/runner/node_modules
+COPY --from=build /repo/apps/runner/dist /app/apps/runner/dist
+COPY --from=build /repo/apps/runner/package.json /app/apps/runner/package.json
 COPY --from=build /repo/packages /app/packages
 RUN mkdir -p /var/mergecrew/work && chown -R node:node /var/mergecrew
+RUN chown -R node:node /app
 USER node
+WORKDIR /app/apps/runner
 CMD ["node", "dist/main.js"]

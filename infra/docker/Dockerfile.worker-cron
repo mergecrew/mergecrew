@@ -17,9 +17,14 @@ RUN pnpm --filter @mergecrew/worker-cron... build
 
 FROM node:${NODE_VERSION} AS runtime
 WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 COPY --from=build /repo/node_modules /app/node_modules
-COPY --from=build /repo/apps/worker-cron/dist /app/dist
-COPY --from=build /repo/apps/worker-cron/package.json /app/package.json
+COPY --from=build /repo/apps/worker-cron/node_modules /app/apps/worker-cron/node_modules
+COPY --from=build /repo/apps/worker-cron/dist /app/apps/worker-cron/dist
+COPY --from=build /repo/apps/worker-cron/package.json /app/apps/worker-cron/package.json
 COPY --from=build /repo/packages /app/packages
+RUN chown -R node:node /app
 USER node
+WORKDIR /app/apps/worker-cron
 CMD ["node", "dist/main.js"]
