@@ -42,6 +42,15 @@ export async function deleteCustomSkillAction(scope: LifecycleScope, name: strin
 export async function setHumanGatesAction(scope: LifecycleScope, gates: unknown) {
   return call(scope, `/human-gates`, { method: 'PUT', body: gates });
 }
+
+/**
+ * Replace the project's lifecycle from a YAML string (#270). The
+ * editor validates client-side before invoking this; the API still
+ * re-validates as the second wall.
+ */
+export async function upsertLifecycleYamlAction(scope: LifecycleScope, yaml: string) {
+  return call(scope, ``, { method: 'PUT', body: { yaml } });
+}
 export async function applyOrgTemplateAction(
   scope: Extract<LifecycleScope, { kind: 'project' }>,
   templateName = 'default',

@@ -10,6 +10,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@mergecrew/config-yaml": "workspace:*",
     "@mergecrew/domain": "workspace:*",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
