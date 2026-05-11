@@ -11,9 +11,11 @@ import {
   deleteCustomSkillAction,
   setHumanGatesAction,
   applyOrgTemplateAction,
+  upsertLifecycleYamlAction,
 } from './lifecycle-actions';
 import type { LifecycleScope } from './scope';
 import { LifecycleGraph } from './lifecycle-graph';
+import { SourceYamlEditor } from './source-yaml-editor';
 
 interface AgentDef {
   kind: string;
@@ -211,9 +213,12 @@ export function LifecycleEditor({
         />
       )}
       {tab === 'source' && (
-        <pre className="overflow-x-auto rounded border bg-zinc-50 p-3 text-xs dark:bg-zinc-900 dark:border-zinc-800">
-          {sourceYaml || '(no source YAML stored — configuration is structured-only)'}
-        </pre>
+        <SourceYamlEditor
+          scope={scope}
+          initialYaml={sourceYaml}
+          readOnly={readOnly}
+          onSave={(yaml) => upsertLifecycleYamlAction(scope, yaml)}
+        />
       )}
     </div>
   );
