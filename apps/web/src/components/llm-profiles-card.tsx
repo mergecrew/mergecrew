@@ -17,6 +17,13 @@ interface SaveResult {
 
 interface Props {
   profiles: Profile[];
+  /**
+   * Flat list of `providerKind/modelId` refs derived from the org's
+   * registered providers + their declared models. The preference-order
+   * editor uses this to populate its "add ref" picker so the operator
+   * doesn't have to retype refs (#268).
+   */
+  availableRefs?: string[];
   canEdit: boolean;
   onCreate: (input: {
     name: string;
@@ -34,7 +41,7 @@ interface Props {
   onDelete: (id: string) => Promise<SaveResult>;
 }
 
-export function LlmProfilesCard({ profiles, canEdit, onCreate, onUpdate, onDelete }: Props) {
+export function LlmProfilesCard({ profiles, availableRefs = [], canEdit, onCreate, onUpdate, onDelete }: Props) {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -82,6 +89,7 @@ export function LlmProfilesCard({ profiles, canEdit, onCreate, onUpdate, onDelet
         <ProfileForm
           mode="create"
           pending={pending}
+          availableRefs={availableRefs}
           onSubmit={(v) =>
             wrap(async () => {
               const r = await onCreate(v);
@@ -101,6 +109,7 @@ export function LlmProfilesCard({ profiles, canEdit, onCreate, onUpdate, onDelet
                 mode="edit"
                 pending={pending}
                 initial={p}
+                availableRefs={availableRefs}
                 onSubmit={(v) =>
                   wrap(async () => {
                     const r = await onUpdate(p.id, v);
@@ -187,28 +196,48 @@ function ProfileForm({
   mode,
   initial,
   pending,
+  availableRefs,
   onSubmit,
   onCancel,
 }: {
   mode: 'create' | 'edit';
   initial?: Profile;
   pending: boolean;
+  availableRefs: string[];
   onSubmit: (v: FormValues) => void;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(initial?.name ?? '');
-  const [preferenceCsv, setPreferenceCsv] = useState((initial?.preferenceOrder ?? []).join('\n'));
+  const [preferenceOrder, setPreferenceOrder] = useState<string[]>(initial?.preferenceOrder ?? []);
+  const [pickerValue, setPickerValue] = useState('');
   const [routingJson, setRoutingJson] = useState(
     JSON.stringify(initial?.capabilityRouting ?? {}, null, 2),
   );
   const [parseError, setParseError] = useState<string | null>(null);
 
+  const remainingRefs = availableRefs.filter((r) => !preferenceOrder.includes(r));
+
+  const addRef = (ref: string) => {
+    const trimmed = ref.trim();
+    if (!trimmed || preferenceOrder.includes(trimmed)) return;
+    setPreferenceOrder((prev) => [...prev, trimmed]);
+    setPickerValue('');
+  };
+  const removeRef = (i: number) => {
+    setPreferenceOrder((prev) => prev.filter((_, idx) => idx !== i));
+  };
+  const moveRef = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= preferenceOrder.length) return;
+    setPreferenceOrder((prev) => {
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  };
+
   const submit = () => {
     setParseError(null);
-    const preferenceOrder = preferenceCsv
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean);
 
     let capabilityRouting: Record<string, unknown> = {};
     if (routingJson.trim()) {
@@ -238,31 +267,105 @@ function ProfileForm({
           placeholder="e.g. default"
         />
       </label>
-      <label className="block text-sm">
-        <span className="block text-zinc-600 dark:text-zinc-400">
+      <div className="block text-sm">
+        <div className="text-zinc-600 dark:text-zinc-400">
           Preference order{' '}
-          <span className="text-xs text-zinc-400">— one <code>provider/model</code> per line</span>
-        </span>
+          <span className="text-xs text-zinc-400">
+            — the router walks this list per request; first available + capable wins
+          </span>
+        </div>
+        {preferenceOrder.length === 0 ? (
+          <p className="mt-1 text-xs text-zinc-500">
+            No models selected. Pick from the dropdown below to add one.
+          </p>
+        ) : (
+          <ul className="mt-1 space-y-1">
+            {preferenceOrder.map((ref, i) => (
+              <li
+                key={ref + i}
+                className="flex items-center gap-2 rounded border px-2 py-1 dark:border-zinc-800"
+              >
+                <span className="w-6 font-mono text-xs text-zinc-500">{i + 1}.</span>
+                <span className="flex-1 font-mono text-xs">{ref}</span>
+                <button
+                  type="button"
+                  className="rounded px-1.5 py-0.5 text-xs text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  onClick={() => moveRef(i, -1)}
+                  disabled={i === 0}
+                  title="Move up"
+                  aria-label={`Move ${ref} up`}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  className="rounded px-1.5 py-0.5 text-xs text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  onClick={() => moveRef(i, 1)}
+                  disabled={i === preferenceOrder.length - 1}
+                  title="Move down"
+                  aria-label={`Move ${ref} down`}
+                >
+                  ↓
+                </button>
+                <button
+                  type="button"
+                  className="rounded px-1.5 py-0.5 text-xs text-zinc-500 hover:bg-rose-100 hover:text-rose-700 dark:hover:bg-rose-900/30 dark:hover:text-rose-300"
+                  onClick={() => removeRef(i)}
+                  title="Remove"
+                  aria-label={`Remove ${ref}`}
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="mt-2 flex gap-2">
+          {remainingRefs.length > 0 ? (
+            <select
+              className="flex-1 rounded border px-2 py-1 font-mono text-xs dark:bg-zinc-900 dark:border-zinc-700"
+              value={pickerValue}
+              onChange={(e) => setPickerValue(e.target.value)}
+            >
+              <option value="">— add a model —</option>
+              {remainingRefs.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              className="flex-1 rounded border px-2 py-1 font-mono text-xs dark:bg-zinc-900 dark:border-zinc-700"
+              value={pickerValue}
+              onChange={(e) => setPickerValue(e.target.value)}
+              placeholder={
+                availableRefs.length === 0
+                  ? 'register an LLM provider first, or type a ref manually (provider/model)'
+                  : 'all available models added — type a ref manually if needed'
+              }
+            />
+          )}
+          <Button variant="secondary" onClick={() => addRef(pickerValue)} disabled={!pickerValue.trim()}>
+            Add
+          </Button>
+        </div>
+      </div>
+      <details className="text-sm">
+        <summary className="cursor-pointer text-zinc-600 dark:text-zinc-400">
+          Per-agent capability routing (advanced, raw JSON)
+        </summary>
         <textarea
-          className="mt-1 w-full rounded border px-2 py-1 font-mono text-xs dark:bg-zinc-900 dark:border-zinc-700"
-          rows={5}
-          value={preferenceCsv}
-          onChange={(e) => setPreferenceCsv(e.target.value)}
-          placeholder="anthropic/claude-3-5-sonnet-20241022&#10;openai/gpt-4o-mini"
-        />
-      </label>
-      <label className="block text-sm">
-        <span className="block text-zinc-600 dark:text-zinc-400">
-          Per-agent capability routing (JSON, optional)
-        </span>
-        <textarea
-          className="mt-1 w-full rounded border px-2 py-1 font-mono text-xs dark:bg-zinc-900 dark:border-zinc-700"
+          className="mt-2 w-full rounded border px-2 py-1 font-mono text-xs dark:bg-zinc-900 dark:border-zinc-700"
           rows={6}
           value={routingJson}
           onChange={(e) => setRoutingJson(e.target.value)}
           placeholder='{ "planner": { "tools": true, "longContext": 200000 } }'
         />
-      </label>
+        <p className="mt-1 text-xs text-zinc-500">
+          Optional. Object keyed by agent ref; value is a partial <code>ModelCapability</code>.
+        </p>
+      </details>
       {parseError && (
         <div className="rounded bg-rose-50 p-2 text-xs text-rose-800 dark:bg-rose-900/20 dark:text-rose-300">
           {parseError}
