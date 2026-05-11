@@ -68,6 +68,13 @@ services:
         MERGECREW_DEV_USER_NAME: Demo User
         BFF_TRUST_TOKEN: dev-trust-token
         LOG_LEVEL: info
+        # Plumbed through for the local-stack e2e (#228). Empty in normal
+        # trial use; set to `1` by scripts/e2e-local.sh so the agent loop
+        # returns deterministic `completed` outcomes without an LLM call.
+        MERGECREW_AGENT_STUB: '${MERGECREW_AGENT_STUB:-}'
+        # Same — passed only when the e2e harness pre-issues an API key
+        # via the seed and needs the operator-role token available later.
+        MERGECREW_E2E_LOCAL_API_KEY: '${MERGECREW_E2E_LOCAL_API_KEY:-}'
     networks: [internal]
     depends_on:
       postgres: { condition: service_healthy }

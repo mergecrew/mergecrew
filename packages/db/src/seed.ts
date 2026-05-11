@@ -1,7 +1,9 @@
 /* eslint-disable no-console */
+import { createHash } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
+const API_KEY_PREFIX = 'mc_live_';
 
 async function main() {
   console.log('[seed] Starting seed…');
@@ -74,6 +76,94 @@ async function main() {
   });
 
   console.log(`[seed] Demo org "${demoOrg.slug}" + user "${demoUser.email}" ready.`);
+
+  // Demo project so the local-stack e2e (#228) and dev clicks-through
+  // both have somewhere to land. Lifecycle rows are created lazily by
+  // the API on the first GET; deploy/tracker targets stay empty in dev.
+  const demoProject = await prisma.project.upsert({
+    where: { organizationId_slug: { organizationId: demoOrg.id, slug: 'acme' } },
+    update: {},
+    create: {
+      organizationId: demoOrg.id,
+      slug: 'acme',
+      name: 'Acme',
+      description: 'Default demo project. Edit or replace from the org Projects page.',
+    },
+  });
+  console.log(`[seed] Demo project "${demoProject.slug}" ready.`);
+
+  // Minimal lifecycle row so the orchestrator's `run.due` handler doesn't
+  // bail with `no lifecycle` before a real YAML lands. The API auto-creates
+  // a fuller default on first lifecycle GET; this just covers the case
+  // where a run is triggered before anyone touches the lifecycle page —
+  // which is exactly what the local e2e (#228) does.
+  const minimalLifecycle = {
+    version: 1,
+    lifecycle: {
+      workflows: [
+        { id: 'discovery', agents: ['discovery'], out: [], transitions: [] },
+      ],
+    },
+    agents: {
+      discovery: {
+        kind: 'Discovery',
+        description: 'Seed-time placeholder agent.',
+        fallback: [],
+        skills: [],
+        do_not_touch: [],
+        maxStepsPerRun: 12,
+        maxToolCallsPerStep: 8,
+      },
+    },
+    skills: {},
+  };
+  const minimalYaml =
+    'version: 1\nlifecycle:\n  workflows:\n    - id: discovery\n      agents: [discovery]\n      out: []\nagents:\n  discovery:\n    kind: Discovery\n    description: Seed-time placeholder agent.\nskills: {}\n';
+  const existingLc = await prisma.lifecycle.findFirst({
+    where: { projectId: demoProject.id },
+    orderBy: { version: 'desc' },
+  });
+  if (!existingLc) {
+    await prisma.lifecycle.create({
+      data: {
+        organizationId: demoOrg.id,
+        projectId: demoProject.id,
+        version: 1,
+        sourceYaml: minimalYaml,
+        parsed: minimalLifecycle,
+      },
+    });
+    console.log(`[seed] Seed lifecycle v1 created for project "${demoProject.slug}".`);
+  }
+
+  // Optional: pre-issue an API key whose plaintext matches
+  // MERGECREW_E2E_LOCAL_API_KEY. The local-stack e2e (#228) sets this
+  // before bringing up compose so the harness CLI can hit the API
+  // without going through the OAuth dev-auto-login path.
+  //
+  // The token must start with `mc_live_`; we store only its sha256.
+  const e2eToken = process.env.MERGECREW_E2E_LOCAL_API_KEY;
+  if (e2eToken) {
+    if (!e2eToken.startsWith(API_KEY_PREFIX)) {
+      console.error(`[seed] MERGECREW_E2E_LOCAL_API_KEY must start with "${API_KEY_PREFIX}"`);
+      process.exit(1);
+    }
+    const tokenHash = createHash('sha256').update(e2eToken).digest('hex');
+    await prisma.apiKey.upsert({
+      where: { tokenHash },
+      update: {},
+      create: {
+        organizationId: demoOrg.id,
+        name: 'e2e-local',
+        tokenHash,
+        prefix: e2eToken.slice(0, API_KEY_PREFIX.length + 4),
+        role: 'operator',
+        createdByUserId: demoUser.id,
+      },
+    });
+    console.log(`[seed] e2e-local API key registered (role=operator).`);
+  }
+
   console.log('[seed] Done.');
 }
 
