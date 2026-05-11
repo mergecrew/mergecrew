@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   HttpTransport,
+  MemoryTransport,
   NoopTransport,
   TelemetryEmitter,
   type TelemetryEvent,
@@ -21,15 +22,24 @@ import { PrismaService } from './prisma.service.js';
  * The default is empty even on `docker-compose.full.yml`. Operators
  * wanting signal point this at the reference receiver under
  * `infra/telemetry/` (or at their own collector).
+ *
+ * #273: every emit is also fanned out to an in-process `MemoryTransport`
+ * so the Settings → Telemetry card can render a recent-events audit
+ * panel. The audit buffer is bounded at 100 events per process and
+ * filtered by installId at read time so multi-org installs don't leak
+ * one org's events to another's settings page.
  */
 @Injectable()
 export class TelemetryService {
   private readonly transport: TelemetryTransport;
+  private readonly audit: MemoryTransport;
   private readonly version: string;
 
   constructor(private readonly prisma: PrismaService) {
     const url = process.env.MERGECREW_TELEMETRY_URL?.trim();
-    this.transport = url ? new HttpTransport({ url }) : new NoopTransport();
+    const configured = url ? new HttpTransport({ url }) : new NoopTransport();
+    this.audit = new MemoryTransport(100);
+    this.transport = new TeeTransport([configured, this.audit]);
     this.version = process.env.MERGECREW_VERSION ?? '0.1.0';
   }
 
@@ -60,5 +70,41 @@ export class TelemetryService {
     } catch {
       /* never fail the hot path */
     }
+  }
+
+  /**
+   * Return the most-recent events buffered locally that match this
+   * org's installId. Empty for orgs that have never opted in. Per
+   * #273 the panel is intentionally per-process: orchestrator emits
+   * (e.g., `run.completed` on the success path) won't appear here,
+   * only API-side emits.
+   */
+  async getRecent(organizationId: string, limit: number = 10): Promise<TelemetryEvent[]> {
+    const row = await this.prisma.withSystem((tx) =>
+      tx.organization.findUnique({
+        where: { id: organizationId },
+        select: { telemetryInstallId: true },
+      }),
+    );
+    if (!row?.telemetryInstallId) return [];
+    const all = this.audit.snapshot();
+    return all
+      .filter((e) => e.installId === row.telemetryInstallId)
+      .slice(-limit)
+      .reverse();
+  }
+}
+
+/** Fans one batch out to multiple transports. Failures are swallowed per-leg. */
+class TeeTransport implements TelemetryTransport {
+  constructor(private readonly legs: TelemetryTransport[]) {}
+  async send(batch: TelemetryEvent[]): Promise<void> {
+    await Promise.all(
+      this.legs.map((t) =>
+        t.send(batch).catch(() => {
+          /* one leg failing must not break the others */
+        }),
+      ),
+    );
   }
 }

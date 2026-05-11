@@ -139,13 +139,29 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get: operations["OrgController_telemetry"];
+        get: operations["OrgController_telemetrySettings"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch: operations["OrgController_updateTelemetry"];
+        trace?: never;
+    };
+    "/v1/orgs/{slug}/telemetry/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["OrgController_telemetryRecent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/orgs/{slug}/projects": {
@@ -1708,7 +1724,7 @@ export interface operations {
             };
         };
     };
-    OrgController_telemetry: {
+    OrgController_telemetrySettings: {
         parameters: {
             query?: never;
             header?: never;
@@ -1726,6 +1742,23 @@ export interface operations {
         };
     };
     OrgController_updateTelemetry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    OrgController_telemetryRecent: {
         parameters: {
             query?: never;
             header?: never;

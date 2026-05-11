@@ -2,10 +2,15 @@ import { Body, Controller, Get, Param, Patch, Post, Query, UnauthorizedException
 import { OrgService } from './org.service.js';
 import { RoleGuard, RequireRole } from '../../common/role.guard.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
+import { TelemetryService } from '../../common/telemetry.service.js';
 
 @Controller('v1')
 export class OrgController {
-  constructor(private orgs: OrgService, private tenant: TenantContextService) {}
+  constructor(
+    private orgs: OrgService,
+    private tenant: TenantContextService,
+    private telemetry: TelemetryService,
+  ) {}
 
   @Get('orgs')
   async list() {
@@ -96,7 +101,7 @@ export class OrgController {
 
   @UseGuards(RoleGuard)
   @Get('orgs/:slug/telemetry')
-  async telemetry(@Param('slug') _slug: string) {
+  async telemetrySettings(@Param('slug') _slug: string) {
     return this.orgs.getTelemetrySettings();
   }
 
@@ -108,5 +113,12 @@ export class OrgController {
     @Body() body: { enabled: boolean },
   ) {
     return this.orgs.updateTelemetry(Boolean(body.enabled));
+  }
+
+  @UseGuards(RoleGuard)
+  @Get('orgs/:slug/telemetry/recent')
+  async telemetryRecent(@Param('slug') _slug: string) {
+    const t = this.tenant.require();
+    return { items: await this.telemetry.getRecent(t.organizationId) };
   }
 }
