@@ -35,6 +35,15 @@ type ApprovalRequest = {
   createdAt: string;
 };
 
+type Schedule = {
+  id: string;
+  cron: string;
+  timezone: string;
+  enabled: boolean;
+  lastFiredAt?: string | null;
+  lastSkippedAt?: string | null;
+} | null;
+
 export default async function ProjectOverview({
   params,
 }: {
@@ -43,7 +52,7 @@ export default async function ProjectOverview({
   const { slug, projectSlug } = await params;
   const session = await requireSession();
 
-  const [project, runsRes, changesetsRes, approvalsRes] = await Promise.all([
+  const [project, runsRes, changesetsRes, approvalsRes, schedule] = await Promise.all([
     api<Project>(`/v1/orgs/${slug}/projects/${projectSlug}`, { session }),
     safe(() =>
       api<{ items: Run[] }>(
@@ -63,6 +72,9 @@ export default async function ProjectOverview({
         { session },
       ),
     ),
+    safe(() =>
+      api<Schedule>(`/v1/orgs/${slug}/projects/${projectSlug}/schedule`, { session }),
+    ),
   ]);
 
   const runs = runsRes?.items ?? [];
@@ -78,7 +90,12 @@ export default async function ProjectOverview({
   return (
     <main className="mx-auto max-w-5xl space-y-8 p-6">
       {isPaused && (
-        <PausedBanner hasRepo={hasRepo} hasDevTarget={hasDevTarget} settingsHref={settingsHref} />
+        <PausedBanner
+          hasRepo={hasRepo}
+          hasDevTarget={hasDevTarget}
+          settingsHref={settingsHref}
+          lastSkippedAt={schedule?.lastSkippedAt ?? null}
+        />
       )}
 
       <header className="flex flex-wrap items-start justify-between gap-3">
@@ -353,10 +370,12 @@ function PausedBanner({
   hasRepo,
   hasDevTarget,
   settingsHref,
+  lastSkippedAt,
 }: {
   hasRepo: boolean;
   hasDevTarget: boolean;
   settingsHref: string;
+  lastSkippedAt: string | null;
 }) {
   const missing: string[] = [];
   if (!hasRepo) missing.push('a connected GitHub repository');
@@ -369,6 +388,11 @@ function PausedBanner({
           <div className="mt-0.5">
             Scheduled and on-demand runs are disabled until you configure {missing.join(' and ')}.
           </div>
+          {lastSkippedAt && (
+            <div className="mt-0.5 text-xs text-amber-800/80 dark:text-amber-200/70">
+              Scheduler last skipped this project {relativeTime(lastSkippedAt)}.
+            </div>
+          )}
         </div>
         <Link
           href={settingsHref}
