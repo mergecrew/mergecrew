@@ -54,12 +54,20 @@ export class Orchestrator {
     const lc = await withTenant(organizationId, (tx) =>
       tx.lifecycle.findFirst({ where: { projectId }, orderBy: { version: 'desc' } }),
     );
-    if (!lc) {
-      this.deps.logger.warn({ projectId }, 'run.due: no lifecycle');
-      return;
-    }
     const project = await withTenant(organizationId, (tx) => tx.project.findUnique({ where: { id: projectId } }));
     if (!project) return;
+    if (!lc) {
+      // Defensive: the API (RunService.runNow) and the cron tick both
+      // refuse to enqueue when there's no lifecycle, so reaching this
+      // branch means either a hand-enqueued job or a race where the
+      // lifecycle was deleted between the precondition check and here.
+      // Log with the project slug so the operator can grep for it.
+      this.deps.logger.warn(
+        { projectId, projectSlug: project.slug },
+        'run.due aborted: project has no lifecycle (save mergecrew.yaml from the Lifecycle page to enable runs)',
+      );
+      return;
+    }
 
     const inflight = await withTenant(organizationId, (tx) =>
       tx.dailyRun.findFirst({

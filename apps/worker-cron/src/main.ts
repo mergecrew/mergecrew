@@ -41,6 +41,9 @@ async function tick() {
           select: {
             connectedRepo: { select: { id: true } },
             deployTargets: { select: { kind: true } },
+            // Pull only the id; we just need to know whether *any*
+            // lifecycle row exists for the project (#252).
+            lifecycles: { select: { id: true }, take: 1 },
           },
         },
       },
@@ -62,12 +65,15 @@ async function tick() {
 
     const hasRepo = s.project?.connectedRepo != null;
     const hasDevTarget = (s.project?.deployTargets ?? []).some((d) => d.kind === 'dev');
-    if (!hasRepo || !hasDevTarget) {
+    const hasLifecycle = (s.project?.lifecycles ?? []).length > 0;
+    if (!hasRepo || !hasDevTarget || !hasLifecycle) {
       // Paused project: bump lastFiredAt so we don't recompute "due" on
       // every tick, set lastSkippedAt so the UI's paused banner can
       // show "your cron ran but nothing happened, here's when" (#246),
       // and log once so an operator wondering "why didn't my daily
-      // run fire" has a breadcrumb in the worker-cron output.
+      // run fire" has a breadcrumb in the worker-cron output. Three
+      // missing-config classes ride the same skip branch (#229, #252):
+      // missing repo, missing dev target, missing lifecycle.
       await withTenant(s.organizationId, (tx) =>
         tx.schedule.update({
           where: { id: s.id },
@@ -75,8 +81,8 @@ async function tick() {
         }),
       );
       logger.info(
-        { projectId: s.projectId, hasRepo, hasDevTarget },
-        'skipping run.due: project paused (missing repo or dev deploy target)',
+        { projectId: s.projectId, hasRepo, hasDevTarget, hasLifecycle },
+        'skipping run.due: project not run-ready (missing repo, dev target, or lifecycle)',
       );
       continue;
     }

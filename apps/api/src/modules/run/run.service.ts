@@ -69,6 +69,21 @@ export class RunService {
         'project is paused — add a dev deploy target from Settings → Deploy targets to enable runs',
       );
     }
+    // Lifecycle precondition (#252). The orchestrator's run.due handler
+    // also bails when no lifecycle exists; rejecting at the API instead
+    // gives a clear error to the operator rather than a silent skip.
+    const hasLifecycle = await this.prisma.withTenant(t.organizationId, async (tx) => {
+      const lc = await tx.lifecycle.findFirst({
+        where: { projectId: project.id },
+        select: { id: true },
+      });
+      return lc !== null;
+    });
+    if (!hasLifecycle) {
+      throw new ValidationError(
+        'project has no lifecycle — save a mergecrew.yaml from the Lifecycle page to enable runs',
+      );
+    }
     await this.queue.get('run.due').add(
       'run.due',
       { organizationId: t.organizationId, projectId: project.id, manual: true },
