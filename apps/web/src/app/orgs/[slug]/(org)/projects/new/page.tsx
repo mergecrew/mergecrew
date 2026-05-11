@@ -50,6 +50,12 @@ export default async function NewProjectPage({ params }: { params: Promise<{ slu
           from <span className="font-mono text-zinc-600 dark:text-zinc-300">Settings → Integrations</span>.
           The project overview will walk you there.
         </p>
+        <p>
+          Without a dev deploy target the agents can still write code and open PRs,
+          but they can't ship a preview URL — digests will say{' '}
+          <em>"ready for review"</em> instead of <em>"deployed to dev"</em>. You can
+          plug one in later from the same settings page.
+        </p>
       </div>
     </main>
   );
