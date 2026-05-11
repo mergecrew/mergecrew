@@ -5,6 +5,7 @@ What to do when something looks wrong in a self-hosted Mergecrew. Each entry is 
 ## Failure modes
 
 ### Step stuck running for >10 min
+<a id="step-stuck-running"></a>
 
 **Symptom.** The run-detail page shows a step in `running` for longer than the agent's `maxStepsPerRun × maxToolCallsPerStep` budget could plausibly account for. `mergecrew_orchestrator_tick_age_seconds` may also be normal — the *orchestrator* is healthy; it's the *runner* that's stopped writing heartbeats.
 
@@ -18,6 +19,7 @@ What to do when something looks wrong in a self-hosted Mergecrew. Each entry is 
 **Source.** `apps/orchestrator/src/heartbeat-sweeper.ts`. The thresholds are `ORCHESTRATOR_HEARTBEAT_SWEEPER_INTERVAL_MS`, `ORCHESTRATOR_HEARTBEAT_STALE_AFTER_MS`, `ORCHESTRATOR_HEARTBEAT_MAX_ATTEMPTS`.
 
 ### Run terminated as `budget_exhausted`
+<a id="budget-exhausted"></a>
 
 **Symptom.** Run row reaches a terminal state with status `budget_exhausted` and the eventlog shows `AGENT_STEP_FAILED reason=org_daily_budget_exhausted`. The cost dashboard shows today's org spend at or above the configured cap.
 
@@ -32,6 +34,7 @@ What to do when something looks wrong in a self-hosted Mergecrew. Each entry is 
 **Source.** Org cap: `apps/runner/src/step.ts` (look for `checkDailyBudget`). Per-step cap: `packages/agent-runtime/src/budget.ts`.
 
 ### Deploy adapter timeout
+<a id="deploy-timeout"></a>
 
 **Symptom.** Smoke test or run-time deploy returns `{deployStatus: 'timeout'}`. The adapter actually completed the deploy correctly — Mergecrew just stopped polling.
 
@@ -45,6 +48,7 @@ What to do when something looks wrong in a self-hosted Mergecrew. Each entry is 
 **Source.** `apps/api/src/modules/project/smoke-test.service.ts`. Per-adapter `awaitCompletion`: `packages/adapters-deploy/src/{github-actions,vercel,netlify,render,railway,fly,aws-direct}.ts`.
 
 ### Agent blocked on a sensitive path (`gated_reject`)
+<a id="gated-reject"></a>
 
 **Symptom.** Step ends with `outcome.kind: 'gated_reject'` and a reason field of `sensitive_path` (or similar). The agent never wrote any code; the run-detail page shows a policy decision against a tool call.
 
@@ -58,6 +62,7 @@ What to do when something looks wrong in a self-hosted Mergecrew. Each entry is 
 **Source.** `apps/runner/src/step.ts` (look for `projectSensitivePatterns`). Policy engine: `packages/agent-runtime/src/policy.ts`.
 
 ### GitHub App can't clone the repo
+<a id="vcs-clone-failed"></a>
 
 **Symptom.** Smoke test or run fails on the very first VCS call (`cloneIntoWorkspace`) with one of: `404 Not Found`, `401 Bad credentials`, `403 Resource not accessible by integration`, or a git-side `Repository not found`.
 
@@ -76,6 +81,7 @@ What to do when something looks wrong in a self-hosted Mergecrew. Each entry is 
 **Source.** `packages/adapters-vcs/src/github.ts` (`cloneIntoWorkspace`). Installation row: `connected_repos` table.
 
 ### Prisma migrate fails on startup
+<a id="prisma-migrate-failed"></a>
 
 **Symptom.** API or migrate container exits non-zero with `P1010` (User denied access), `P3009` (failed migration in history), or `P1012` (schema validation). The compose stack never gets past the `migrate` service.
 
@@ -95,6 +101,7 @@ What to do when something looks wrong in a self-hosted Mergecrew. Each entry is 
 **Source.** `packages/db/prisma/schema.prisma` (binary targets). Role bootstrap: `infra/sql/init/00-roles.sql`. Migration history: `packages/db/prisma/migrations/`.
 
 ### BullMQ queue depth keeps growing
+<a id="queue-depth-growing"></a>
 
 **Symptom.** `mergecrew_queue_depth{queue="runner.step", state="waiting"}` (or any queue) climbs and doesn't fall back to zero. Run-detail pages stall on `queued`.
 
