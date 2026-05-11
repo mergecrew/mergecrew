@@ -47,7 +47,7 @@ async function setTelemetryAction(formData: FormData) {
 export default async function OrgSettingsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const session = await requireSession();
-  const [org, members, providers, profiles, budget, canEdit, mfaStatus, telemetry] = await Promise.all([
+  const [org, members, providers, profiles, budget, canEdit, mfaStatus, telemetry, telemetryRecent] = await Promise.all([
     api<any>(`/v1/orgs/${slug}`, { session }),
     api<{ items: any[] }>(`/v1/orgs/${slug}/members`, { session }),
     api<{ items: any[] }>(`/v1/orgs/${slug}/llm/providers`, { session }),
@@ -58,6 +58,10 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
     api<{ enabled: boolean; installId: string | null }>(`/v1/orgs/${slug}/telemetry`, { session }).catch(
       () => ({ enabled: false, installId: null }),
     ),
+    api<{ items: Array<{ type: string; occurredAt: string; installId: string; version: string }> }>(
+      `/v1/orgs/${slug}/telemetry/recent`,
+      { session },
+    ).catch(() => ({ items: [] })),
   ]);
   // MFA is recommended for admin/owner accounts but not enforced (see
   // RoleGuard). Surface a passive nudge for admins who haven't enrolled.
@@ -368,10 +372,39 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
           </p>
         )}
         <p className="mt-2 text-xs text-zinc-500">
-          Note: no outbound transport is wired yet. Opting in records the preference and generates an
-          install id; actual event emission lands in a follow-up PR once the receiving endpoint is
-          chosen. You can audit exactly what would be sent in the schema doc above.
+          Set <code>MERGECREW_TELEMETRY_URL</code> on the API + orchestrator processes to point at
+          your own receiver. With it empty (the default), no outbound HTTP is made regardless of
+          this toggle. The reference receiver under{' '}
+          <code>infra/telemetry/</code> is one option.
         </p>
+        {telemetry.enabled && telemetryRecent.items.length > 0 && (
+          <div className="mt-4">
+            <div className="text-xs uppercase tracking-wide text-zinc-500">
+              Recent events (this API process, last 10)
+            </div>
+            <ul className="mt-2 divide-y divide-zinc-200 dark:divide-zinc-800">
+              {telemetryRecent.items.map((ev, i) => (
+                <li key={`${ev.occurredAt}-${i}`} className="py-1.5 text-xs">
+                  <span className="font-mono text-zinc-500">
+                    {new Date(ev.occurredAt).toLocaleTimeString()}
+                  </span>{' '}
+                  <span className="font-mono">{ev.type}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-zinc-500">
+              Orchestrator-emitted events (e.g. <code>run.completed</code> on success) do not appear
+              here — the audit buffer is per-process. See <code>infra/telemetry/</code> output for
+              the full stream.
+            </p>
+          </div>
+        )}
+        {telemetry.enabled && telemetryRecent.items.length === 0 && (
+          <p className="mt-3 text-xs text-zinc-500">
+            No telemetry events recorded since the API process started. Trigger an action (create a
+            project, connect a repo, …) and refresh this page.
+          </p>
+        )}
         {canEdit ? (
           <form action={setTelemetryAction} className="mt-4 flex items-center gap-2">
             <input type="hidden" name="slug" value={slug} />

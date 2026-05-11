@@ -163,7 +163,7 @@
     },
     "/v1/orgs/{slug}/telemetry": {
       "get": {
-        "operationId": "OrgController_telemetry",
+        "operationId": "OrgController_telemetrySettings",
         "parameters": [],
         "responses": {
           "200": {
@@ -176,6 +176,20 @@
       },
       "patch": {
         "operationId": "OrgController_updateTelemetry",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/telemetry/recent": {
+      "get": {
+        "operationId": "OrgController_telemetryRecent",
         "parameters": [],
         "responses": {
           "200": {
