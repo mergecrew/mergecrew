@@ -84,7 +84,11 @@ docs/                  Spec set (read this first)
 
 ## Quick start
 
-Two paths, pick whichever fits.
+Two paths, pick whichever fits. New here? Pair either path with the
+[**mergecrew-sample-app**](https://github.com/mergecrew/mergecrew-sample-app)
+— a tiny Next.js app with one deliberate bug, designed to be connected to a
+fresh Mergecrew install so you can watch the full agent loop fix it and ship
+a Vercel preview, without touching your own codebase.
 
 ### One command (trial, all-in-Docker)
 

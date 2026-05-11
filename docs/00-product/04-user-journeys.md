@@ -4,6 +4,8 @@ End-to-end flows for the personas. Each journey lists the actor, the steps, and 
 
 > Some journeys describe target UX that isn't fully implemented yet; check `05-features.md` for current implementation status.
 
+> First time trying Mergecrew? The [**mergecrew-sample-app**](https://github.com/mergecrew/mergecrew-sample-app) repo is a tiny Next.js app with one deliberate bug and a pre-configured `mergecrew.yaml` and Vercel deploy workflow. Forking it lets you walk through J1 end-to-end in under 10 minutes against a throwaway codebase before pointing Mergecrew at anything real.
+
 ## J1 — First-run onboarding (Theo, day zero)
 
 1. Theo signs up with GitHub OAuth. Org is auto-created from his GitHub username; he can rename it.
