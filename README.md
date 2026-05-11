@@ -90,6 +90,13 @@ Two paths, pick whichever fits. New here? Pair either path with the
 fresh Mergecrew install so you can watch the full agent loop fix it and ship
 a Vercel preview, without touching your own codebase.
 
+Pointing Mergecrew at your own repo? Read the
+[**deploy-target cookbook**](docs/03-infrastructure/06-deploy-targets-cookbook.md)
+first — it has copy-paste configs for the common shapes (Vercel preview,
+Netlify, push-triggered ECS Fargate with manual prod gate, raw AWS SDK,
+Fly/Render/Railway) so you don't have to assemble one from the adapter
+source.
+
 ### One command (trial, all-in-Docker)
 
 If you just want to **see Mergecrew running**, the fastest path is the bundled compose stack — Postgres, Redis, API, orchestrator, runner, worker-cron, and web all start together. Migrations apply on boot and a `demo` org + user are seeded so the web UI is usable immediately.

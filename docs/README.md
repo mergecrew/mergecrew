@@ -35,6 +35,7 @@ Documentation for contributors and operators of [Mergecrew](https://github.com/m
 2. [Credit & rate-limit handling](03-infrastructure/03-credit-and-rate-handling.md)
 3. [Observability](03-infrastructure/04-observability.md)
 4. [Operator runbook](03-infrastructure/05-operator-runbook.md)
+5. [Deploy-target cookbook](03-infrastructure/06-deploy-targets-cookbook.md)
 
 ### 4 — Roadmap
 - [Vision-tier roadmap](04-roadmap.md). Tactical milestones live in [GitHub Issues](https://github.com/mergecrew/mergecrew/issues) and the [project board](https://github.com/orgs/mergecrew/projects).
