@@ -333,6 +333,9 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      cron-parser:
+        specifier: ^4.9.0
+        version: 4.9.0
       lucide-react:
         specifier: ^0.452.0
         version: 0.452.0(react@19.2.6)
