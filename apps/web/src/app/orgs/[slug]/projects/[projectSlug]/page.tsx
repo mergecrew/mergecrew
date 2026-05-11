@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { Card, LinkButton, StatusDot, Chip } from '@/components/ui';
+import { OnboardingChecklist } from '@/components/onboarding-checklist';
 import { relativeTime, runStatusToDot } from '@/lib/format';
 
 type Project = {
@@ -84,19 +85,25 @@ export default async function ProjectOverview({
 
   const hasRepo = Boolean(project.connectedRepo);
   const hasDevTarget = (project.deployTargets ?? []).some((d) => d.kind === 'dev');
+  const hasCompletedRun = runs.some((r) => r.status === 'done');
   const isPaused = !hasRepo || !hasDevTarget;
-  const settingsHref = `/orgs/${slug}/projects/${projectSlug}/settings`;
 
   return (
     <main className="mx-auto max-w-5xl space-y-8 p-6">
-      {isPaused && (
-        <PausedBanner
-          hasRepo={hasRepo}
-          hasDevTarget={hasDevTarget}
-          settingsHref={settingsHref}
-          lastSkippedAt={schedule?.lastSkippedAt ?? null}
-        />
-      )}
+      <OnboardingChecklist
+        orgSlug={slug}
+        projectSlug={projectSlug}
+        hasRepo={hasRepo}
+        hasDevTarget={hasDevTarget}
+        // Project creation seeds a v1 lifecycle and the GET endpoint
+        // lazy-creates one too, so once the project exists this is
+        // effectively always true (#252 closes the silent-skip path
+        // for the theoretical "manually-deleted row" case).
+        hasLifecycle={true}
+        hasCompletedRun={hasCompletedRun}
+        lastSkippedAt={schedule?.lastSkippedAt ?? null}
+      />
+
 
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
@@ -368,45 +375,6 @@ function RunNowForm({
         </p>
       )}
     </form>
-  );
-}
-
-function PausedBanner({
-  hasRepo,
-  hasDevTarget,
-  settingsHref,
-  lastSkippedAt,
-}: {
-  hasRepo: boolean;
-  hasDevTarget: boolean;
-  settingsHref: string;
-  lastSkippedAt: string | null;
-}) {
-  const missing: string[] = [];
-  if (!hasRepo) missing.push('a connected GitHub repository');
-  if (!hasDevTarget) missing.push('a dev deploy target');
-  return (
-    <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-700/40 dark:bg-amber-950/30 dark:text-amber-100">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="font-medium">Project paused</div>
-          <div className="mt-0.5">
-            Scheduled and on-demand runs are disabled until you configure {missing.join(' and ')}.
-          </div>
-          {lastSkippedAt && (
-            <div className="mt-0.5 text-xs text-amber-800/80 dark:text-amber-200/70">
-              Scheduler last skipped this project {relativeTime(lastSkippedAt)}.
-            </div>
-          )}
-        </div>
-        <Link
-          href={settingsHref}
-          className="inline-flex shrink-0 items-center justify-center rounded-md bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700"
-        >
-          Open Settings
-        </Link>
-      </div>
-    </div>
   );
 }
 
