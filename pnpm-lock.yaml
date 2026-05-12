@@ -202,6 +202,9 @@ importers:
 
   apps/eval-runner:
     dependencies:
+      '@langchain/core':
+        specifier: ^1.1.45
+        version: 1.1.45(@opentelemetry/api@1.9.1)(openai@6.37.0(zod@4.4.3))
       '@mergecrew/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -8480,6 +8483,14 @@ snapshots:
       chai: 5.3.3
       tinyrainbow: 1.2.0
 
+  '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@25.6.2)(terser@5.47.1))':
+    dependencies:
+      '@vitest/spy': 2.1.9
+      estree-walker: 3.0.3
+      magic-string: 0.30.21
+    optionalDependencies:
+      vite: 5.4.21(@types/node@25.6.2)(terser@5.47.1)
+
   '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@25.7.0)(terser@5.47.1))':
     dependencies:
       '@vitest/spy': 2.1.9
@@ -11530,7 +11541,7 @@ snapshots:
   vitest@2.1.9(@types/node@25.6.2)(terser@5.47.1):
     dependencies:
       '@vitest/expect': 2.1.9
-      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@25.7.0)(terser@5.47.1))
+      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@25.6.2)(terser@5.47.1))
       '@vitest/pretty-format': 2.1.9
       '@vitest/runner': 2.1.9
       '@vitest/snapshot': 2.1.9

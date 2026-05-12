@@ -67,20 +67,23 @@ trap teardown EXIT INT TERM
 echo "[e2e-local] starting compose stack (this builds images on first run)…"
 docker compose -f "$COMPOSE_FILE" up -d
 
-echo "[e2e-local] waiting up to ${WAIT_TIMEOUT}s for API /healthz to report ok…"
+echo "[e2e-local] waiting up to ${WAIT_TIMEOUT}s for API /readyz to report ok…"
+# /healthz is now liveness-only ({ ok: true }); /readyz is the
+# downstream-deps check that actually reflects whether the API can
+# serve requests (#317).
 deadline=$(( $(date +%s) + WAIT_TIMEOUT ))
 while :; do
-  if curl -sf "$API_URL/healthz" 2>/dev/null | grep -q '"status":"ok"'; then
+  if curl -sf "$API_URL/readyz" 2>/dev/null | grep -q '"status":"ok"'; then
     break
   fi
   if [ "$(date +%s)" -gt "$deadline" ]; then
-    echo "[e2e-local] FAIL: API never became healthy. Recent api logs:"
+    echo "[e2e-local] FAIL: API never became ready. Recent api logs:"
     docker compose -f "$COMPOSE_FILE" logs --tail=80 api || true
     exit 1
   fi
   sleep 2
 done
-echo "[e2e-local] API is healthy."
+echo "[e2e-local] API is ready."
 
 echo "[e2e-local] invoking apps/e2e-loop…"
 export MERGECREW_API_URL="$API_URL"

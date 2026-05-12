@@ -1,0 +1,105 @@
+name: Compose smoke
+
+# End-to-end smoke against the compose stack (#320). Builds every
+# service image locally, brings up docker-compose.full.yml, waits for
+# the API to report ready, runs apps/e2e-loop with the stub agent path,
+# tears down. The point isn't to validate agent quality (the eval
+# harness owns that) — it's to catch the cases where compose.yml, an
+# env var name, a port, or a Dockerfile drifted apart from the app code
+# and the stack no longer wires together.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docker-compose*.yml'
+      - 'infra/docker/**'
+      - 'infra/sql/**'
+      - 'apps/**'
+      - 'packages/**'
+      - 'scripts/e2e-local.sh'
+      - '.github/workflows/compose-smoke.yml'
+  schedule:
+    # Nightly at 04:00 UTC — catches Dockerfile base-image drift and
+    # transitive npm install drift that PR-path filters wouldn't see.
+    - cron: '0 4 * * *'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile=false
+      - name: Free up runner disk
+        # docker compose build for five mergecrew images + base layers
+        # routinely needs ~6GB. GitHub-hosted ubuntu runners ship with
+        # plenty of free disk by default; this is a guardrail for the
+        # case where Microsoft preloads heavier tooling.
+        run: |
+          df -h
+          docker image prune -af || true
+          df -h
+      - name: docker compose up (build + start)
+        env:
+          MERGECREW_AGENT_STUB: '1'
+        run: |
+          # Mint a per-run API key so the seed inserts a working
+          # operator-role row. Same pattern as scripts/e2e-local.sh.
+          rand=$(head -c 32 /dev/urandom | base64 | tr -d '+/=\n' | head -c 32)
+          echo "MERGECREW_E2E_LOCAL_API_KEY=mc_live_${rand}" >> "$GITHUB_ENV"
+          export MERGECREW_E2E_LOCAL_API_KEY="mc_live_${rand}"
+          docker compose -f docker-compose.full.yml up -d --build
+      - name: Wait for API /readyz
+        run: |
+          deadline=$(( $(date +%s) + 180 ))
+          while :; do
+            if curl -sf http://localhost:4000/readyz 2>/dev/null | grep -q '"status":"ok"'; then
+              echo "API is ready."
+              break
+            fi
+            if [ "$(date +%s)" -gt "$deadline" ]; then
+              echo "::error::API never became ready"
+              docker compose -f docker-compose.full.yml ps
+              docker compose -f docker-compose.full.yml logs --tail=120 api migrate seed
+              exit 1
+            fi
+            sleep 3
+          done
+      - name: Run e2e-loop against compose
+        env:
+          MERGECREW_API_URL: http://localhost:4000
+          MERGECREW_ORG_SLUG: demo
+          MERGECREW_PROJECT_SLUG: acme
+          MERGECREW_RUN_TIMEOUT_MS: '90000'
+        run: |
+          export MERGECREW_API_KEY="$MERGECREW_E2E_LOCAL_API_KEY"
+          pnpm --filter @mergecrew/e2e-loop e2e
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          echo "::group::api"
+          docker compose -f docker-compose.full.yml logs --tail=200 api || true
+          echo "::endgroup::"
+          echo "::group::orchestrator"
+          docker compose -f docker-compose.full.yml logs --tail=200 orchestrator || true
+          echo "::endgroup::"
+          echo "::group::runner"
+          docker compose -f docker-compose.full.yml logs --tail=200 runner || true
+          echo "::endgroup::"
+          echo "::group::worker-cron"
+          docker compose -f docker-compose.full.yml logs --tail=200 worker-cron || true
+          echo "::endgroup::"
+          echo "::group::web"
+          docker compose -f docker-compose.full.yml logs --tail=200 web || true
+          echo "::endgroup::"
+      - name: docker compose down
+        if: always()
+        run: docker compose -f docker-compose.full.yml down -v || true
