@@ -8,7 +8,12 @@ import { Card, LinkButton } from '@/components/ui';
 import { InlineLlmStep } from '@/components/onboarding-inline-llm';
 
 interface OnboardingStep {
-  key: 'llm_provider' | 'first_project' | 'connected_repo' | 'deploy_target';
+  key:
+    | 'llm_provider'
+    | 'first_project'
+    | 'connected_repo'
+    | 'deploy_target'
+    | 'lifecycle_template';
   label: string;
   status: 'complete' | 'pending';
   actionUrl: string;
@@ -30,6 +35,8 @@ const STEP_HELP: Record<OnboardingStep['key'], string> = {
     'Mergecrew opens its PRs here. The bundled GitHub adapter handles app install + repo selection; pick "local" for a synthetic walkthrough.',
   deploy_target:
     'The dev target is where the agent\'s changesets get deployed for human review before prod. Use `local-noop` if you just want to see the loop and skip real deploys.',
+  lifecycle_template:
+    'Pick a stock Planner/Coder/Reviewer setup tuned for your stack (Next.js, Python, Go, or generic). One click installs it as your project lifecycle — you can still edit the YAML after.',
 };
 
 async function addLlmProviderAction(formData: FormData) {
