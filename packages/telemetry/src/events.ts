@@ -18,7 +18,8 @@ export type TelemetryEvent =
   | IntegrationConnectedEvent
   | RunCompletedEvent
   | WizardBailedEvent
-  | OrgCapHitEvent;
+  | OrgCapHitEvent
+  | InstallPingEvent;
 
 interface BaseEvent {
   /** Per-install random UUID — the only identifier on the payload. */
@@ -91,4 +92,30 @@ export interface OrgCapHitEvent extends BaseEvent {
   spentUsdBucket: number;
   /** The cap value at the time of the hit, also bucketed to \$10. */
   capUsdBucket: number;
+}
+
+/**
+ * Daily install heartbeat (#322). Fires at most once per UTC day from
+ * worker-cron when at least one org has `telemetryEnabled=true`. The
+ * point is to give the project a signal on adoption — installs are
+ * reality, stars are vanity — without identifying any specific operator.
+ *
+ * The payload counts orgs/projects in aggregate; it does NOT list them.
+ * Bucketing on counts (e.g. 1, 2-5, 6-25, 26+) would be even safer but
+ * is deferred — at the scales we expect for v1, raw counts under 100
+ * carry no realistic risk of de-anonymisation.
+ */
+export interface InstallPingEvent extends BaseEvent {
+  type: 'install.ping';
+  /**
+   * Which deploy shape the install runs as. Best-effort heuristic from
+   * worker-cron's process env.
+   */
+  deployKind: 'compose' | 'kubernetes' | 'unknown';
+  /** Total number of orgs in the install. Cheap aggregate, no slugs. */
+  orgCount: number;
+  /** Total number of projects across all orgs. */
+  projectCount: number;
+  /** Number of orgs that have nightly evals enabled (#303). */
+  evalsEnabledOrgCount: number;
 }

@@ -9,6 +9,7 @@ import { isSkipped, dateInTz } from './skip.js';
 import { auditRetentionTick } from './audit-retention-tick.js';
 import { stuckRunWatchdog } from './stuck-run-watchdog.js';
 import { evalTick } from './eval-tick.js';
+import { installPingTick } from './install-ping-tick.js';
 import { startProbeServer } from './probe-server.js';
 
 const logger = pino({
@@ -158,6 +159,9 @@ setInterval(() => {
   evalTick({ logger }).catch((err) =>
     logger.error({ err: String(err?.message ?? err) }, 'eval-tick failed'),
   );
+  installPingTick({ logger }).catch((err) =>
+    logger.error({ err: String(err?.message ?? err) }, 'install-ping-tick failed'),
+  );
   maybeRunRetention();
 }, TICK_MS);
 // First tick at startup
@@ -170,5 +174,8 @@ stuckRunWatchdog({ eventlog, logger }).catch((err) =>
 );
 evalTick({ logger }).catch((err) =>
   logger.error({ err: String(err?.message ?? err) }, 'initial eval-tick failed'),
+);
+installPingTick({ logger }).catch((err) =>
+  logger.error({ err: String(err?.message ?? err) }, 'initial install-ping-tick failed'),
 );
 maybeRunRetention();
