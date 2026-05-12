@@ -56,6 +56,22 @@ export const AgentDefinition = z.object({
       usd: z.number().positive().optional(),
     })
     .optional(),
+  /**
+   * Cumulative cap on this agent kind's spend across one workflow run
+   * (#351). For multi-agent careful graphs with a reviewer loop-back,
+   * a single kind can run multiple times — `budget` caps each step,
+   * `runBudget` caps the kind's *total* across the run. The runner
+   * loads prior model-turn spend by kind and clamps the next step's
+   * effective budget to the lesser of (per-step budget, run-budget
+   * minus prior spend). A kind that's already at or over its
+   * runBudget never gets to run.
+   */
+  runBudget: z
+    .object({
+      tokens: z.number().int().positive().optional(),
+      usd: z.number().positive().optional(),
+    })
+    .optional(),
 });
 export type AgentDefinition = z.infer<typeof AgentDefinition>;
 
