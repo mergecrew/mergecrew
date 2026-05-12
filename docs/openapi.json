@@ -1814,6 +1814,34 @@
           "Health"
         ]
       }
+    },
+    "/v1/orgs/{slug}/evals": {
+      "get": {
+        "operationId": "EvalController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Eval"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/evals/{runId}": {
+      "get": {
+        "operationId": "EvalController_detail",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Eval"
+        ]
+      }
     }
   },
   "info": {

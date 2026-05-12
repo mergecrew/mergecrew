@@ -21,6 +21,7 @@ import { ApiKeyModule } from './modules/api-key/api-key.module.js';
 import { OutboundWebhookModule } from './modules/outbound-webhook/outbound-webhook.module.js';
 import { MagicLinkModule } from './modules/magic-link/magic-link.module.js';
 import { HealthModule } from './modules/health/health.module.js';
+import { EvalModule } from './modules/eval/eval.module.js';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { HealthModule } from './modules/health/health.module.js';
     OutboundWebhookModule,
     MagicLinkModule,
     HealthModule,
+    EvalModule,
   ],
 })
 export class AppModule implements NestModule {
