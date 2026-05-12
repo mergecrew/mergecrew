@@ -65,6 +65,30 @@ export async function applyOrgTemplateAction(
 }
 
 /**
+ * Apply a stock lifecycle template (#394, V2.ai). Fetches the template's
+ * source YAML from the public catalog endpoint (#393) and pipes it
+ * through the same project-lifecycle YAML PUT used by manual edits —
+ * one validation path, one versioning path. Each apply creates a new
+ * lifecycle snapshot, so prior versions remain retrievable.
+ */
+export async function applyStockTemplateAction(
+  scope: Extract<LifecycleScope, { kind: 'project' }>,
+  templateId: string,
+) {
+  const session = await requireSession();
+  const tpl = await api<{ id: string; sourceYaml: string }>(
+    `/v1/lifecycle-templates/stock/${encodeURIComponent(templateId)}`,
+    { session },
+  );
+  await api(`/v1/orgs/${scope.orgSlug}/projects/${scope.projectSlug}/lifecycle`, {
+    method: 'PUT',
+    session,
+    body: JSON.stringify({ yaml: tpl.sourceYaml }),
+  });
+  revalidatePath(lifecycleRevalidatePath(scope));
+}
+
+/**
  * Persist node positions for the graph view (V2.1 phase 2, #195).
  * Project-scope only — org-scope templates have no graph view yet.
  * Skips revalidatePath: the graph layout is decoration on top of the
