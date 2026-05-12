@@ -5,6 +5,7 @@ import {
   buildDigestEmail,
   type DigestChangeset,
 } from '@mergecrew/adapters-comms';
+import { collectDigestAnomalies } from './digest-anomalies.js';
 
 const ACTIVE_STATUSES = ['testing', 'tests_failed', 'pr_open', 'dev_deployed'] as const;
 
@@ -72,11 +73,30 @@ export async function dispatchEmailDigest(args: {
     return;
   }
 
+  // V2.aa Guardrails anomaly highlights (#288). Detector errors are
+  // swallowed inside collectDigestAnomalies so a bad query never blocks
+  // the digest from sending.
+  const anomalies = await collectDigestAnomalies({
+    organizationId,
+    projectId,
+    orgSlug: project.organization.slug,
+    projectSlug: project.slug,
+    eod,
+    webBaseUrl,
+  }).catch((err) => {
+    logger.warn(
+      { err: (err as Error)?.message ?? String(err), projectId },
+      'digest.email: anomaly collection failed; rendering without highlights',
+    );
+    return [];
+  });
+
   const { subject, html } = buildDigestEmail({
     orgSlug: project.organization.slug,
     orgName: project.organization.name,
     project: { slug: project.slug, name: project.name },
     changesets,
+    anomalies,
     eod,
     webBaseUrl,
   });

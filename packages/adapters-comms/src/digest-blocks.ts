@@ -21,6 +21,57 @@ export interface DigestProject {
   name: string;
 }
 
+/**
+ * Anomaly highlight surfaced at the top of the daily digest (#288).
+ * Five kinds covering the V2.aa guardrails:
+ *   - cost_spike: today's LLM spend was > 2× the trailing-7-day daily avg
+ *   - blocked_changeset: a changeset was rejected by the blast-radius gate
+ *   - risk_gate_hit: a changeset landed in the inbox via the risk-score gate
+ *   - rollback: an admin rolled back a merged changeset
+ *   - file_spike: a single changeset touched >2× the trailing-30-day median
+ *
+ * `link` is a deep link the email + slack renderers wrap appropriately
+ * (`mailto:` for email digests, `<url|text>` for slack mrkdwn).
+ */
+export type DigestAnomaly =
+  | {
+      kind: 'cost_spike';
+      todayUsd: number;
+      avgUsd: number;
+      multiplier: number;
+      link: string;
+    }
+  | {
+      kind: 'blocked_changeset';
+      changesetId: string;
+      title: string;
+      reason: string;
+      link: string;
+    }
+  | {
+      kind: 'risk_gate_hit';
+      changesetId: string;
+      title: string;
+      score: number;
+      threshold: number;
+      link: string;
+    }
+  | {
+      kind: 'rollback';
+      changesetId: string;
+      title: string;
+      revertPrNumber: number;
+      link: string;
+    }
+  | {
+      kind: 'file_spike';
+      changesetId: string;
+      title: string;
+      filesChanged: number;
+      medianFiles: number;
+      link: string;
+    };
+
 export type DigestAction = 'promote' | 'rollback' | 'defer';
 
 export function buildDigestBlocks(args: {
