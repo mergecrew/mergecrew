@@ -20,6 +20,8 @@ on:
       - 'apps/**'
       - 'packages/**'
       - 'scripts/e2e-local.sh'
+      - 'scripts/quickstart-smoke.sh'
+      - 'scripts/quickstart-demo-run-smoke.sh'
       - '.github/workflows/compose-smoke.yml'
   schedule:
     # Nightly at 04:00 UTC — catches Dockerfile base-image drift and
