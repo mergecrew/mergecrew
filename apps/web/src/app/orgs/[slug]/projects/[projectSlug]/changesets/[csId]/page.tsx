@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
+import { hasRole } from '@/lib/role';
 import { Card, Chip } from '@/components/ui';
+import { RollbackButton } from './rollback-button';
 
 interface BlastRadiusReason {
   kind: 'blast_radius';
@@ -62,6 +64,8 @@ export default async function ChangesetDetail({
   const { slug, projectSlug, csId } = await params;
   const session = await requireSession();
   const cs = await api<any>(`/v1/orgs/${slug}/projects/${projectSlug}/changesets/${csId}`, { session });
+  const isAdmin = await hasRole(slug, session, 'admin');
+  const canRollback = isAdmin && cs.status === 'promoted' && cs.prNumber && !cs.revertPrNumber;
   return (
     <main className="mx-auto max-w-3xl p-6 space-y-4">
       <header className="flex items-baseline justify-between gap-3">
@@ -74,15 +78,33 @@ export default async function ChangesetDetail({
             {cs.isDryRun && <Chip kind="medium">DRY RUN</Chip>}
           </p>
         </div>
-        {cs.prNumber && (
-          <Link
-            href={`/orgs/${slug}/projects/${projectSlug}/changesets/${csId}/diff`}
-            className="rounded border px-3 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800"
-          >
-            View diff
-          </Link>
-        )}
+        <div className="flex gap-2">
+          {canRollback && (
+            <RollbackButton slug={slug} projectSlug={projectSlug} csId={csId} />
+          )}
+          {cs.prNumber && (
+            <Link
+              href={`/orgs/${slug}/projects/${projectSlug}/changesets/${csId}/diff`}
+              className="rounded border px-3 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800"
+            >
+              View diff
+            </Link>
+          )}
+        </div>
       </header>
+      {cs.revertPrNumber && cs.revertPrUrl && (
+        <div className="rounded border border-zinc-300 bg-zinc-50 p-3 text-sm dark:border-zinc-700 dark:bg-zinc-900/60">
+          <strong>Rolled back via revert PR.</strong>{' '}
+          <a
+            href={cs.revertPrUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="underline decoration-dotted hover:text-zinc-700 dark:hover:text-zinc-300"
+          >
+            #{cs.revertPrNumber} →
+          </a>
+        </div>
+      )}
       {cs.isDryRun && (
         <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700/40 dark:bg-amber-950/30 dark:text-amber-200">
           <strong>This changeset was produced in dry-run mode.</strong> The agent ran, generated the
