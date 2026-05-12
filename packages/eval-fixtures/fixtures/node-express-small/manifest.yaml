@@ -1,0 +1,12 @@
+id: node-express-small
+description: Express server crashes on /healthz — the handler is missing a return statement.
+intent: |
+  Fix the /healthz handler so it responds 200 with body {ok: true}.
+  Don't touch other routes.
+language: typescript
+runtime: node
+expectedFiles:
+  - src/routes/health.ts
+tolerances:
+  ignoreLocalRenames: true
+  ignoreWhitespaceOnly: true

@@ -1,0 +1,12 @@
+id: monorepo-pnpm
+description: pnpm workspace with two packages; the `web` package depends on a buggy export from `core`.
+intent: |
+  Fix the `formatPrice` export in packages/core/src/format.ts so it returns "$1.50" for 150 (cents).
+  Don't touch packages/web — the test in packages/core/test/format.test.ts is the spec.
+language: typescript
+runtime: node
+expectedFiles:
+  - packages/core/src/format.ts
+tolerances:
+  ignoreLocalRenames: true
+  ignoreWhitespaceOnly: true

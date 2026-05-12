@@ -600,6 +600,22 @@ importers:
         specifier: ^2.1.1
         version: 2.1.9(@types/node@25.6.2)(terser@5.47.1)
 
+  packages/eval-fixtures:
+    dependencies:
+      yaml:
+        specifier: ^2.6.0
+        version: 2.8.4
+    devDependencies:
+      '@types/node':
+        specifier: ^25.6.2
+        version: 25.6.2
+      typescript:
+        specifier: ^5.6.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.1
+        version: 2.1.9(@types/node@25.6.2)(terser@5.47.1)
+
   packages/eventlog:
     dependencies:
       '@mergecrew/db':

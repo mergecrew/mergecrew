@@ -1,0 +1,47 @@
+--- a/expires.go
++++ b/expires.go
+@@ -1,8 +1,16 @@
+ package expires
+
+ import "time"
+
+-// ComputeExpiresIn returns the seconds remaining until the given expiry.
+-// BUG: uses time.Now() directly — tests can't pin the clock.
+-func ComputeExpiresIn(expiry time.Time) int64 {
+-	return int64(expiry.Sub(time.Now()).Seconds())
++// Clock is the minimal time source ComputeExpiresIn needs. Tests pass a fake.
++type Clock func() time.Time
++
++// DefaultClock returns time.Now().
++var DefaultClock Clock = time.Now
++
++// ComputeExpiresIn returns the seconds remaining until the given expiry,
++// computed against the package's DefaultClock so callers stay unchanged.
++func ComputeExpiresIn(expiry time.Time) int64 {
++	return computeExpiresInWith(expiry, DefaultClock)
++}
++
++func computeExpiresInWith(expiry time.Time, now Clock) int64 {
++	return int64(expiry.Sub(now()).Seconds())
+ }
+--- a/expires_test.go
++++ b/expires_test.go
+@@ -1,12 +1,13 @@
+ package expires
+
+ import (
+ 	"testing"
+ 	"time"
+ )
+
+ func TestComputeExpiresIn(t *testing.T) {
+-	// FLAKY: time.Now() resolves at call time, so the deadline drifts.
+-	deadline := time.Now().Add(60 * time.Second)
+-	got := ComputeExpiresIn(deadline)
++	pinned := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
++	deadline := pinned.Add(60 * time.Second)
++	got := computeExpiresInWith(deadline, func() time.Time { return pinned })
+ 	if got != 60 {
+ 		t.Fatalf("got %d, want 60", got)
+ 	}
+ }

@@ -1,0 +1,12 @@
+id: python-flask-small
+description: Flask app is missing a /users/<id> handler the tests reference.
+intent: |
+  Add a GET /users/<int:id> endpoint that returns {id, name} for users in the in-memory store.
+  Return 404 if the id doesn't exist.
+language: python
+runtime: python3
+expectedFiles:
+  - app.py
+tolerances:
+  ignoreLocalRenames: true
+  ignoreWhitespaceOnly: true

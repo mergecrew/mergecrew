@@ -1,0 +1,13 @@
+id: go-stdlib-small
+description: Go service has a flaky timing-dependent test using time.Now() comparisons.
+intent: |
+  Make TestComputeExpiresIn deterministic by injecting a clock instead of calling time.Now() directly.
+  Don't change the function's existing callers' behavior.
+language: go
+runtime: go1.22
+expectedFiles:
+  - expires.go
+  - expires_test.go
+tolerances:
+  ignoreLocalRenames: true
+  ignoreWhitespaceOnly: true
