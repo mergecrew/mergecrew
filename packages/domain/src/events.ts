@@ -36,6 +36,8 @@ export const TimelineEventType = z.enum([
   // markdown plan; the coder consumes it. REVIEW_APPROVED /
   // REVIEW_CHANGES_REQUESTED gate the changeset before PR open.
   'PLAN_PROPOSED',
+  'REVIEW_APPROVED',
+  'REVIEW_CHANGES_REQUESTED',
   // gate
   'GATE_REACHED',
   'HUMAN_APPROVED',

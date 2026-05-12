@@ -54,7 +54,9 @@ import {
   PolicyEngine,
   PLANNER_AGENT_KIND,
   CODER_AGENT_KIND,
+  REVIEWER_AGENT_KIND,
   parsePlanPaths,
+  parseReviewerVerdict,
 } from '@mergecrew/agent-runtime';
 import { transcriptStoreFromEnv } from '@mergecrew/transcript-store';
 import type { CancellationCoordinator } from './cancellation.js';
@@ -596,8 +598,8 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   // step finishes, we compare the file paths touched by any changesets
   // produced in this run against the planner's "Files to touch" list.
   // Out-of-scope paths emit an AGENT_DECISION event so the reviewer
-  // agent in #334 can route to a synthetic 'request_changes' verdict.
-  // This PR only emits the signal; #334 wires the loop-back.
+  // agent (this issue) can pick it up via synthesizeAgentInput's
+  // outOfScopeHints field.
   if (agentDef.kind === CODER_AGENT_KIND && outcome.kind === 'completed') {
     await emitOutOfScopeIfAny({
       organizationId,
@@ -607,6 +609,39 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
       stepId,
       agentKind: agentDef.kind,
       eventlog,
+    });
+  }
+
+  // Reviewer agents (#334) emit REVIEW_APPROVED or
+  // REVIEW_CHANGES_REQUESTED based on parsing the structured verdict
+  // out of the agent's final text message. Malformed output is
+  // treated as request_changes so a parser failure can't accidentally
+  // approve a bad diff. The graph wiring that consumes these events
+  // to drive the planner → coder → reviewer loop lives in #336.
+  if (
+    agentDef.kind === REVIEWER_AGENT_KIND &&
+    outcome.kind === 'completed' &&
+    typeof outcome.output === 'string'
+  ) {
+    const parsed = parseReviewerVerdict(outcome.output);
+    const verdict = parsed?.verdict ?? 'request_changes';
+    const reasoning = parsed?.reasoning ?? 'reviewer output did not match the expected verdict shape';
+    const requestedChanges = parsed?.requestedChanges ?? [];
+    await withTenant(organizationId, (tx) =>
+      tx.agentStep.update({
+        where: { id: stepId },
+        data: { output: { verdict, reasoning, requestedChanges } as any },
+      }),
+    );
+    await eventlog.emit({
+      organizationId,
+      projectId,
+      dailyRunId: runId,
+      workflowRunId,
+      agentStepId: stepId,
+      type: verdict === 'approve' ? 'REVIEW_APPROVED' : 'REVIEW_CHANGES_REQUESTED',
+      actor: { kind: 'agent', id: stepId, agentKind: agentDef.kind },
+      payload: { reasoning, requestedChanges },
     });
   }
 
@@ -1522,6 +1557,76 @@ async function synthesizeAgentInput(
   agentDef: { kind: string },
   _cfg: MergecrewConfig,
 ): Promise<unknown> {
+  // Reviewer agents (#334) consume the planner's plan AND the coder's
+  // changeset to produce a structured verdict. If the runner already
+  // detected an out-of-scope edit (#333 emit), include that signal in
+  // the input so the LLM doesn't have to re-derive it — the prompt is
+  // primed toward request_changes when it's there.
+  if (agentDef.kind === REVIEWER_AGENT_KIND) {
+    const planStep = await withTenant(organizationId, (tx) =>
+      tx.agentStep.findFirst({
+        where: {
+          workflowRun: { dailyRunId: runId },
+          agentKind: PLANNER_AGENT_KIND,
+          status: 'completed',
+          output: { not: undefined },
+        },
+        orderBy: { finishedAt: 'desc' },
+        select: { output: true },
+      }),
+    );
+    const planMarkdown =
+      (planStep?.output as { planMarkdown?: string } | null)?.planMarkdown ?? null;
+
+    // Most recent changeset produced in this run. The reviewer fetches
+    // the actual diff via its read-only repo skills (the changeset row
+    // doesn't store the diff text — it lives in git). We hand over
+    // the changeset id, title, and the file paths from the risk-score
+    // breakdown so the reviewer has structured context to start from.
+    const cs = await withTenant(organizationId, (tx) =>
+      tx.changeset.findFirst({
+        where: { projectId, dailyRunId: runId },
+        orderBy: { updatedAt: 'desc' },
+        select: { id: true, title: true, branch: true, riskScoreBreakdown: true },
+      }),
+    );
+
+    // Hint signal from #333. The reviewer can fast-path to
+    // request_changes when this is non-empty.
+    const outOfScopeEvents = await withTenant(organizationId, (tx) =>
+      tx.timelineEvent.findMany({
+        where: {
+          projectId,
+          dailyRunId: runId,
+          type: 'AGENT_DECISION',
+        },
+        orderBy: { occurredAt: 'desc' },
+        take: 5,
+        select: { payload: true },
+      }),
+    );
+    const outOfScopeHits = outOfScopeEvents
+      .map((e) => e.payload as { kind?: string; offending?: unknown } | null)
+      .filter((p): p is { kind: string; offending: unknown } => p?.kind === 'out_of_scope_edit');
+
+    return {
+      runId,
+      agentRef,
+      instruction: `You are the Reviewer agent. Decide whether the diff is ready for PR open.`,
+      planMarkdown,
+      changeset: cs
+        ? {
+            id: cs.id,
+            title: cs.title,
+            branch: cs.branch,
+            filesChanged:
+              (cs.riskScoreBreakdown as { paths?: string[] } | null)?.paths ?? [],
+          }
+        : null,
+      outOfScopeHints: outOfScopeHits.map((h) => h.offending),
+    };
+  }
+
   // Coder agents (#333) consume the planner's markdown plan from the
   // most recent planner step in this run. We use the persisted
   // agent_steps.output rather than scanning timeline events — the
