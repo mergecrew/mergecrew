@@ -1,13 +1,15 @@
 /**
- * Daily-digest anomaly detectors (#288). Scans the project's state over
- * the digest window (one UTC day ending at `eod`) and surfaces five
- * categories of "you probably want to look at this":
+ * Daily-digest anomaly detectors (#288, #304). Scans the project's
+ * state over the digest window (one UTC day ending at `eod`) and
+ * surfaces six categories of "you probably want to look at this":
  *
  *   1. cost_spike       — today's LLM spend > 2× trailing-7-day daily avg
  *   2. blocked_changeset — blast-radius gate rejection (#285)
  *   3. risk_gate_hit    — risk-score gate routed a changeset to inbox (#286)
  *   4. rollback         — admin clicked rollback on a merged changeset (#287)
  *   5. file_spike       — a single changeset touched > 2× the trailing-30-day median
+ *   6. eval_regression  — nightly eval pass-rate dropped > 10% below the
+ *                         trailing-7-day median (#304)
  *
  * Each detector is independent and best-effort; if a query fails we
  * just skip that kind rather than fail the whole digest.
@@ -27,6 +29,8 @@ interface Args {
 
 const COST_SPIKE_MULTIPLIER = 2;
 const FILE_SPIKE_MULTIPLIER = 2;
+const EVAL_REGRESSION_DROP_PCT = 10;
+const EVAL_REGRESSION_MIN_HISTORY = 5;
 
 export async function collectDigestAnomalies(args: Args): Promise<DigestAnomaly[]> {
   const { organizationId, projectId, orgSlug, projectSlug, eod, webBaseUrl } = args;
@@ -207,6 +211,64 @@ export async function collectDigestAnomalies(args: Args): Promise<DigestAnomaly[
             filesChanged,
             medianFiles: median,
             link: csUrl(cs.id),
+          });
+        }
+      }
+    }
+  } catch {
+    /* skip */
+  }
+
+  // 6. Eval regression (#304) — org-scoped. Compare the latest nightly
+  //    eval run inside the digest window against the median pass-rate of
+  //    historical runs in the trailing 7 days. Skip if fewer than
+  //    EVAL_REGRESSION_MIN_HISTORY historical runs exist (signal is too
+  //    noisy to act on). The anomaly may surface in multiple projects'
+  //    digests if the org runs more than one — that's intentional: each
+  //    project's reviewers should see it without coordinating.
+  try {
+    const todayRun = await withTenant(organizationId, (tx) =>
+      tx.evalRun.findFirst({
+        where: {
+          organizationId,
+          startedAt: { gte: startOfWindow, lt: endOfWindow },
+          finishedAt: { not: null },
+          totalCases: { gt: 0 },
+        },
+        orderBy: { startedAt: 'desc' },
+        select: { id: true, totalCases: true, passCount: true },
+      }),
+    );
+    if (todayRun) {
+      const history = await withTenant(organizationId, (tx) =>
+        tx.evalRun.findMany({
+          where: {
+            organizationId,
+            startedAt: { gte: trailing7Start, lt: startOfWindow },
+            finishedAt: { not: null },
+            totalCases: { gt: 0 },
+          },
+          select: { totalCases: true, passCount: true },
+        }),
+      );
+      if (history.length >= EVAL_REGRESSION_MIN_HISTORY) {
+        const rates = history
+          .map((r) => r.passCount / r.totalCases)
+          .sort((a, b) => a - b);
+        const trailingMedian = rates[Math.floor(rates.length / 2)] ?? 0;
+        const todayPassRate = todayRun.passCount / todayRun.totalCases;
+        const dropPct =
+          trailingMedian > 0
+            ? ((trailingMedian - todayPassRate) / trailingMedian) * 100
+            : 0;
+        if (dropPct > EVAL_REGRESSION_DROP_PCT) {
+          anomalies.push({
+            kind: 'eval_regression',
+            todayPassRate,
+            trailingMedian,
+            dropPct,
+            runId: todayRun.id,
+            link: `${webBaseUrl}/orgs/${orgSlug}/evals/${todayRun.id}`,
           });
         }
       }

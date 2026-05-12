@@ -132,5 +132,7 @@ function renderAnomalyItem(a: DigestAnomaly): string {
       return `<strong>Rolled back:</strong> ${link(a.title, a.link)} — revert PR #${a.revertPrNumber}`;
     case 'file_spike':
       return `<strong>File-count spike:</strong> ${link(a.title, a.link)} touched ${a.filesChanged} files (median: ${a.medianFiles})`;
+    case 'eval_regression':
+      return `<strong>Eval regression:</strong> nightly pass-rate ${(a.todayPassRate * 100).toFixed(0)}% (down ${a.dropPct.toFixed(0)}% from trailing-7d median ${(a.trailingMedian * 100).toFixed(0)}%). ${link('View run →', a.link)}`;
   }
 }
