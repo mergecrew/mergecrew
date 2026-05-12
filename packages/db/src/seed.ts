@@ -1,6 +1,7 @@
 /* eslint-disable no-console */
 import { createHash } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
+import { DEMO_CAREFUL_LIFECYCLE_PARSED, DEMO_CAREFUL_LIFECYCLE_YAML } from './demo-lifecycle.js';
 
 const prisma = new PrismaClient();
 const API_KEY_PREFIX = 'mc_live_';
@@ -78,49 +79,37 @@ async function main() {
   console.log(`[seed] Demo org "${demoOrg.slug}" + user "${demoUser.email}" ready.`);
 
   // Demo project so the local-stack e2e (#228) and dev clicks-through
-  // both have somewhere to land. Lifecycle rows are created lazily by
-  // the API on the first GET. The project ships paused (no repo, no
-  // deploy target) per #229 — the e2e branch below wires fakes only
-  // when MERGECREW_AGENT_STUB + MERGECREW_E2E_LOCAL_API_KEY are set.
+  // both have somewhere to land. Ships on `graphProfile=careful` (#361,
+  // V2.af) so the first run a visitor triggers shows off the
+  // planner → coder → reviewer multi-agent chain rather than the V1
+  // single-agent fallback. The lifecycle below wires the three agents
+  // with stock-friendly skill bindings; the runtime's resolver upgrades
+  // to STOCK_AGENTS where useful.
   const demoProject = await prisma.project.upsert({
     where: { organizationId_slug: { organizationId: demoOrg.id, slug: 'acme' } },
+    // `update: {}` is intentional — existing demo projects (set up
+    // before this seed change) stay on whatever graphProfile their
+    // operator chose. The careful default only applies to fresh boots.
     update: {},
     create: {
       organizationId: demoOrg.id,
       slug: 'acme',
       name: 'Acme',
       description: 'Default demo project. Edit or replace from the org Projects page.',
+      graphProfile: 'careful',
     },
   });
   console.log(`[seed] Demo project "${demoProject.slug}" ready.`);
 
-  // Minimal lifecycle row so the orchestrator's `run.due` handler doesn't
-  // bail with `no lifecycle` before a real YAML lands. The API auto-creates
-  // a fuller default on first lifecycle GET; this just covers the case
-  // where a run is triggered before anyone touches the lifecycle page —
-  // which is exactly what the local e2e (#228) does.
-  const minimalLifecycle = {
-    version: 1,
-    lifecycle: {
-      workflows: [
-        { id: 'discovery', agents: ['discovery'], out: [], transitions: [] },
-      ],
-    },
-    agents: {
-      discovery: {
-        kind: 'Discovery',
-        description: 'Seed-time placeholder agent.',
-        fallback: [],
-        skills: [],
-        do_not_touch: [],
-        maxStepsPerRun: 12,
-        maxToolCallsPerStep: 8,
-      },
-    },
-    skills: {},
-  };
-  const minimalYaml =
-    'version: 1\nlifecycle:\n  workflows:\n    - id: discovery\n      agents: [discovery]\n      out: []\nagents:\n  discovery:\n    kind: Discovery\n    description: Seed-time placeholder agent.\nskills: {}\n';
+  // Multi-agent lifecycle: matches CAREFUL_GRAPH's node keys (planner /
+  // coder / reviewer). Operator-defined here so the Lifecycle page in
+  // the UI shows the three agents; the orchestrator's resolveAgentByRef
+  // still falls back to STOCK_AGENTS for any agent the operator drops.
+  // The workflow's `agents` list is informational under careful — the
+  // orchestrator dispatches via CAREFUL_GRAPH, not via this array.
+  // The YAML body + parsed JSON live in `./demo-lifecycle.ts` so the
+  // shape is unit-testable against the domain validator without pulling
+  // in the seed script's PrismaClient side effect.
   const existingLc = await prisma.lifecycle.findFirst({
     where: { projectId: demoProject.id },
     orderBy: { version: 'desc' },
@@ -131,11 +120,11 @@ async function main() {
         organizationId: demoOrg.id,
         projectId: demoProject.id,
         version: 1,
-        sourceYaml: minimalYaml,
-        parsed: minimalLifecycle,
+        sourceYaml: DEMO_CAREFUL_LIFECYCLE_YAML,
+        parsed: DEMO_CAREFUL_LIFECYCLE_PARSED,
       },
     });
-    console.log(`[seed] Seed lifecycle v1 created for project "${demoProject.slug}".`);
+    console.log(`[seed] Seed lifecycle v1 (careful: planner/coder/reviewer) created for "${demoProject.slug}".`);
   }
 
   // The demo project ships **paused** for trial users (#229) — no

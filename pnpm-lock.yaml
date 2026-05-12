@@ -618,6 +618,9 @@ importers:
         specifier: ^5.22.0
         version: 5.22.0(prisma@5.22.0)
     devDependencies:
+      '@mergecrew/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@types/node':
         specifier: ^25.6.2
         version: 25.6.2
