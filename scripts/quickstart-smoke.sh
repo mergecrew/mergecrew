@@ -112,4 +112,52 @@ if ! echo "$wiz" | grep -q "Add an LLM provider"; then
 fi
 echo "[quickstart-smoke] ✓ onboarding wizard renders the stepper"
 
+# Lifecycle template step (#395, V2.ai) — added as Step 5 alongside
+# the existing four. Fresh stack has no non-demo project, so the
+# action URL falls back to /projects/new, but the row + label must
+# render so operators see the eventual lifecycle step from day one.
+if ! echo "$wiz" | grep -q "Pick a lifecycle template"; then
+  echo "::error::wizard didn't render the lifecycle_template step"
+  exit 1
+fi
+echo "[quickstart-smoke] ✓ onboarding wizard exposes the lifecycle template step"
+
+# Stock lifecycle templates catalog (#393, V2.ai). Public endpoint, no
+# auth needed — the picker UI fetches it via SSR and via the wizard.
+# Asserts all four expected ids are present so a rename / accidental
+# removal trips CI rather than silently shipping a smaller catalog.
+echo "[quickstart-smoke] GET ${API_URL:-http://localhost:4000}/v1/lifecycle-templates/stock"
+API_URL="${API_URL:-http://localhost:4000}"
+stock=$(curl -sf "${API_URL}/v1/lifecycle-templates/stock" || true)
+if [ -z "$stock" ]; then
+  echo "::error::/v1/lifecycle-templates/stock returned no body"
+  exit 1
+fi
+for tid in generic-careful nextjs-vercel python-render go-fly; do
+  if ! echo "$stock" | grep -q "\"id\":\"${tid}\""; then
+    echo "::error::stock catalog missing template id: ${tid}"
+    echo "--- response ---"
+    echo "$stock"
+    exit 1
+  fi
+done
+echo "[quickstart-smoke] ✓ stock lifecycle template catalog complete"
+
+# Project Lifecycle page (#394) — the picker section renders for the
+# admin/owner session running the smoke. Demo project `acme` exists
+# under DEMO_MODE, so the page is reachable.
+echo "[quickstart-smoke] GET ${WEB_URL}/orgs/${ORG_SLUG}/projects/${PROJECT_SLUG}/lifecycle"
+lc=$(curl -sf "${WEB_URL}/orgs/${ORG_SLUG}/projects/${PROJECT_SLUG}/lifecycle" || true)
+if [ -z "$lc" ]; then
+  echo "::error::lifecycle page returned no body"
+  exit 1
+fi
+if ! echo "$lc" | grep -q "Start from a stock template"; then
+  echo "::error::lifecycle page didn't render the stock template picker"
+  echo "--- first 4 KB of body ---"
+  echo "$lc" | head -c 4096
+  exit 1
+fi
+echo "[quickstart-smoke] ✓ project Lifecycle page renders the stock template picker"
+
 echo "[quickstart-smoke] All checks passed."
