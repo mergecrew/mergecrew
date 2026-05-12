@@ -377,4 +377,81 @@ export class OrgService {
       }),
     );
   }
+
+  /**
+   * Onboarding checklist (#382, V2.ah). Computes the next-action state
+   * for the org by inspecting existing DB rows — no separate progress
+   * tracker that could drift from reality. The seeded demo project
+   * (slug='acme') is filtered out so its pre-wired demo-mode rows
+   * don't mark per-project steps complete.
+   *
+   * Steps:
+   *   - llm_provider:    any non-stub LlmProvider on the org
+   *   - first_project:   any non-demo Project on the org
+   *   - connected_repo:  the first non-demo project has a ConnectedRepo
+   *   - deploy_target:   that same project has a dev DeployTarget
+   */
+  async onboarding(orgSlug: string): Promise<{
+    steps: Array<{
+      key: 'llm_provider' | 'first_project' | 'connected_repo' | 'deploy_target';
+      label: string;
+      status: 'complete' | 'pending';
+      actionUrl: string;
+    }>;
+    complete: boolean;
+  }> {
+    const t = this.tenant.require();
+    const data = await this.prisma.withTenant(t.organizationId, async (tx) => {
+      const llm = await tx.llmProvider.count({ where: { organizationId: t.organizationId } });
+      // Order projects by createdAt asc, then pick the first non-demo
+      // (slug !== 'acme'). The demo project ships fully wired under
+      // MERGECREW_DEMO_MODE, so leaving it in would mark every step
+      // complete and hide the wizard for new installs.
+      const projects = await tx.project.findMany({
+        where: { organizationId: t.organizationId, deletedAt: null, slug: { not: 'acme' } },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          slug: true,
+          connectedRepo: { select: { id: true } },
+          deployTargets: { select: { kind: true }, where: { kind: 'dev' } },
+        },
+        take: 1,
+      });
+      return { llm, project: projects[0] ?? null };
+    });
+
+    const projectPath = data.project ? `/orgs/${orgSlug}/projects/${data.project.slug}` : null;
+    const steps = [
+      {
+        key: 'llm_provider' as const,
+        label: 'Add an LLM provider',
+        status: data.llm > 0 ? ('complete' as const) : ('pending' as const),
+        actionUrl: `/orgs/${orgSlug}/settings/llm-providers`,
+      },
+      {
+        key: 'first_project' as const,
+        label: 'Create your first project',
+        status: data.project ? ('complete' as const) : ('pending' as const),
+        actionUrl: `/orgs/${orgSlug}/projects/new`,
+      },
+      {
+        key: 'connected_repo' as const,
+        label: 'Connect a repo',
+        status:
+          data.project && data.project.connectedRepo ? ('complete' as const) : ('pending' as const),
+        actionUrl: projectPath ? `${projectPath}/settings` : `/orgs/${orgSlug}/projects/new`,
+      },
+      {
+        key: 'deploy_target' as const,
+        label: 'Add a dev deploy target',
+        status:
+          data.project && data.project.deployTargets.length > 0
+            ? ('complete' as const)
+            : ('pending' as const),
+        actionUrl: projectPath ? `${projectPath}/settings` : `/orgs/${orgSlug}/projects/new`,
+      },
+    ];
+    return { steps, complete: steps.every((s) => s.status === 'complete') };
+  }
 }

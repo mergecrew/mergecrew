@@ -46,6 +46,11 @@ export class OrgController {
     return { items: await this.orgs.listMembers() };
   }
 
+  @Get('orgs/:slug/onboarding')
+  async onboarding(@Param('slug') slug: string) {
+    return this.orgs.onboarding(slug);
+  }
+
   @Get('orgs/:slug/budget')
   @UseGuards(RoleGuard)
   async budget(@Param('slug') _slug: string) {
