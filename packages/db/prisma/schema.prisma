@@ -614,6 +614,52 @@ model RunPause {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Eval harness (V2.ab, #299)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model EvalRun {
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @map("organization_id") @db.Uuid
+  llmProfileId    String?   @map("llm_profile_id") @db.Uuid
+  /// What triggered this run. `cli` = `pnpm eval run`; `cron` = nightly
+  /// scheduler (#303); `ab` = paired half of an A/B compare (#302).
+  source          String
+  startedAt       DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt      DateTime? @map("finished_at") @db.Timestamptz(6)
+  totalCases      Int       @default(0) @map("total_cases")
+  passCount       Int       @default(0) @map("pass_count")
+  failCount       Int       @default(0) @map("fail_count")
+  errorCount      Int       @default(0) @map("error_count")
+  totalUsd        Decimal   @default(0) @map("total_usd") @db.Decimal(12, 6)
+  totalLatencyMs  Int       @default(0) @map("total_latency_ms")
+
+  cases EvalCase[]
+
+  @@index([organizationId, startedAt(sort: Desc)])
+  @@map("eval_runs")
+}
+
+model EvalCase {
+  id            String   @id @default(uuid()) @db.Uuid
+  evalRunId     String   @map("eval_run_id") @db.Uuid
+  /// Matches `manifest.id` from @mergecrew/eval-fixtures.
+  fixtureId     String   @map("fixture_id")
+  /// `pass` = snapshot comparison agreed; `fail` = disagreed; `error`
+  /// = the harness itself crashed (provider error, timeout, etc.).
+  status        String
+  agentDiff     String?  @db.Text @map("agent_diff")
+  errorMessage  String?  @db.Text @map("error_message")
+  usdEstimate   Decimal  @default(0) @map("usd_estimate") @db.Decimal(12, 6)
+  latencyMs     Int      @default(0) @map("latency_ms")
+  finishedAt    DateTime @default(now()) @map("finished_at") @db.Timestamptz(6)
+
+  run EvalRun @relation(fields: [evalRunId], references: [id], onDelete: Cascade)
+
+  @@index([evalRunId])
+  @@map("eval_cases")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Changesets, deploys, decisions, approvals
 // ─────────────────────────────────────────────────────────────────────────────
 
