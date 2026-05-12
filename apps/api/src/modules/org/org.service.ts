@@ -245,6 +245,37 @@ export class OrgService {
     };
   }
 
+  /**
+   * Nightly eval cron opt-in (#303). Off by default; toggling on
+   * doesn't trigger an immediate run — worker-cron picks the org up
+   * on its next daily tick. lastRanAt is read-only via this surface
+   * (worker-cron owns the bump).
+   */
+  async getEvalsSettings(): Promise<{ enabled: boolean; lastRanAt: string | null }> {
+    const t = this.tenant.require();
+    const row = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.organization.findUnique({
+        where: { id: t.organizationId },
+        select: { evalsEnabled: true, evalsLastRanAt: true },
+      }),
+    );
+    return {
+      enabled: row?.evalsEnabled ?? false,
+      lastRanAt: row?.evalsLastRanAt ? row.evalsLastRanAt.toISOString() : null,
+    };
+  }
+
+  async updateEvalsSettings(enabled: boolean): Promise<{ enabled: boolean; lastRanAt: string | null }> {
+    const t = this.tenant.require();
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.organization.update({
+        where: { id: t.organizationId },
+        data: { evalsEnabled: enabled },
+      }),
+    );
+    return this.getEvalsSettings();
+  }
+
   async updateSpendCap(monthlySpendCapUsd: number | null) {
     const t = this.tenant.require();
     if (monthlySpendCapUsd !== null && (!Number.isFinite(monthlySpendCapUsd) || monthlySpendCapUsd < 0)) {

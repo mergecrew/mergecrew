@@ -42,7 +42,7 @@ export default async function OrgHomePage({
   const { slug } = await params;
   const session = await requireSession();
 
-  const [projectsRes, inboxRes, activityRes, spendCapRes] = await Promise.all([
+  const [projectsRes, inboxRes, activityRes, spendCapRes, evalsRes] = await Promise.all([
     safe(() => api<{ items: Project[] }>(`/v1/orgs/${slug}/projects`, { session })),
     safe(() => api<{ items: ApprovalRequest[] }>(`/v1/orgs/${slug}/inbox`, { session })),
     safe(() => api<{ items: TimelineEvent[] }>(`/v1/orgs/${slug}/activity?limit=10`, { session })),
@@ -54,12 +54,28 @@ export default async function OrgHomePage({
         projectionExceedsCap: boolean;
       }>(`/v1/orgs/${slug}/spend-cap`, { session }),
     ),
+    safe(() =>
+      api<{
+        items: Array<{
+          id: string;
+          startedAt: string;
+          finishedAt: string | null;
+          totalCases: number;
+          passCount: number;
+          source: string;
+        }>;
+      }>(`/v1/orgs/${slug}/evals?limit=1`, { session }),
+    ),
   ]);
 
   const projects = projectsRes?.items ?? [];
   const inbox = inboxRes?.items ?? [];
   const activity = activityRes?.items ?? [];
   const spendCap = spendCapRes;
+  const latestEval = evalsRes?.items?.[0] ?? null;
+  const evalPassRate = latestEval && latestEval.totalCases > 0
+    ? latestEval.passCount / latestEval.totalCases
+    : null;
 
   // Latest run per project, in parallel.
   const latestRuns = await Promise.all(
@@ -83,7 +99,25 @@ export default async function OrgHomePage({
   return (
     <main className="mx-auto max-w-5xl space-y-8 p-6">
       <header className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-semibold">Today</h1>
+        <div className="flex items-baseline gap-3">
+          <h1 className="text-2xl font-semibold">Today</h1>
+          {evalPassRate != null && (
+            <Link
+              href={`/orgs/${slug}/evals`}
+              className={
+                'rounded-full px-2.5 py-0.5 text-xs font-medium ' +
+                (evalPassRate >= 0.95
+                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
+                  : evalPassRate >= 0.8
+                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
+                    : 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200')
+              }
+              title={`Latest eval (${latestEval!.source}): ${latestEval!.passCount}/${latestEval!.totalCases} passing`}
+            >
+              evals · {(evalPassRate * 100).toFixed(0)}%
+            </Link>
+          )}
+        </div>
         <span className="text-sm text-zinc-500">{new Date().toDateString()}</span>
       </header>
 

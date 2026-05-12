@@ -2,7 +2,15 @@
   "name": "@mergecrew/eval-runner",
   "version": "0.1.0",
   "private": true,
-  "main": "dist/main.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
   "bin": {
     "mergecrew-eval": "dist/main.js"
   },

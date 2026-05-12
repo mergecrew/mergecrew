@@ -8,6 +8,7 @@ import { digestTick } from './digest-tick.js';
 import { isSkipped, dateInTz } from './skip.js';
 import { auditRetentionTick } from './audit-retention-tick.js';
 import { stuckRunWatchdog } from './stuck-run-watchdog.js';
+import { evalTick } from './eval-tick.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
@@ -149,6 +150,9 @@ setInterval(() => {
   stuckRunWatchdog({ eventlog, logger }).catch((err) =>
     logger.error({ err: String(err?.message ?? err) }, 'stuck-run-watchdog failed'),
   );
+  evalTick({ logger }).catch((err) =>
+    logger.error({ err: String(err?.message ?? err) }, 'eval-tick failed'),
+  );
   maybeRunRetention();
 }, TICK_MS);
 // First tick at startup
@@ -158,5 +162,8 @@ digestTick({ digestQueue, logger }).catch((err) =>
 );
 stuckRunWatchdog({ eventlog, logger }).catch((err) =>
   logger.error({ err: String(err?.message ?? err) }, 'initial stuck-run-watchdog failed'),
+);
+evalTick({ logger }).catch((err) =>
+  logger.error({ err: String(err?.message ?? err) }, 'initial eval-tick failed'),
 );
 maybeRunRetention();

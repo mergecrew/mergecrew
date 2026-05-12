@@ -422,6 +422,9 @@ importers:
       '@mergecrew/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@mergecrew/eval-runner':
+        specifier: workspace:*
+        version: link:../eval-runner
       '@mergecrew/eventlog':
         specifier: workspace:*
         version: link:../../packages/eventlog
