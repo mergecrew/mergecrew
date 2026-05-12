@@ -16,7 +16,12 @@ export default async function ChangesetDetail({
       <header className="flex items-baseline justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">{cs.title}</h1>
-          <p className="text-sm font-mono text-zinc-500">{cs.id} · <Chip>{cs.status}</Chip></p>
+          <p className="text-sm font-mono text-zinc-500 space-x-1">
+            <span>{cs.id}</span>
+            <span>·</span>
+            <Chip>{cs.status}</Chip>
+            {cs.isDryRun && <Chip kind="medium">DRY RUN</Chip>}
+          </p>
         </div>
         {cs.prNumber && (
           <Link
@@ -27,6 +32,13 @@ export default async function ChangesetDetail({
           </Link>
         )}
       </header>
+      {cs.isDryRun && (
+        <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700/40 dark:bg-amber-950/30 dark:text-amber-200">
+          <strong>This changeset was produced in dry-run mode.</strong> The agent ran, generated the
+          diff, and recorded the changeset — but the runner skipped <code>git push</code>, PR
+          creation, and deploy. Turn off dry-run in project settings to ship the next run for real.
+        </div>
+      )}
       {cs.whyParagraph && (
         <Card>
           <h2 className="text-sm font-medium text-zinc-500 mb-1">Why</h2>

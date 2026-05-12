@@ -33,7 +33,12 @@ export class ProjectController {
   @RequireRole('operator')
   async update(
     @Param('projectSlug') projectSlug: string,
-    @Body() body: { name?: string; description?: string | null; archived?: boolean },
+    @Body() body: {
+      name?: string;
+      description?: string | null;
+      archived?: boolean;
+      dryRun?: boolean;
+    },
   ) {
     return this.projects.update(projectSlug, body);
   }
