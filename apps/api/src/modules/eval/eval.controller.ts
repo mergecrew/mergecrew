@@ -17,6 +17,11 @@ export class EvalController {
     return { items, trailing };
   }
 
+  @Get('compare/:abRunId')
+  async compare(@Param('abRunId') abRunId: string) {
+    return this.evals.compare(abRunId);
+  }
+
   @Get(':runId')
   async detail(@Param('runId') runId: string) {
     return this.evals.detail(runId);
