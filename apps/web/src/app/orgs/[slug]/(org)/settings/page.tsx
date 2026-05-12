@@ -19,6 +19,10 @@ interface BudgetInfo {
 interface SpendCapInfo {
   monthlySpendCapUsd: number | null;
   monthToDateUsd: number;
+  trailing7DayAvgUsd: number;
+  projectedMonthEndUsd: number;
+  daysToCapExceedance: number | null;
+  projectionExceedsCap: boolean;
   remainingUsd: number | null;
   exceeded: boolean;
 }
@@ -247,6 +251,32 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
               style={{ width: `${monthlyPct}%` }}
               aria-label={`${monthlyPct.toFixed(0)}% of cap used`}
             />
+          </div>
+        )}
+        <div className="mt-3 grid grid-cols-2 gap-3 border-t pt-3 text-sm dark:border-zinc-800">
+          <div>
+            <div className="text-xs uppercase tracking-wide text-zinc-500">
+              Trailing 7-day avg / day
+            </div>
+            <div className="font-mono tabular-nums">${spendCap.trailing7DayAvgUsd.toFixed(2)}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-wide text-zinc-500">
+              Projected month-end
+            </div>
+            <div className="font-mono tabular-nums">${spendCap.projectedMonthEndUsd.toFixed(2)}</div>
+          </div>
+        </div>
+        {spendCap.projectionExceedsCap && spendCap.monthlySpendCapUsd !== null && (
+          <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-700/40 dark:bg-amber-950/30 dark:text-amber-200">
+            <strong>On track to exceed the cap by ~$
+            {Math.max(0, spendCap.projectedMonthEndUsd - spendCap.monthlySpendCapUsd).toFixed(2)}.
+            </strong>{' '}
+            At the current 7-day pace
+            {spendCap.daysToCapExceedance != null && (
+              <> you&apos;ll hit the cap around day {spendCap.daysToCapExceedance} of the month.</>
+            )}
+            {' '}Raise the cap or tighten the per-step budget before runs start refusing.
           </div>
         )}
         {canEdit ? (
