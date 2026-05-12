@@ -967,6 +967,34 @@
         ]
       }
     },
+    "/v1/lifecycle-templates/stock": {
+      "get": {
+        "operationId": "StockTemplateController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "StockTemplate"
+        ]
+      }
+    },
+    "/v1/lifecycle-templates/stock/{id}": {
+      "get": {
+        "operationId": "StockTemplateController_detail",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "StockTemplate"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/projects/{projectSlug}/runs": {
       "get": {
         "operationId": "RunController_list",

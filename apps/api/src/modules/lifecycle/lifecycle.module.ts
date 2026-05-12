@@ -5,9 +5,15 @@ import { LifecyclePrService } from './lifecycle-pr.service.js';
 import { OrgTemplateController } from './org-template.controller.js';
 import { OrgTemplateService } from './org-template.service.js';
 import { SkillsController } from './skills.controller.js';
+import { StockTemplateController } from './stock-templates.controller.js';
 
 @Module({
-  controllers: [LifecycleController, SkillsController, OrgTemplateController],
+  controllers: [
+    LifecycleController,
+    SkillsController,
+    OrgTemplateController,
+    StockTemplateController,
+  ],
   providers: [LifecycleService, LifecyclePrService, OrgTemplateService],
   exports: [LifecycleService, LifecyclePrService, OrgTemplateService],
 })
