@@ -84,6 +84,14 @@ jobs:
         run: |
           export MERGECREW_API_KEY="$MERGECREW_E2E_LOCAL_API_KEY"
           pnpm --filter @mergecrew/e2e-loop e2e
+      - name: Demo-run smoke — stub Coder synthesized a Changeset (#375)
+        env:
+          MERGECREW_API_URL: http://localhost:4000
+          MERGECREW_ORG_SLUG: demo
+          MERGECREW_PROJECT_SLUG: acme
+        run: |
+          export MERGECREW_API_KEY="$MERGECREW_E2E_LOCAL_API_KEY"
+          bash scripts/quickstart-demo-run-smoke.sh
       - name: Dump logs on failure
         if: failure()
         run: |
