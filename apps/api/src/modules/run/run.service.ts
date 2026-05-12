@@ -86,12 +86,40 @@ export class RunService {
         'project has no lifecycle — save a mergecrew.yaml from the Lifecycle page to enable runs',
       );
     }
+    // Pre-create the DailyRun row synchronously so the API can return
+    // its id (#407, V2.aj). The orchestrator's run.due handler picks
+    // up a row passed in via data.runId and flips it pending → running;
+    // when no runId is provided (cron path) it falls back to creating
+    // its own row, same as before. Lifecycle version is captured at
+    // enqueue time so a mid-run YAML edit doesn't shift this run's
+    // graph.
+    const lifecycle = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.lifecycle.findFirst({ where: { projectId: project.id }, orderBy: { version: 'desc' } }),
+    );
+    if (!lifecycle) {
+      // Re-checked under withTenant to satisfy the type narrowing; the
+      // earlier hasLifecycle check uses the same scope, so this branch
+      // is a defensive no-op.
+      throw new ValidationError('project has no lifecycle');
+    }
+    const run = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.dailyRun.create({
+        data: {
+          organizationId: t.organizationId,
+          projectId: project.id,
+          lifecycleId: lifecycle.id,
+          scheduledAt: new Date(),
+          status: 'pending',
+          metadata: { manual: true },
+        },
+      }),
+    );
     await this.queue.get('run.due').add(
       'run.due',
-      { organizationId: t.organizationId, projectId: project.id, manual: true },
+      { organizationId: t.organizationId, projectId: project.id, runId: run.id, manual: true },
       { removeOnComplete: 1000, removeOnFail: 1000 },
     );
-    return { queued: true, projectId: project.id };
+    return { queued: true, projectId: project.id, runId: run.id };
   }
 
   async cancel(runId: string) {

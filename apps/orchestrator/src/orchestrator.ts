@@ -54,7 +54,20 @@ export class Orchestrator {
 
   // ─── 1. Run start ───────────────────────────────────────────────────────
 
-  async handleRunDue(data: { organizationId: string; projectId: string; manual?: boolean }): Promise<void> {
+  async handleRunDue(data: {
+    organizationId: string;
+    projectId: string;
+    /**
+     * When the API pre-created a pending DailyRun (#407, V2.aj), it
+     * passes the row's id here. The handler flips it pending → running
+     * instead of creating a new row, so the API can hand the operator
+     * a runId to redirect to immediately. Unset for cron-scheduled
+     * runs and any legacy enqueue path; the handler keeps creating its
+     * own row in that case.
+     */
+    runId?: string;
+    manual?: boolean;
+  }): Promise<void> {
     const { organizationId, projectId } = data;
 
     // Pull the project's mergecrew.yaml from its repo and persist a new
@@ -86,30 +99,56 @@ export class Orchestrator {
       return;
     }
 
-    const inflight = await withTenant(organizationId, (tx) =>
-      tx.dailyRun.findFirst({
-        where: { projectId, status: { in: ['pending', 'running', 'paused_rate_limit', 'paused_gate'] } },
-        orderBy: { scheduledAt: 'desc' },
-      }),
-    );
-    if (inflight) {
-      this.deps.logger.info({ runId: inflight.id }, 'run already in flight; skipping');
-      return;
+    // If the API pre-created a pending DailyRun, that row IS this
+    // run — pick it up rather than treating it as an inflight blocker.
+    // Otherwise apply the usual "one run at a time per project" guard.
+    let run: { id: string; projectId: string; status: string } | null = null;
+    if (data.runId) {
+      const preCreated = await withTenant(organizationId, (tx) =>
+        tx.dailyRun.findUnique({ where: { id: data.runId! } }),
+      );
+      if (preCreated && preCreated.status === 'pending') {
+        run = await withTenant(organizationId, (tx) =>
+          tx.dailyRun.update({
+            where: { id: preCreated.id },
+            data: { status: 'running', startedAt: new Date() },
+          }),
+        );
+      } else if (preCreated) {
+        this.deps.logger.info(
+          { runId: preCreated.id, status: preCreated.status },
+          'run.due: pre-created run already advanced; skipping',
+        );
+        return;
+      }
     }
 
-    const run = await withTenant(organizationId, (tx) =>
-      tx.dailyRun.create({
-        data: {
-          organizationId,
-          projectId,
-          lifecycleId: lc.id,
-          scheduledAt: new Date(),
-          status: 'running',
-          startedAt: new Date(),
-          metadata: { manual: !!data.manual },
-        },
-      }),
-    );
+    if (!run) {
+      const inflight = await withTenant(organizationId, (tx) =>
+        tx.dailyRun.findFirst({
+          where: { projectId, status: { in: ['pending', 'running', 'paused_rate_limit', 'paused_gate'] } },
+          orderBy: { scheduledAt: 'desc' },
+        }),
+      );
+      if (inflight) {
+        this.deps.logger.info({ runId: inflight.id }, 'run already in flight; skipping');
+        return;
+      }
+
+      run = await withTenant(organizationId, (tx) =>
+        tx.dailyRun.create({
+          data: {
+            organizationId,
+            projectId,
+            lifecycleId: lc.id,
+            scheduledAt: new Date(),
+            status: 'running',
+            startedAt: new Date(),
+            metadata: { manual: !!data.manual },
+          },
+        }),
+      );
+    }
     await withTenant(organizationId, (tx) =>
       tx.dailyRun.update({ where: { id: run.id }, data: { id: run.id } }), // no-op; placeholder
     );
