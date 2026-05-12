@@ -1652,13 +1652,38 @@ async function synthesizeAgentInput(
     );
     const planMarkdown =
       (planStep?.output as { planMarkdown?: string } | null)?.planMarkdown ?? null;
+    // Loop-back path (#349): if the latest reviewer step in this run
+    // requested changes, surface its reasoning + requestedChanges so
+    // the coder addresses them directly instead of re-running blind.
+    // First coder pass returns null here (no prior reviewer step).
+    const reviewerStep = await withTenant(organizationId, (tx) =>
+      tx.agentStep.findFirst({
+        where: {
+          workflowRun: { dailyRunId: runId },
+          agentKind: REVIEWER_AGENT_KIND,
+          status: 'completed',
+          output: { not: undefined },
+        },
+        orderBy: { finishedAt: 'desc' },
+        select: { output: true },
+      }),
+    );
+    const reviewerOutput = reviewerStep?.output as
+      | { verdict?: string; reasoning?: string; requestedChanges?: string[] }
+      | null;
+    const carefulReviewerFeedback =
+      reviewerOutput && reviewerOutput.verdict === 'request_changes'
+        ? {
+            reasoning: reviewerOutput.reasoning ?? '',
+            requestedChanges: reviewerOutput.requestedChanges ?? [],
+          }
+        : null;
     return {
       runId,
       agentRef,
       instruction: `You are the ${agentRef} coder. Implement the plan below using your tools.`,
       planMarkdown,
-      // reviewerFeedback is filled by the graph wiring in #334 — this
-      // PR just leaves the field for the contract.
+      ...(carefulReviewerFeedback ? { carefulReviewerFeedback } : {}),
     };
   }
 

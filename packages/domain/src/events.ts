@@ -38,6 +38,13 @@ export const TimelineEventType = z.enum([
   'PLAN_PROPOSED',
   'REVIEW_APPROVED',
   'REVIEW_CHANGES_REQUESTED',
+  // Multi-agent loop-back exhaustion (#349). Fires when the reviewer
+  // has requested changes more times than REVIEW_LOOP_CAP allows
+  // (default 3 coder rounds). The run falls through to normal
+  // workflow advance — i.e. the changeset surfaces to humans
+  // unchanged, with the reviewer's last requestedChanges in the
+  // payload so the human reviewer sees what the LLM reviewer flagged.
+  'REVIEW_LOOP_EXHAUSTED',
   // gate
   'GATE_REACHED',
   'HUMAN_APPROVED',
