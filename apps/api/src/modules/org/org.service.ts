@@ -167,11 +167,44 @@ export class OrgService {
   }
 
   /**
-   * Returns the current cap setting + month-to-date spend. The web
-   * settings card renders both at once so the operator can see how
-   * close they are to the cap (#282).
+   * Trailing 7-day average daily spend (#283). Sums LlmInvocation cost
+   * over the prior `days` days (excluding today, which is partial) and
+   * divides. Returns 0 when there's no history yet.
    */
-  async getSpendCap(): Promise<{ monthlySpendCapUsd: number | null; monthToDateUsd: number }> {
+  async trailingDailyAvgUsd(days = 7): Promise<number> {
+    const t = this.tenant.require();
+    const now = new Date();
+    const startOfToday = startOfUtcDay(now);
+    const windowStart = new Date(startOfToday.getTime() - days * 24 * 3600_000);
+    const rows = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.llmInvocation.aggregate({
+        where: {
+          organizationId: t.organizationId,
+          occurredAt: { gte: windowStart, lt: startOfToday },
+        },
+        _sum: { usdEstimate: true },
+      }),
+    );
+    return Number(rows._sum.usdEstimate ?? 0) / days;
+  }
+
+  /**
+   * Returns the current cap setting + month-to-date spend + trailing
+   * 7-day forecast (#283). The settings card renders the projection
+   * inline; the org dashboard surfaces a banner when projection ≥ cap.
+   *
+   * `daysToCapExceedance` is the projected day-of-month the cap would
+   * be hit at the current pace. Null when there's no cap or the cap
+   * isn't projected to be hit this month.
+   */
+  async getSpendCap(): Promise<{
+    monthlySpendCapUsd: number | null;
+    monthToDateUsd: number;
+    trailing7DayAvgUsd: number;
+    projectedMonthEndUsd: number;
+    daysToCapExceedance: number | null;
+    projectionExceedsCap: boolean;
+  }> {
     const t = this.tenant.require();
     const row = await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.organization.findUnique({
@@ -179,12 +212,36 @@ export class OrgService {
         select: { monthlySpendCapUsd: true },
       }),
     );
-    const monthToDateUsd = await this.monthToDateSpendUsd();
-    return {
-      monthlySpendCapUsd: row?.monthlySpendCapUsd === null || row?.monthlySpendCapUsd === undefined
+    const cap =
+      row?.monthlySpendCapUsd === null || row?.monthlySpendCapUsd === undefined
         ? null
-        : Number(row.monthlySpendCapUsd),
+        : Number(row.monthlySpendCapUsd);
+    const [monthToDateUsd, trailing7DayAvgUsd] = await Promise.all([
+      this.monthToDateSpendUsd(),
+      this.trailingDailyAvgUsd(7),
+    ]);
+    const now = new Date();
+    const daysInMonth = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0),
+    ).getUTCDate();
+    const today = now.getUTCDate();
+    const daysRemaining = Math.max(0, daysInMonth - today);
+    const projectedMonthEndUsd = monthToDateUsd + trailing7DayAvgUsd * daysRemaining;
+    let daysToCapExceedance: number | null = null;
+    let projectionExceedsCap = false;
+    if (cap !== null && trailing7DayAvgUsd > 0 && projectedMonthEndUsd > cap) {
+      projectionExceedsCap = true;
+      const usdToCap = Math.max(0, cap - monthToDateUsd);
+      const daysToHit = Math.ceil(usdToCap / trailing7DayAvgUsd);
+      daysToCapExceedance = Math.min(daysInMonth, today + daysToHit);
+    }
+    return {
+      monthlySpendCapUsd: cap,
       monthToDateUsd,
+      trailing7DayAvgUsd,
+      projectedMonthEndUsd,
+      daysToCapExceedance,
+      projectionExceedsCap,
     };
   }
 

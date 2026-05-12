@@ -77,13 +77,15 @@ export class OrgController {
   @Get('orgs/:slug/spend-cap')
   @UseGuards(RoleGuard)
   async spendCap(@Param('slug') _slug: string) {
-    const { monthlySpendCapUsd, monthToDateUsd } = await this.orgs.getSpendCap();
+    const cap = await this.orgs.getSpendCap();
     return {
-      monthlySpendCapUsd,
-      monthToDateUsd,
+      ...cap,
       remainingUsd:
-        monthlySpendCapUsd === null ? null : Math.max(0, monthlySpendCapUsd - monthToDateUsd),
-      exceeded: monthlySpendCapUsd !== null && monthToDateUsd >= monthlySpendCapUsd,
+        cap.monthlySpendCapUsd === null
+          ? null
+          : Math.max(0, cap.monthlySpendCapUsd - cap.monthToDateUsd),
+      exceeded:
+        cap.monthlySpendCapUsd !== null && cap.monthToDateUsd >= cap.monthlySpendCapUsd,
     };
   }
 

@@ -42,15 +42,24 @@ export default async function OrgHomePage({
   const { slug } = await params;
   const session = await requireSession();
 
-  const [projectsRes, inboxRes, activityRes] = await Promise.all([
+  const [projectsRes, inboxRes, activityRes, spendCapRes] = await Promise.all([
     safe(() => api<{ items: Project[] }>(`/v1/orgs/${slug}/projects`, { session })),
     safe(() => api<{ items: ApprovalRequest[] }>(`/v1/orgs/${slug}/inbox`, { session })),
     safe(() => api<{ items: TimelineEvent[] }>(`/v1/orgs/${slug}/activity?limit=10`, { session })),
+    safe(() =>
+      api<{
+        monthlySpendCapUsd: number | null;
+        projectedMonthEndUsd: number;
+        daysToCapExceedance: number | null;
+        projectionExceedsCap: boolean;
+      }>(`/v1/orgs/${slug}/spend-cap`, { session }),
+    ),
   ]);
 
   const projects = projectsRes?.items ?? [];
   const inbox = inboxRes?.items ?? [];
   const activity = activityRes?.items ?? [];
+  const spendCap = spendCapRes;
 
   // Latest run per project, in parallel.
   const latestRuns = await Promise.all(
@@ -91,6 +100,28 @@ export default async function OrgHomePage({
             </div>
             <LinkButton href={`/orgs/${slug}/inbox`} variant="primary">
               Open inbox
+            </LinkButton>
+          </div>
+        </Card>
+      )}
+
+      {spendCap?.projectionExceedsCap && spendCap.monthlySpendCapUsd !== null && (
+        <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-700/40 dark:bg-amber-950/30">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="font-medium">
+                Spend forecast: on track to exceed the monthly cap
+              </div>
+              <div className="text-sm text-zinc-500">
+                Projected month-end ${spendCap.projectedMonthEndUsd.toFixed(0)} vs cap $
+                {spendCap.monthlySpendCapUsd.toFixed(0)}.
+                {spendCap.daysToCapExceedance != null && (
+                  <> Cap likely hit around day {spendCap.daysToCapExceedance} at the current pace.</>
+                )}
+              </div>
+            </div>
+            <LinkButton href={`/orgs/${slug}/settings`} variant="secondary">
+              Adjust cap
             </LinkButton>
           </div>
         </Card>
