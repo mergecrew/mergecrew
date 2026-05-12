@@ -17,6 +17,8 @@ export async function updateProjectAction(
     deniedPaths?: string[];
     autoMergeThreshold?: number;
     sensitivePaths?: string[];
+    graphProfile?: 'fast' | 'careful' | 'custom';
+    graphYaml?: string | null;
   },
 ) {
   const session = await requireSession();

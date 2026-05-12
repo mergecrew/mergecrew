@@ -3,6 +3,7 @@ import {
   AutoPromoteRule,
   NotFoundError,
   ValidationError,
+  parseAndValidateGraphYaml,
   type AutoPromoteRule as AutoPromoteRuleType,
 } from '@mergecrew/domain';
 import { GitHubIssuesProvider, type TrackerProvider } from '@mergecrew/adapters-tracker';
@@ -142,6 +143,8 @@ export class ProjectService {
       deniedPaths?: string[];
       autoMergeThreshold?: number;
       sensitivePaths?: string[];
+      graphProfile?: 'fast' | 'careful' | 'custom';
+      graphYaml?: string | null;
     },
   ) {
     const project = await this.detail(slug);
@@ -155,6 +158,8 @@ export class ProjectService {
       deniedPaths?: any;
       autoMergeThreshold?: number;
       sensitivePaths?: any;
+      graphProfile?: string;
+      graphYaml?: string | null;
     } = {};
     if (patch.name !== undefined) {
       const trimmed = patch.name.trim();
@@ -199,6 +204,31 @@ export class ProjectService {
         throw new ValidationError('sensitivePaths must be an array of non-empty glob strings');
       }
       data.sensitivePaths = patch.sensitivePaths.map((p) => p.trim());
+    }
+    if (patch.graphProfile !== undefined) {
+      if (!['fast', 'careful', 'custom'].includes(patch.graphProfile)) {
+        throw new ValidationError(`graphProfile must be 'fast', 'careful', or 'custom'`);
+      }
+      data.graphProfile = patch.graphProfile;
+    }
+    if (patch.graphYaml !== undefined) {
+      if (patch.graphYaml === null || patch.graphYaml.trim() === '') {
+        data.graphYaml = null;
+      } else {
+        try {
+          parseAndValidateGraphYaml(patch.graphYaml);
+        } catch (err) {
+          throw new ValidationError((err as Error).message);
+        }
+        data.graphYaml = patch.graphYaml;
+      }
+    }
+    // Cross-field check: 'custom' profile requires graphYaml to be set
+    // (either pre-existing or in this same PATCH).
+    const finalProfile = data.graphProfile ?? project.graphProfile;
+    const finalYaml = data.graphYaml ?? project.graphYaml;
+    if (finalProfile === 'custom' && !finalYaml) {
+      throw new ValidationError(`graphProfile='custom' requires a non-empty graphYaml`);
     }
     return this.prisma.withTenant(project.organizationId, (tx) =>
       tx.project.update({ where: { id: project.id }, data }),

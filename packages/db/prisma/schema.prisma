@@ -216,6 +216,17 @@ model Project {
   /// require human review.
   autoMergeThreshold Int   @default(50)  @map("auto_merge_threshold")
   sensitivePaths     Json  @default("[\"**/config/**\", \"**/auth/**\", \"**/*.sql\"]") @map("sensitive_paths")
+  /// Multi-agent graph profile (#336).
+  ///   - 'fast': single-agent legacy path (V1 behavior). Default.
+  ///   - 'careful': planner -> coder -> reviewer with loop-back.
+  ///   - 'custom': use `graphYaml` below.
+  /// Existing projects keep V1 behavior on upgrade — operators opt in
+  /// to 'careful'/'custom' per project.
+  graphProfile       String @default("fast") @map("graph_profile")
+  /// YAML body for graphProfile='custom'. Parsed + validated against
+  /// the Graph schema in @mergecrew/domain on every write. Null
+  /// otherwise. Operator-editable from project settings.
+  graphYaml          String? @map("graph_yaml") @db.Text
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)

@@ -15,6 +15,7 @@ import { DryRunForm } from './dry-run-form';
 import { BlastRadiusForm } from './blast-radius-form';
 import { RiskScoreForm } from './risk-score-form';
 import { RecentRollbacks } from './recent-rollbacks';
+import { GraphProfileForm } from './graph-profile-form';
 
 export default async function ProjectSettings({
   params,
@@ -39,6 +40,8 @@ export default async function ProjectSettings({
     deniedPaths: string[] | null;
     autoMergeThreshold: number;
     sensitivePaths: string[] | null;
+    graphProfile: 'fast' | 'careful' | 'custom';
+    graphYaml: string | null;
     connectedRepo: {
       repoFullName: string;
       defaultBranch: string;
@@ -249,6 +252,19 @@ export default async function ProjectSettings({
         >
           Manage rules →
         </a>
+      </Section>
+
+      <Section
+        title="Agent graph"
+        description="How runs dispatch agents. fast = single-agent V1 behavior; careful = planner → coder → reviewer with loop-back; custom = your own YAML."
+      >
+        <GraphProfileForm
+          slug={slug}
+          projectSlug={projectSlug}
+          initialProfile={project.graphProfile}
+          initialYaml={project.graphYaml}
+          canEdit={canEdit}
+        />
       </Section>
 
       <Section
