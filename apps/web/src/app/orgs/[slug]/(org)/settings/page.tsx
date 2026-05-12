@@ -146,6 +146,27 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
         </div>
       </Card>
 
+      <section>
+        <div className="mb-2 flex items-baseline justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
+            Guardrails
+          </h2>
+          <a
+            href="https://github.com/mergecrew/mergecrew/blob/main/docs/03-infrastructure/08-monthly-spend-cap.md"
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-zinc-500 underline decoration-dotted hover:text-zinc-700 dark:hover:text-zinc-300"
+          >
+            Guardrails overview →
+          </a>
+        </div>
+        <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
+          Cost ceilings and spend forecasting that constrain how much the agent loop can bill
+          against your LLM providers. Project-level guardrails (dry-run, blast-radius, risk-score)
+          live under each project&apos;s settings.
+        </p>
+      </section>
+
       <Card>
         <div className="flex items-baseline justify-between">
           <h2 className="font-medium">Daily LLM budget</h2>

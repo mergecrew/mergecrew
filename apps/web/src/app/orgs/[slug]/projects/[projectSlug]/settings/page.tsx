@@ -14,6 +14,7 @@ import { SmokeTestForm } from './smoke-test-form';
 import { DryRunForm } from './dry-run-form';
 import { BlastRadiusForm } from './blast-radius-form';
 import { RiskScoreForm } from './risk-score-form';
+import { RecentRollbacks } from './recent-rollbacks';
 
 export default async function ProjectSettings({
   params,
@@ -68,6 +69,20 @@ export default async function ProjectSettings({
     enabled: boolean;
     skipDates: string[];
   } | null>(`/v1/orgs/${slug}/projects/${projectSlug}/schedule`, { session });
+  // Recent rollbacks for the Guardrails section (#289). Best-effort —
+  // a fetch failure leaves the widget empty rather than blocking the
+  // whole settings page.
+  const recentRollbacks = await api<{
+    items: Array<{
+      id: string;
+      title: string;
+      revertPrNumber: number | null;
+      revertPrUrl: string | null;
+      updatedAt: string;
+    }>;
+  }>(`/v1/orgs/${slug}/projects/${projectSlug}/recent-rollbacks?limit=3`, { session }).catch(
+    () => ({ items: [] }),
+  );
   // Project-level edits are operator-gated (see project.controller.ts).
   // Org-only operations like API keys / member invites stay admin-gated
   // and live under /orgs/<slug>/settings, not here.
@@ -271,6 +286,28 @@ export default async function ProjectSettings({
                 canEdit={canEdit}
               />
             </div>
+          </div>
+          <div className="border-t pt-4 dark:border-zinc-800">
+            <div className="flex items-baseline justify-between">
+              <h3 className="text-sm font-medium">Recent rollbacks</h3>
+              <a
+                href="https://github.com/mergecrew/mergecrew/blob/main/docs/03-infrastructure/12-rollback.md"
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-zinc-500 underline decoration-dotted hover:text-zinc-700 dark:hover:text-zinc-300"
+              >
+                Rollback guide →
+              </a>
+            </div>
+            <p className="mt-1 mb-2 text-xs text-zinc-500">
+              Last three merged changesets undone via the one-click rollback button. Each row
+              links to the changeset and its revert PR.
+            </p>
+            <RecentRollbacks
+              slug={slug}
+              projectSlug={projectSlug}
+              rollbacks={recentRollbacks.items}
+            />
           </div>
         </div>
       </Section>

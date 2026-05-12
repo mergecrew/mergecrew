@@ -282,6 +282,39 @@ export class ChangesetService {
     };
   }
 
+  /**
+   * Recent rollbacks for a project (#289). Surfaces the last N
+   * one-click rollback events on the project Guardrails settings
+   * card so operators have a passive audit trail without needing to
+   * open the full audit log.
+   */
+  async recentRollbacks(projectSlug: string, limit = 3) {
+    const t = this.tenant.require();
+    const project = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.project.findFirst({ where: { slug: projectSlug, organizationId: t.organizationId } }),
+    );
+    if (!project) throw new NotFoundError();
+    const rows = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.changeset.findMany({
+        where: {
+          projectId: project.id,
+          status: 'rolled_back',
+          revertPrNumber: { not: null },
+        },
+        select: {
+          id: true,
+          title: true,
+          revertPrNumber: true,
+          revertPrUrl: true,
+          updatedAt: true,
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: Math.max(1, Math.min(limit, 25)),
+      }),
+    );
+    return rows;
+  }
+
   async groupPromote(projectSlug: string, dateISO: string, ids: string[]) {
     const t = this.tenant.require();
     const project = await this.prisma.withTenant(t.organizationId, (tx) =>
