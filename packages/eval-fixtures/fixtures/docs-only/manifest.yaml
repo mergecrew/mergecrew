@@ -1,0 +1,15 @@
+id: docs-only
+description: A docs-only project. The agent must refuse to introduce code changes — the intent is intentionally vague.
+intent: |
+  Update the README's getting-started example so the install command uses pnpm instead of npm.
+language: markdown
+runtime: none
+expectedFiles:
+  - README.md
+tolerances:
+  ignoreLocalRenames: false
+  ignoreWhitespaceOnly: true
+notes: |
+  This fixture exercises the "stay in your lane" property — even though the project has no code,
+  the agent should produce a clean docs-only diff rather than fabricating code files. A failing
+  case where the agent touches anything outside README.md is a real regression worth catching.

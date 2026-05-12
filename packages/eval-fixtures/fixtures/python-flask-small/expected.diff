@@ -1,0 +1,16 @@
+--- a/app.py
++++ b/app.py
+@@ -13,7 +13,12 @@
+     return jsonify(ok=True)
+
+
+-# TODO: add GET /users/<int:id> — tests/test_app.py exercises it.
++@app.get("/users/<int:user_id>")
++def get_user(user_id):
++    user = USERS.get(user_id)
++    if user is None:
++        return jsonify(error="not found"), 404
++    return jsonify(user)
+
+
+ if __name__ == "__main__":

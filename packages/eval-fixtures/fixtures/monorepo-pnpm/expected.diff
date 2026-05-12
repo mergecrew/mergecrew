@@ -1,0 +1,9 @@
+--- a/packages/core/src/format.ts
++++ b/packages/core/src/format.ts
+@@ -1,4 +1,4 @@
+-// BUG: divides instead of treating input as cents — returns "$0.0067" for 150
++// Format an integer cent value as a dollar-prefixed string with 2 decimals.
+ export function formatPrice(cents: number): string {
+-  return `$${(1 / cents).toFixed(4)}`;
++  return `$${(cents / 100).toFixed(2)}`;
+ }

@@ -1,0 +1,11 @@
+--- a/README.md
++++ b/README.md
+@@ -5,7 +5,7 @@
+ ## Getting started
+
+ ```
+-npm install widget
++pnpm install widget
+ ```
+
+ Then import it:
