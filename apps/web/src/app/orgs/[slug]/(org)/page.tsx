@@ -129,7 +129,7 @@ export default async function OrgHomePage({
         <span className="text-sm text-zinc-500">{new Date().toDateString()}</span>
       </header>
 
-      <WelcomeCard orgSlug={slug} />
+      <WelcomeCard orgSlug={slug} hasDemoProject={projects.some((p) => p.slug === 'acme')} />
 
       {onboardingRes && !onboardingRes.complete && (
         <OnboardingBanner
