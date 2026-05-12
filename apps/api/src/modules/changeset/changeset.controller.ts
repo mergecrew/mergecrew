@@ -46,6 +46,20 @@ export class ChangesetController {
     return this.cs.rollback(csId);
   }
 
+  /**
+   * Recent rollbacks for the project Guardrails settings card (#289).
+   * Pulls the N most-recent one-click rollback changesets so operators
+   * see the passive audit trail without opening the full log.
+   */
+  @Get('recent-rollbacks')
+  async recentRollbacks(
+    @Param('projectSlug') projectSlug: string,
+    @Query('limit') limit?: string,
+  ) {
+    const n = limit ? Number(limit) : 3;
+    return { items: await this.cs.recentRollbacks(projectSlug, Number.isFinite(n) ? n : 3) };
+  }
+
   @Get('digest/:date')
   async digest(@Param('projectSlug') projectSlug: string, @Param('date') date: string) {
     return this.cs.digestFor(projectSlug, date);

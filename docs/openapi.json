@@ -1107,6 +1107,20 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/projects/{projectSlug}/recent-rollbacks": {
+      "get": {
+        "operationId": "ChangesetController_recentRollbacks",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Changeset"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/projects/{projectSlug}/digest/{date}": {
       "get": {
         "operationId": "ChangesetController_digest",
