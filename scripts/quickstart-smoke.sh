@@ -99,13 +99,15 @@ if ! echo "$wiz" | grep -q "Set up your org"; then
   echo "::error::wizard page didn't render its header"
   exit 1
 fi
-# Step rows include "Step N · …". The fresh-stack state always has
-# at least Step 1 (LLM provider) visible — the only step that might
-# render as complete on first boot is `connected_repo`/`deploy_target`
-# *if* the operator left MERGECREW_DEMO_MODE=1 and somehow created a
-# non-demo project, which a fresh stack hasn't done.
-if ! echo "$wiz" | grep -q "Step 1"; then
-  echo "::error::wizard didn't render Step 1 row"
+# A step row's label is rendered as a contiguous text node, so it's
+# safe to grep verbatim from the SSR'd HTML. The "Step N · " prefix
+# is split across React text + expression nodes (React inserts HTML
+# comments between them for hydration), so grep on the prefix would
+# false-negative — match on the label instead.
+if ! echo "$wiz" | grep -q "Add an LLM provider"; then
+  echo "::error::wizard didn't render the llm_provider step row"
+  echo "--- first 4 KB of body ---"
+  echo "$wiz" | head -c 4096
   exit 1
 fi
 echo "[quickstart-smoke] ✓ onboarding wizard renders the stepper"
