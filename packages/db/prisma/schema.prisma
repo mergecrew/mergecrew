@@ -181,6 +181,11 @@ model Project {
   /// block all. Otherwise host patterns ('example.com', '*.example.com',
   /// '*' for explicit allow-all). See packages/skills/src/egress-policy.
   egressAllowlist  Json?   @map("egress_allowlist")
+  /// Dry-run mode (#284). When true, the agent loop still produces a
+  /// Changeset row + diff but the runner skips git push, PR creation,
+  /// and deploy. An admin can later "promote" a specific changeset to
+  /// open the real PR. Lowest-risk way to try mergecrew on a real repo.
+  dryRun         Boolean   @default(false) @map("dry_run")
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
@@ -621,6 +626,12 @@ model Changeset {
   testSummary     Json?            @map("test_summary")
   riskChip        String?          @map("risk_chip")
   estimatedUsd    Decimal          @default(0) @map("estimated_usd") @db.Decimal(12, 6)
+  /// True when the parent project was in dry-run mode (#284) at the
+  /// moment the agent produced this changeset. The runner sets it once
+  /// at creation; toggling project.dryRun afterwards does NOT rewrite
+  /// existing changesets. Operators promote a dry-run changeset via the
+  /// changeset detail page → "Promote to real PR" button.
+  isDryRun        Boolean          @default(false) @map("is_dry_run")
   createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 

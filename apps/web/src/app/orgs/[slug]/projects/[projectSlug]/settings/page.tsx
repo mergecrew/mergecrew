@@ -11,6 +11,7 @@ import { ScheduleForm } from './schedule-form';
 import { InceptionForm } from './inception-form';
 import { DeployTargetForm, type DeployTargetRow } from './deploy-target-form';
 import { SmokeTestForm } from './smoke-test-form';
+import { DryRunForm } from './dry-run-form';
 
 export default async function ProjectSettings({
   params,
@@ -29,6 +30,7 @@ export default async function ProjectSettings({
     slug: string;
     description: string | null;
     archivedAt: string | null;
+    dryRun: boolean;
     connectedRepo: {
       repoFullName: string;
       defaultBranch: string;
@@ -225,6 +227,18 @@ export default async function ProjectSettings({
         >
           Manage rules →
         </a>
+      </Section>
+
+      <Section
+        title="Guardrails"
+        description="Safety controls that constrain what the agent loop is allowed to do on this project."
+      >
+        <DryRunForm
+          slug={slug}
+          projectSlug={projectSlug}
+          initialDryRun={project.dryRun}
+          canEdit={canEdit}
+        />
       </Section>
     </main>
   );

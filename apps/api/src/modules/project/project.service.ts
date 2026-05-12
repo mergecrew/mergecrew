@@ -130,9 +130,17 @@ export class ProjectService {
     return p;
   }
 
-  async update(slug: string, patch: { name?: string; description?: string | null; archived?: boolean }) {
+  async update(
+    slug: string,
+    patch: { name?: string; description?: string | null; archived?: boolean; dryRun?: boolean },
+  ) {
     const project = await this.detail(slug);
-    const data: { name?: string; description?: string | null; archivedAt?: Date | null } = {};
+    const data: {
+      name?: string;
+      description?: string | null;
+      archivedAt?: Date | null;
+      dryRun?: boolean;
+    } = {};
     if (patch.name !== undefined) {
       const trimmed = patch.name.trim();
       if (!trimmed) throw new ValidationError('name cannot be empty');
@@ -143,6 +151,9 @@ export class ProjectService {
     }
     if (patch.archived !== undefined) {
       data.archivedAt = patch.archived ? new Date() : null;
+    }
+    if (patch.dryRun !== undefined) {
+      data.dryRun = Boolean(patch.dryRun);
     }
     return this.prisma.withTenant(project.organizationId, (tx) =>
       tx.project.update({ where: { id: project.id }, data }),

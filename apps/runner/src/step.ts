@@ -285,12 +285,20 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     skills.register(buildHttpSkill(name, def));
   }
 
-  // Read the project's egress allowlist (#10). NULL = no restriction
-  // (back-compat); the skill execution layer honors the value as-is.
+  // Read the project's egress allowlist (#10) and dry-run flag (#284).
+  // egressAllowlist NULL = no restriction (back-compat); the skill
+  // execution layer honors the value as-is.
+  // dryRun TRUE = produce a changeset but skip the VCS push, PR-open
+  // and deploy stages so the operator can review without remote
+  // side-effects.
   const projectRow = await withTenant(organizationId, (tx) =>
-    tx.project.findUnique({ where: { id: projectId }, select: { egressAllowlist: true } }),
+    tx.project.findUnique({
+      where: { id: projectId },
+      select: { egressAllowlist: true, dryRun: true },
+    }),
   );
   const egressAllowlist = (projectRow?.egressAllowlist as string[] | null | undefined) ?? null;
+  const dryRun = projectRow?.dryRun ?? false;
 
   const policy = new PolicyEngine({
     agentDoNotTouch: agentDef.do_not_touch,
@@ -551,6 +559,7 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
           input: call.input as { message?: string; type?: string; scope?: string } | null,
           output: call.output as { sha?: string; branch?: string; message?: string } | null,
           eventlog,
+          isDryRun: dryRun,
         });
       }
       // Capture build/test output into the active Changeset's testSummary.
@@ -572,7 +581,13 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   // After the loop: open PRs for any active changesets that don't have one
   // yet. Best-effort — failures log + leave the changeset in its current
   // status so a follow-up step or human can retry.
-  if (vcs && outcome.kind !== 'failed' && outcome.kind !== 'budget_exhausted') {
+  //
+  // Dry-run (#284) short-circuits the push/PR/deploy branches: the
+  // changeset row still exists (with `isDryRun = true`) and its diff is
+  // visible in the UI, but no remote side-effect fires. An operator can
+  // later promote the changeset to do the actual push. The dry-run flag
+  // on each changeset is enough timeline signal — no extra event emit.
+  if (!dryRun && vcs && outcome.kind !== 'failed' && outcome.kind !== 'budget_exhausted') {
     await openPendingChangesetPrs({
       organizationId,
       projectId,
@@ -587,7 +602,8 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
 
   // After PRs are open: trigger the dev-target deploy for each changeset
   // that doesn't already have one. Same best-effort posture as PR opening.
-  if (deploy && dt && outcome.kind !== 'failed' && outcome.kind !== 'budget_exhausted') {
+  // Skipped for dry-run runs (no PR means nothing to deploy).
+  if (!dryRun && deploy && dt && outcome.kind !== 'failed' && outcome.kind !== 'budget_exhausted') {
     await triggerPendingDevDeploys({
       organizationId,
       projectId,
@@ -702,8 +718,9 @@ async function ensureChangesetForCommit(opts: {
   input: { message?: string; type?: string; scope?: string } | null;
   output: { sha?: string; branch?: string; message?: string } | null;
   eventlog: Eventlog;
+  isDryRun: boolean;
 }): Promise<void> {
-  const { organizationId, projectId, runId, workflowRunId, input, output, eventlog } = opts;
+  const { organizationId, projectId, runId, workflowRunId, input, output, eventlog, isDryRun } = opts;
   const branch = output?.branch;
   if (!branch) return; // detached HEAD or branch lookup failed; skip
 
@@ -737,6 +754,7 @@ async function ensureChangesetForCommit(opts: {
         title: title || branch,
         whyParagraph: whyParagraph || null,
         status: 'proposed',
+        isDryRun,
       },
     }),
   );
