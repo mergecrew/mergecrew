@@ -13,8 +13,15 @@
  * be tested end-to-end without the comparison.
  */
 
+import { promises as fs } from 'node:fs';
 import { withSystem, withTenant } from '@mergecrew/db';
-import { listFixtures, loadFixture, type LoadedFixture } from '@mergecrew/eval-fixtures';
+import {
+  compareSnapshot,
+  listFixtures,
+  loadFixture,
+  type LoadedFixture,
+  type SnapshotMismatch,
+} from '@mergecrew/eval-fixtures';
 import {
   ProviderRegistry,
   chat,
@@ -54,6 +61,24 @@ function parseArgs(argv: string[]): Cli {
   }
   if (!out.orgSlug) throw new Error('--org <slug> is required');
   return out;
+}
+
+function summarizeMismatches(mismatches: SnapshotMismatch[]): string {
+  if (mismatches.length === 0) return '';
+  return mismatches
+    .map((m) => {
+      switch (m.kind) {
+        case 'missing_required_file':
+          return `missing required file: ${m.path}`;
+        case 'unexpected_file':
+          return `unexpected file: ${m.path}`;
+        case 'untouched_expected_file':
+          return `untouched expected file: ${m.path}`;
+        case 'low_overlap':
+          return `low overlap on ${m.path}: ${m.overlap.toFixed(2)} < ${m.threshold}`;
+      }
+    })
+    .join('; ');
 }
 
 function decryptDevOnly(blob: Buffer): string {
@@ -234,23 +259,36 @@ async function main(): Promise<void> {
       const usd = price ? estimateUsd(price, result.usage) : 0;
       totalUsd += usd;
       totalLatencyMs += result.latencyMs;
-      // V2.ab #299 marks every successful response as `pass` so the
-      // surrounding plumbing is exercisable. #300 replaces this with
-      // a real snapshot comparison against expected.diff.
-      passCount++;
+      // Snapshot comparison (#300). The fixture's expected.diff lives
+      // alongside the source tree; the agent's diff is the LLM
+      // response. Tolerances come from the manifest.
+      const expectedDiff = await fs.readFile(fixture.expectedDiffPath, 'utf8');
+      const verdict = compareSnapshot(result.content, expectedDiff, fixture.manifest.tolerances);
+      let status: 'pass' | 'fail';
+      let errorMessage: string | undefined;
+      if (verdict.pass) {
+        passCount++;
+        status = 'pass';
+      } else {
+        failCount++;
+        status = 'fail';
+        errorMessage = summarizeMismatches(verdict.mismatches);
+      }
       await withTenant(organizationId, (tx) =>
         tx.evalCase.create({
           data: {
             evalRunId: evalRun.id,
             fixtureId: id,
-            status: 'pass',
+            status,
             agentDiff: result.content,
+            ...(errorMessage ? { errorMessage } : {}),
             usdEstimate: usd as any,
             latencyMs: result.latencyMs,
           },
         }),
       );
-      console.log(`  ${id}: pass · ${result.latencyMs}ms · $${usd.toFixed(4)}`);
+      const summary = verdict.pass ? 'pass' : `fail · ${errorMessage}`;
+      console.log(`  ${id}: ${summary} · ${result.latencyMs}ms · $${usd.toFixed(4)}`);
     } catch (err) {
       errorCount++;
       const message = err instanceof Error ? err.message : String(err);
