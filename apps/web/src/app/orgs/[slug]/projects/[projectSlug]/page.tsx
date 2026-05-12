@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { Card, LinkButton, StatusDot, Chip } from '@/components/ui';
@@ -338,11 +339,18 @@ async function runNowAction(formData: FormData) {
   const slug = String(formData.get('orgSlug') ?? '');
   const projectSlug = String(formData.get('projectSlug') ?? '');
   const session = await requireSession();
-  await api(`/v1/orgs/${slug}/projects/${projectSlug}/runs`, {
+  const result = await api<{ runId?: string }>(`/v1/orgs/${slug}/projects/${projectSlug}/runs`, {
     method: 'POST',
     body: '{}',
     session,
   });
+  // Server-side redirect to the live run-detail page so the operator
+  // sees the SSE timeline streaming immediately (#407, V2.aj). The
+  // API pre-creates the DailyRun row and returns its id, so the
+  // target URL is valid before the orchestrator picks the run up.
+  if (result?.runId) {
+    redirect(`/orgs/${slug}/projects/${projectSlug}/runs/${result.runId}`);
+  }
 }
 
 function RunNowForm({
