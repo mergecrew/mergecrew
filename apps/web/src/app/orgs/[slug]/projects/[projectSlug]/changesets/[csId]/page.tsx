@@ -3,6 +3,57 @@ import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { Card, Chip } from '@/components/ui';
 
+interface BlastRadiusReason {
+  kind: 'blast_radius';
+  filesChanged: number;
+  linesChanged: number;
+  maxFilesChanged: number;
+  maxLinesChanged: number;
+  filesOverLimit: boolean;
+  linesOverLimit: boolean;
+  deniedHits: { path: string; glob: string }[];
+}
+
+function BlockedReasonCallout({ reason }: { reason: any }) {
+  const r = reason as BlastRadiusReason;
+  if (r?.kind !== 'blast_radius') {
+    return null;
+  }
+  return (
+    <div className="rounded border border-rose-300 bg-rose-50 p-3 text-sm text-rose-900 dark:border-rose-700/40 dark:bg-rose-950/30 dark:text-rose-200">
+      <strong>This changeset was blocked by the blast-radius gate.</strong>
+      <ul className="mt-2 space-y-1 text-xs">
+        {r.filesOverLimit && (
+          <li>
+            • Files changed: <strong>{r.filesChanged}</strong> (cap: {r.maxFilesChanged})
+          </li>
+        )}
+        {r.linesOverLimit && (
+          <li>
+            • Lines changed: <strong>{r.linesChanged}</strong> (cap: {r.maxLinesChanged})
+          </li>
+        )}
+        {r.deniedHits.length > 0 && (
+          <li>
+            • Denied-path hits:
+            <ul className="ml-3 mt-1 space-y-0.5 font-mono">
+              {r.deniedHits.map((h, i) => (
+                <li key={i}>
+                  <code>{h.path}</code> ← matched <code>{h.glob}</code>
+                </li>
+              ))}
+            </ul>
+          </li>
+        )}
+      </ul>
+      <p className="mt-2 text-xs">
+        Raise the limits or trim the deny-list under <em>Settings → Guardrails</em>. The next run
+        will produce a fresh changeset against current HEAD.
+      </p>
+    </div>
+  );
+}
+
 export default async function ChangesetDetail({
   params,
 }: {
@@ -38,6 +89,9 @@ export default async function ChangesetDetail({
           diff, and recorded the changeset — but the runner skipped <code>git push</code>, PR
           creation, and deploy. Turn off dry-run in project settings to ship the next run for real.
         </div>
+      )}
+      {cs.status === 'blocked' && cs.blockedReason && (
+        <BlockedReasonCallout reason={cs.blockedReason} />
       )}
       {cs.whyParagraph && (
         <Card>

@@ -186,6 +186,15 @@ model Project {
   /// and deploy. An admin can later "promote" a specific changeset to
   /// open the real PR. Lowest-risk way to try mergecrew on a real repo.
   dryRun         Boolean   @default(false) @map("dry_run")
+  /// Blast-radius limits (#285). Hard caps the runner applies AFTER the
+  /// agent produces a diff but BEFORE the push step. A changeset that
+  /// exceeds any cap, or that touches a path matching one of the deny
+  /// globs, is rejected (status=needs_review, prNumber=null) with the
+  /// breakdown surfaced on the changeset detail page + inbox. Picomatch
+  /// glob syntax — same as auto-promote rules.
+  maxFilesChanged  Int     @default(25)  @map("max_files_changed")
+  maxLinesChanged  Int     @default(1000) @map("max_lines_changed")
+  deniedPaths      Json    @default("[\"**/migration*\", \"**/secrets*\", \"**/.env*\", \"**/*.pem\", \"**/*.key\"]") @map("denied_paths")
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
@@ -606,6 +615,10 @@ enum ChangesetStatus {
   promoted
   rolled_back
   deferred
+  /// Blast-radius limit hit (#285) — files/LOC over cap, or a path
+  /// matched a deny glob. The changeset stays visible with the rejection
+  /// breakdown on its detail page; no PR is opened, no deploy fires.
+  blocked
 
   @@map("changeset_status")
 }
@@ -632,6 +645,10 @@ model Changeset {
   /// existing changesets. Operators promote a dry-run changeset via the
   /// changeset detail page → "Promote to real PR" button.
   isDryRun        Boolean          @default(false) @map("is_dry_run")
+  /// Blast-radius rejection breakdown (#285). Set when status=blocked.
+  /// Shape: {kind:'files'|'lines'|'denied_paths', filesChanged?, maxFiles?,
+  /// linesChanged?, maxLines?, deniedHits?:[{path,glob}]}. Null otherwise.
+  blockedReason   Json?            @map("blocked_reason")
   createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 

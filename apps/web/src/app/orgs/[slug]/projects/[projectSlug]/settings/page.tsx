@@ -12,6 +12,7 @@ import { InceptionForm } from './inception-form';
 import { DeployTargetForm, type DeployTargetRow } from './deploy-target-form';
 import { SmokeTestForm } from './smoke-test-form';
 import { DryRunForm } from './dry-run-form';
+import { BlastRadiusForm } from './blast-radius-form';
 
 export default async function ProjectSettings({
   params,
@@ -31,6 +32,9 @@ export default async function ProjectSettings({
     description: string | null;
     archivedAt: string | null;
     dryRun: boolean;
+    maxFilesChanged: number;
+    maxLinesChanged: number;
+    deniedPaths: string[] | null;
     connectedRepo: {
       repoFullName: string;
       defaultBranch: string;
@@ -233,12 +237,27 @@ export default async function ProjectSettings({
         title="Guardrails"
         description="Safety controls that constrain what the agent loop is allowed to do on this project."
       >
-        <DryRunForm
-          slug={slug}
-          projectSlug={projectSlug}
-          initialDryRun={project.dryRun}
-          canEdit={canEdit}
-        />
+        <div className="space-y-6">
+          <DryRunForm
+            slug={slug}
+            projectSlug={projectSlug}
+            initialDryRun={project.dryRun}
+            canEdit={canEdit}
+          />
+          <div className="border-t pt-4 dark:border-zinc-800">
+            <h3 className="text-sm font-medium">Blast-radius limits</h3>
+            <div className="mt-2">
+              <BlastRadiusForm
+                slug={slug}
+                projectSlug={projectSlug}
+                initialMaxFiles={project.maxFilesChanged}
+                initialMaxLines={project.maxLinesChanged}
+                initialDeniedPaths={project.deniedPaths ?? []}
+                canEdit={canEdit}
+              />
+            </div>
+          </div>
+        </div>
       </Section>
     </main>
   );

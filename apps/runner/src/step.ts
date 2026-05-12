@@ -2,18 +2,24 @@ import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import type { Logger } from 'pino';
 import { withTenant } from '@mergecrew/db';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import {
   AutoPromoteRule,
   autoPromoteMatches,
+  checkBlastRadius,
   parsePackageJsonDiff,
   type AgentDefinition,
   type AutoPromoteRule as AutoPromoteRuleType,
+  type BlastRadiusLimits,
   type MergecrewConfig,
   type ModelCapability,
   type PackageJsonVersionChange,
   type StepOutcome,
   type TestSummary,
 } from '@mergecrew/domain';
+
+const execFileAsync = promisify(execFile);
 import { parseTestOutput, mergeIntoSummary } from './test-summary.js';
 import { computeRiskChip, type RiskLevel } from './risk-chip.js';
 import { Eventlog } from '@mergecrew/eventlog';
@@ -793,6 +799,8 @@ async function openPendingChangesetPrs(opts: {
   );
   if (!repo) return;
 
+  const limits = await loadBlastRadiusLimits(organizationId, projectId);
+
   const changesets = await withTenant(organizationId, (tx) =>
     tx.changeset.findMany({
       where: {
@@ -813,6 +821,53 @@ async function openPendingChangesetPrs(opts: {
 
   for (const cs of changesets) {
     try {
+      // Blast-radius gate (#285). Compare branch vs default-branch in
+      // the local workspace before pushing; if any cap is exceeded,
+      // mark the changeset blocked with the breakdown and skip push.
+      const stats = await getLocalBranchStats(workspacePath, cs.branch, repo.defaultBranch);
+      const verdict = checkBlastRadius({ files: stats }, limits);
+      if (!verdict.ok) {
+        await withTenant(organizationId, (tx) =>
+          tx.changeset.update({
+            where: { id: cs.id },
+            data: {
+              status: 'blocked',
+              blockedReason: {
+                kind: 'blast_radius',
+                filesChanged: verdict.filesChanged,
+                linesChanged: verdict.linesChanged,
+                maxFilesChanged: verdict.maxFilesChanged,
+                maxLinesChanged: verdict.maxLinesChanged,
+                filesOverLimit: verdict.filesOverLimit,
+                linesOverLimit: verdict.linesOverLimit,
+                deniedHits: verdict.deniedHits,
+              } as any,
+              updatedAt: new Date(),
+            },
+          }),
+        );
+        await eventlog.emit({
+          organizationId,
+          projectId,
+          dailyRunId: runId,
+          workflowRunId,
+          changesetId: cs.id,
+          type: 'CHANGESET_FLAGGED',
+          actor: { kind: 'system' },
+          payload: {
+            reason: 'blast_radius',
+            filesChanged: verdict.filesChanged,
+            linesChanged: verdict.linesChanged,
+            deniedHits: verdict.deniedHits,
+          },
+        });
+        logger.info(
+          { changesetId: cs.id, filesChanged: verdict.filesChanged, linesChanged: verdict.linesChanged },
+          'blast-radius: blocking changeset; skipping push',
+        );
+        continue;
+      }
+
       await vcs.push(workspacePath, cs.branch);
       const body = buildPrBody(cs);
       const pr = await vcs.openPullRequest(repoRef, {
@@ -1189,6 +1244,67 @@ function splitCommitMessage(msg: string): { title: string; whyParagraph: string 
     title: trimmed.slice(0, blank).trim(),
     whyParagraph: trimmed.slice(blank + 2).trim(),
   };
+}
+
+/**
+ * Read the project's blast-radius limits (#285). Falls back to safe
+ * defaults if the row is missing the columns somehow (back-compat for
+ * environments lagging on migrations).
+ */
+async function loadBlastRadiusLimits(
+  organizationId: string,
+  projectId: string,
+): Promise<BlastRadiusLimits> {
+  const row = await withTenant(organizationId, (tx) =>
+    tx.project.findUnique({
+      where: { id: projectId },
+      select: { maxFilesChanged: true, maxLinesChanged: true, deniedPaths: true },
+    }),
+  );
+  return {
+    maxFilesChanged: row?.maxFilesChanged ?? 25,
+    maxLinesChanged: row?.maxLinesChanged ?? 1000,
+    deniedPaths: Array.isArray(row?.deniedPaths)
+      ? (row.deniedPaths as string[])
+      : ['**/migration*', '**/secrets*', '**/.env*', '**/*.pem', '**/*.key'],
+  };
+}
+
+/**
+ * `git diff --numstat origin/<defaultBranch>...<branch>` in the runner's
+ * workspace. Returns per-file additions + deletions for blast-radius
+ * accounting. Empty array when the branch hasn't diverged.
+ */
+async function getLocalBranchStats(
+  workspacePath: string,
+  branch: string,
+  defaultBranch: string,
+): Promise<{ path: string; additions: number; deletions: number }[]> {
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['diff', '--numstat', `origin/${defaultBranch}...${branch}`],
+      { cwd: workspacePath, maxBuffer: 10 * 1024 * 1024 },
+    );
+    return stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [add, del, ...pathParts] = line.split(/\s+/);
+        // Binary files render as "-\t-\t<path>" in numstat; count those
+        // as 0 additions/deletions so they only trip the file-count cap.
+        const additions = add === '-' ? 0 : Number(add) || 0;
+        const deletions = del === '-' ? 0 : Number(del) || 0;
+        return { path: pathParts.join(' '), additions, deletions };
+      })
+      .filter((f) => f.path);
+  } catch {
+    // Best-effort: a git failure (e.g. missing default branch ref)
+    // should NOT block the push — the human-gate downstream is still
+    // there. Returning [] makes the blast-radius check pass through.
+    return [];
+  }
 }
 
 async function checkDailyBudget(

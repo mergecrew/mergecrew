@@ -38,6 +38,9 @@ export class ProjectController {
       description?: string | null;
       archived?: boolean;
       dryRun?: boolean;
+      maxFilesChanged?: number;
+      maxLinesChanged?: number;
+      deniedPaths?: string[];
     },
   ) {
     return this.projects.update(projectSlug, body);
