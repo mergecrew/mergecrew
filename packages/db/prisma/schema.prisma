@@ -525,6 +525,12 @@ model AgentStep {
   /// rows with status='running'.
   heartbeatAt          DateTime? @map("heartbeat_at") @db.Timestamptz(6)
 
+  /// Multi-agent graph node key (#331). Null for legacy single-agent runs.
+  /// Set by the runner when a step is produced by a named node in a
+  /// project's graph profile — e.g. 'planner', 'coder', 'reviewer'. The
+  /// run-detail UI groups steps by this key to render per-agent costs.
+  graphNodeKey         String?  @map("graph_node_key")
+
   workflowRun WorkflowRun @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
   toolCalls   ToolCall[]
   modelTurns  ModelTurn[]
