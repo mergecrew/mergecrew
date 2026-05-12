@@ -187,17 +187,21 @@ export class Orchestrator {
   }
 
   /**
-   * Graph-driven successor dispatch (#348). Called after a step completes.
-   * Returns true when a follow-up step was queued — telling the caller to
-   * skip `maybeAdvanceWorkflow` because the chain isn't done. Returns
-   * false when no successor exists (step had no graphNodeKey, or its
-   * graph node terminated at `__end__`), so the caller falls through to
-   * normal workflow-advance logic.
+   * Graph-driven successor dispatch (#348, #349). Called after a step
+   * completes. Returns true when a follow-up step was queued — telling
+   * the caller to skip `maybeAdvanceWorkflow` because the chain isn't
+   * done. Returns false when no successor exists (step had no
+   * graphNodeKey, or its graph node terminated at `__end__`), so the
+   * caller falls through to normal workflow-advance logic.
    *
-   * The graph signal for #348 is fixed at undefined — meaning the
-   * reviewer node's two-edge fork resolves to the `when:'approve'`
-   * branch via `findNextGraphNode`'s minimal-behavior fallback. #349
-   * threads the reviewer's verdict in and removes that assumption.
+   * Reviewer routing (#349): when the completed step's graphNodeKey is
+   * `reviewer`, the step's persisted `output.verdict` drives the
+   * routing signal — `approve` ends the chain, `request_changes` loops
+   * back to the coder. Loop-backs are capped at `REVIEW_LOOP_CAP`
+   * rounds (default 3 coder passes total); the cap exhaustion path
+   * emits `REVIEW_LOOP_EXHAUSTED` with the reviewer's last
+   * requestedChanges and falls through to workflow advance so the
+   * changeset surfaces to humans unchanged.
    */
   private async dispatchGraphNext(
     organizationId: string,
@@ -209,7 +213,7 @@ export class Orchestrator {
     const step = await withTenant(organizationId, (tx) =>
       tx.agentStep.findUnique({
         where: { id: stepId },
-        select: { graphNodeKey: true, input: true },
+        select: { graphNodeKey: true, input: true, output: true, agentKind: true },
       }),
     );
     if (!step?.graphNodeKey) return false;
@@ -225,7 +229,15 @@ export class Orchestrator {
     if (project?.graphProfile !== 'careful') return false;
     const graph = CAREFUL_GRAPH;
 
-    const nextKey = findNextGraphNode(graph, step.graphNodeKey);
+    // Reviewer verdict → routing signal. We persist `output.verdict` in
+    // the runner (#334), so the orchestrator just reads it here.
+    let signal: string | undefined;
+    if (step.graphNodeKey === 'reviewer') {
+      const verdict = (step.output as { verdict?: string } | null)?.verdict;
+      signal = verdict === 'approve' ? 'approve' : 'requestChanges';
+    }
+
+    const nextKey = findNextGraphNode(graph, step.graphNodeKey, signal);
     if (nextKey === null || nextKey === GRAPH_END) return false;
 
     const node = graph.graph.nodes[nextKey];
@@ -235,6 +247,49 @@ export class Orchestrator {
         'graph dispatch: next node not in graph.nodes — falling back to workflow advance',
       );
       return false;
+    }
+
+    // Loop-back guard (#349). When the reviewer loops back to the
+    // coder, count completed coder steps in this workflow run. The cap
+    // is set in env (`REVIEW_LOOP_CAP`, default 3) and matches the
+    // doc'd 3-round budget: one initial coder pass + up to 2 retries.
+    if (step.graphNodeKey === 'reviewer' && nextKey === 'coder') {
+      const coderRounds = await withTenant(organizationId, (tx) =>
+        tx.agentStep.count({
+          where: {
+            workflowRunId,
+            graphNodeKey: 'coder',
+            status: { in: ['done', 'failed', 'cancelled'] },
+          },
+        }),
+      );
+      const cap = Number(process.env.REVIEW_LOOP_CAP ?? 3);
+      if (coderRounds >= cap) {
+        const output = step.output as
+          | { verdict?: string; reasoning?: string; requestedChanges?: string[] }
+          | null;
+        await this.deps.eventlog.emit({
+          organizationId,
+          projectId,
+          dailyRunId: runId,
+          workflowRunId,
+          agentStepId: stepId,
+          type: 'REVIEW_LOOP_EXHAUSTED',
+          actor: { kind: 'system' },
+          payload: {
+            coderRounds,
+            cap,
+            lastReviewerReasoning: output?.reasoning ?? null,
+            lastReviewerRequestedChanges: output?.requestedChanges ?? [],
+          },
+        });
+        this.deps.logger.info(
+          { runId, workflowRunId, coderRounds, cap },
+          'careful loop exhausted: routing changeset to human review without further coder retries',
+        );
+        // Return false so the caller falls through to maybeAdvanceWorkflow.
+        return false;
+      }
     }
 
     const lc = await withTenant(organizationId, (tx) =>
