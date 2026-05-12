@@ -110,7 +110,7 @@ cd mergecrew
 pnpm compose:full     # or: docker compose -f docker-compose.full.yml up
 ```
 
-Open <http://localhost:3000>. Auto-login signs you in as `demo@mergecrew.local`. Add an LLM provider in the org settings to start triggering runs. Stop with `pnpm compose:full:down`; wipe state with `docker compose -f docker-compose.full.yml down -v`.
+Open <http://localhost:3000>. Auto-login signs you in as `demo@mergecrew.local`. The bundled demo project ships in **demo mode** (`MERGECREW_DEMO_MODE=1`), so you can click **Run now** immediately — the agent loop returns a canned plan/diff/verdict instead of calling an LLM, and an amber banner makes the mode unambiguous. Set `MERGECREW_DEMO_MODE=0` and add an LLM provider in the org settings once you want real runs. Stop with `pnpm compose:full:down`; wipe state with `docker compose -f docker-compose.full.yml down -v`.
 
 This path uses dev-mode defaults (zero JWT secret, no OAuth, no TLS) and is for local trials only. Production self-host uses `docker-compose.prod.yml` — see [docs/03-infrastructure](docs/03-infrastructure).
 
