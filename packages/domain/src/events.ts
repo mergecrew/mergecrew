@@ -32,6 +32,10 @@ export const TimelineEventType = z.enum([
   'AGENT_STEP_RECOVERED',
   'AGENT_TOOL_CALL',
   'AGENT_DECISION',
+  // Multi-agent (#332-#334). PLAN_PROPOSED carries the planner's
+  // markdown plan; the coder consumes it. REVIEW_APPROVED /
+  // REVIEW_CHANGES_REQUESTED gate the changeset before PR open.
+  'PLAN_PROPOSED',
   // gate
   'GATE_REACHED',
   'HUMAN_APPROVED',
