@@ -1,10 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { Card } from './ui';
+import { triggerRunAction } from './runs-actions';
 
 const STORAGE_KEY = 'mergecrew:welcome-dismissed';
+const DEMO_PROJECT_SLUG = 'acme';
 
 /**
  * First-visit welcome card on the Today page (#363, V2.af).
@@ -16,8 +18,21 @@ const STORAGE_KEY = 'mergecrew:welcome-dismissed';
  * which we accept in exchange for a discoverable, server-rendered
  * marker.
  */
-export function WelcomeCard({ orgSlug }: { orgSlug: string }) {
+export function WelcomeCard({
+  orgSlug,
+  hasDemoProject = false,
+}: {
+  orgSlug: string;
+  /**
+   * True when the seeded demo project (\`acme\`) is reachable in this
+   * org — gates the "Try a sample run" CTA so fresh stacks without
+   * the demo seed (rare, but possible if MERGECREW_DEMO_MODE was off
+   * at seed time) don't render a button that points nowhere.
+   */
+  hasDemoProject?: boolean;
+}) {
   const [state, setState] = useState<'visible' | 'dismissed'>('visible');
+  const [pending, startTransition] = useTransition();
 
   useEffect(() => {
     try {
@@ -72,6 +87,25 @@ export function WelcomeCard({ orgSlug }: { orgSlug: string }) {
               page edits the YAML that defines agents + workflows for a project.
             </li>
           </ul>
+          {hasDemoProject && (
+            <form
+              action={(fd) => startTransition(() => triggerRunAction(fd))}
+              className="flex flex-wrap items-center gap-3"
+            >
+              <input type="hidden" name="orgSlug" value={orgSlug} />
+              <input type="hidden" name="projectSlug" value={DEMO_PROJECT_SLUG} />
+              <button
+                type="submit"
+                disabled={pending}
+                className="inline-flex items-center justify-center rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {pending ? 'Starting sample run…' : 'Try a sample run'}
+              </button>
+              <span className="text-xs text-zinc-600 dark:text-zinc-300">
+                Triggers the seeded demo project ({DEMO_PROJECT_SLUG}) and opens the live timeline.
+              </span>
+            </form>
+          )}
           <div className="text-sm">
             <a
               className="font-medium text-sky-700 underline hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-100"
