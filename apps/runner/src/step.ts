@@ -636,8 +636,13 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     // flow advances past the Coder with nothing for the Reviewer to
     // look at and nothing for the human reviewer to see in the
     // Changesets list. Synthesize a placeholder here so demo runs
-    // produce visible artifacts.
-    if (process.env.MERGECREW_AGENT_STUB === '1') {
+    // produce visible artifacts. Activated by either AGENT_STUB
+    // (existing e2e gate) or DEMO_MODE (#374) — they share a
+    // backend.
+    if (
+      process.env.MERGECREW_AGENT_STUB === '1' ||
+      process.env.MERGECREW_DEMO_MODE === '1'
+    ) {
       await synthesizeStubChangeset({
         organizationId,
         projectId,
