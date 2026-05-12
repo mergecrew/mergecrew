@@ -1,0 +1,21 @@
+id: planner-finds-the-bug
+description: Planner reads a broken Express handler and identifies the right file in its plan.
+kind: agent
+agentKind: planner
+intent: |
+  The /healthz endpoint hangs forever — the handler never returns. Produce a plan that fixes it.
+  Don't touch any other route.
+language: typescript
+runtime: node
+# The planner's "Files to touch" must include this path.
+expectedFiles:
+  - src/routes/health.ts
+tolerances:
+  ignoreLocalRenames: false
+  ignoreWhitespaceOnly: true
+notes: |
+  Mirrors the node-express-small end-to-end fixture but isolates the planner
+  agent. Pass condition: planner's plan markdown contains src/routes/health.ts
+  under "Files to touch". A planner that hallucinates an unrelated path
+  (e.g. src/index.ts) fails this fixture even if the coder downstream
+  would have recovered.

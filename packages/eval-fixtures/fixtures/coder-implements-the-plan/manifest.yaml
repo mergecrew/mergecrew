@@ -1,0 +1,25 @@
+id: coder-implements-the-plan
+description: Coder receives a pre-written plan and must implement the fix in the right file.
+kind: agent
+agentKind: coder
+intent: |
+  Implement the plan below. Touch only the files it lists.
+language: typescript
+runtime: node
+expectedFiles:
+  - src/routes/health.ts
+planMarkdown: |
+  # Plan
+  ## Files to touch
+  - src/routes/health.ts — add a `return res.status(200).json({ ok: true })` so the handler responds instead of hanging
+  ## Files NOT to touch
+  - src/index.ts (Express bootstrap is correct; only the handler is broken)
+  ## Validation
+  - curl -fsS http://localhost:3000/healthz should return 200 with body {"ok":true}
+tolerances:
+  ignoreLocalRenames: true
+  ignoreWhitespaceOnly: true
+notes: |
+  Isolates the coder by skipping the planner. The plan above is fixed —
+  if the coder's diff touches any file other than src/routes/health.ts,
+  the out-of-scope guard (#333) fires and this fixture fails.

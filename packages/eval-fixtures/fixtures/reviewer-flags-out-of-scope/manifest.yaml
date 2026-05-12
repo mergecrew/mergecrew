@@ -1,0 +1,43 @@
+id: reviewer-flags-out-of-scope
+description: Reviewer receives a plan + a diff that touches a file the plan said NOT to touch, and must request_changes.
+kind: agent
+agentKind: reviewer
+intent: |
+  Review the diff below against the plan. Decide approve or request_changes.
+language: typescript
+runtime: node
+# Reviewer fixtures don't enforce expectedFiles — they score via expectedVerdict.
+expectedFiles: []
+planMarkdown: |
+  # Plan
+  ## Files to touch
+  - src/routes/health.ts — add a return statement
+  ## Files NOT to touch
+  - src/index.ts (bootstrap is correct)
+  ## Validation
+  - curl /healthz returns 200
+diffMarkdown: |
+  --- a/src/routes/health.ts
+  +++ b/src/routes/health.ts
+  @@ -3,5 +3,5 @@
+   export const healthRouter = Router();
+
+   healthRouter.get('/', (_req, res) => {
+  -  // BUG: missing return + body — handler hangs forever
+  +  res.status(200).json({ ok: true });
+   });
+  --- a/src/index.ts
+  +++ b/src/index.ts
+  @@ -1,3 +1,4 @@
+  +// unrelated: refactored import order
+   import { healthRouter } from './routes/health';
+   import express from 'express';
+expectedVerdict: request_changes
+tolerances:
+  ignoreLocalRenames: false
+  ignoreWhitespaceOnly: false
+notes: |
+  The diff is correct for the broken handler BUT also touches src/index.ts,
+  which the plan explicitly forbids. A correctly-behaving reviewer flags this
+  with request_changes. A reviewer that approves anyway fails this fixture —
+  exactly the regression we want to catch.

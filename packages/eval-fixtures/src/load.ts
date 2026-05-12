@@ -58,14 +58,63 @@ function validateManifest(id: string, raw: unknown): FixtureManifest {
   if (m.id !== id) {
     throw new Error(`fixture ${id}: manifest.id (${String(m.id)}) does not match directory name`);
   }
+
+  // Kind defaults to 'end-to-end' for backward compatibility with the
+  // V2.ab fixture corpus (#298) that pre-dates kind awareness.
+  const kindRaw = m.kind === undefined ? 'end-to-end' : m.kind;
+  if (kindRaw !== 'end-to-end' && kindRaw !== 'agent') {
+    throw new Error(`fixture ${id}: kind must be 'end-to-end' or 'agent', got ${String(kindRaw)}`);
+  }
+  const kind = kindRaw as 'end-to-end' | 'agent';
+
+  let agentKind: 'planner' | 'coder' | 'reviewer' | undefined;
+  let planMarkdown: string | undefined;
+  let diffMarkdown: string | undefined;
+  let expectedVerdict: 'approve' | 'request_changes' | undefined;
+  if (kind === 'agent') {
+    if (m.agentKind !== 'planner' && m.agentKind !== 'coder' && m.agentKind !== 'reviewer') {
+      throw new Error(
+        `fixture ${id}: kind='agent' requires agentKind to be 'planner', 'coder', or 'reviewer'`,
+      );
+    }
+    agentKind = m.agentKind;
+    if (agentKind === 'coder') {
+      if (typeof m.planMarkdown !== 'string' || !m.planMarkdown.trim()) {
+        throw new Error(`fixture ${id}: agentKind='coder' requires a non-empty planMarkdown`);
+      }
+      planMarkdown = m.planMarkdown;
+    }
+    if (agentKind === 'reviewer') {
+      if (typeof m.planMarkdown !== 'string' || !m.planMarkdown.trim()) {
+        throw new Error(`fixture ${id}: agentKind='reviewer' requires a non-empty planMarkdown`);
+      }
+      if (typeof m.diffMarkdown !== 'string' || !m.diffMarkdown.trim()) {
+        throw new Error(`fixture ${id}: agentKind='reviewer' requires a non-empty diffMarkdown`);
+      }
+      if (m.expectedVerdict !== 'approve' && m.expectedVerdict !== 'request_changes') {
+        throw new Error(
+          `fixture ${id}: agentKind='reviewer' requires expectedVerdict ('approve' | 'request_changes')`,
+        );
+      }
+      planMarkdown = m.planMarkdown;
+      diffMarkdown = m.diffMarkdown;
+      expectedVerdict = m.expectedVerdict;
+    }
+  }
+
   return {
     id: m.id as string,
     description: m.description as string,
+    kind,
     intent: m.intent as string,
     language: m.language as string,
     runtime: m.runtime as string,
     expectedFiles: expectFiles as string[],
     tolerances,
+    ...(agentKind ? { agentKind } : {}),
+    ...(planMarkdown ? { planMarkdown } : {}),
+    ...(diffMarkdown ? { diffMarkdown } : {}),
+    ...(expectedVerdict ? { expectedVerdict } : {}),
     ...(typeof m.notes === 'string' ? { notes: m.notes } : {}),
   };
 }
@@ -101,10 +150,18 @@ export async function loadFixture(id: string): Promise<LoadedFixture> {
   await copyTree(dir, tmpRoot, ['manifest.yaml', 'expected.diff']);
 
   const expectedDiffPath = path.join(dir, 'expected.diff');
-  try {
-    await fs.access(expectedDiffPath);
-  } catch {
-    throw new Error(`fixture ${id}: expected.diff is required at ${expectedDiffPath}`);
+  // agentKind='reviewer' fixtures score against expectedVerdict, not
+  // against a diff. agentKind='planner' fixtures score against
+  // expectedFiles. Only end-to-end and agentKind='coder' need
+  // expected.diff for the snapshot comparison harness.
+  const needsExpectedDiff =
+    manifest.kind === 'end-to-end' || manifest.agentKind === 'coder';
+  if (needsExpectedDiff) {
+    try {
+      await fs.access(expectedDiffPath);
+    } catch {
+      throw new Error(`fixture ${id}: expected.diff is required at ${expectedDiffPath}`);
+    }
   }
   return { manifest, workspacePath: tmpRoot, expectedDiffPath };
 }
