@@ -7,7 +7,15 @@ import { requireSession } from '@/lib/session';
 export async function updateProjectAction(
   slug: string,
   projectSlug: string,
-  patch: { name?: string; description?: string | null; archived?: boolean; dryRun?: boolean },
+  patch: {
+    name?: string;
+    description?: string | null;
+    archived?: boolean;
+    dryRun?: boolean;
+    maxFilesChanged?: number;
+    maxLinesChanged?: number;
+    deniedPaths?: string[];
+  },
 ) {
   const session = await requireSession();
   await api(`/v1/orgs/${slug}/projects/${projectSlug}`, {

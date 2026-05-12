@@ -132,7 +132,15 @@ export class ProjectService {
 
   async update(
     slug: string,
-    patch: { name?: string; description?: string | null; archived?: boolean; dryRun?: boolean },
+    patch: {
+      name?: string;
+      description?: string | null;
+      archived?: boolean;
+      dryRun?: boolean;
+      maxFilesChanged?: number;
+      maxLinesChanged?: number;
+      deniedPaths?: string[];
+    },
   ) {
     const project = await this.detail(slug);
     const data: {
@@ -140,6 +148,9 @@ export class ProjectService {
       description?: string | null;
       archivedAt?: Date | null;
       dryRun?: boolean;
+      maxFilesChanged?: number;
+      maxLinesChanged?: number;
+      deniedPaths?: any;
     } = {};
     if (patch.name !== undefined) {
       const trimmed = patch.name.trim();
@@ -154,6 +165,24 @@ export class ProjectService {
     }
     if (patch.dryRun !== undefined) {
       data.dryRun = Boolean(patch.dryRun);
+    }
+    if (patch.maxFilesChanged !== undefined) {
+      if (!Number.isInteger(patch.maxFilesChanged) || patch.maxFilesChanged < 1) {
+        throw new ValidationError('maxFilesChanged must be a positive integer');
+      }
+      data.maxFilesChanged = patch.maxFilesChanged;
+    }
+    if (patch.maxLinesChanged !== undefined) {
+      if (!Number.isInteger(patch.maxLinesChanged) || patch.maxLinesChanged < 1) {
+        throw new ValidationError('maxLinesChanged must be a positive integer');
+      }
+      data.maxLinesChanged = patch.maxLinesChanged;
+    }
+    if (patch.deniedPaths !== undefined) {
+      if (!Array.isArray(patch.deniedPaths) || patch.deniedPaths.some((p) => typeof p !== 'string' || !p.trim())) {
+        throw new ValidationError('deniedPaths must be an array of non-empty glob strings');
+      }
+      data.deniedPaths = patch.deniedPaths.map((p) => p.trim());
     }
     return this.prisma.withTenant(project.organizationId, (tx) =>
       tx.project.update({ where: { id: project.id }, data }),
