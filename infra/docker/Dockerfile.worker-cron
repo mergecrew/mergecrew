@@ -7,6 +7,11 @@ WORKDIR /repo
 FROM base AS deps
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* tsconfig.base.json ./
 COPY apps/worker-cron/package.json apps/worker-cron/
+# worker-cron pulls in @mergecrew/eval-runner (#303) for the in-process
+# nightly eval tick. eval-runner lives under apps/ not packages/, so
+# its package.json must be present for pnpm install to resolve the
+# workspace:* link.
+COPY apps/eval-runner/package.json apps/eval-runner/
 COPY packages/ packages/
 RUN pnpm install --frozen-lockfile=false
 
@@ -24,6 +29,12 @@ COPY --from=build /repo/apps/worker-cron/node_modules /app/apps/worker-cron/node
 COPY --from=build /repo/apps/worker-cron/dist /app/apps/worker-cron/dist
 COPY --from=build /repo/apps/worker-cron/package.json /app/apps/worker-cron/package.json
 COPY --from=build /repo/packages /app/packages
+# eval-runner is workspace-linked from apps/worker-cron/node_modules to
+# /repo/apps/eval-runner/dist; without copying that tree the symlink
+# dangles and the eval-tick crashes on first invocation (#303).
+COPY --from=build /repo/apps/eval-runner/dist /app/apps/eval-runner/dist
+COPY --from=build /repo/apps/eval-runner/node_modules /app/apps/eval-runner/node_modules
+COPY --from=build /repo/apps/eval-runner/package.json /app/apps/eval-runner/package.json
 RUN chown -R node:node /app
 USER node
 WORKDIR /app/apps/worker-cron
