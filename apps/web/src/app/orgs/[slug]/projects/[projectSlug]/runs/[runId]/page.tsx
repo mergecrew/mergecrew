@@ -129,6 +129,8 @@ export default async function RunPage({
         </div>
       </header>
 
+      <AgentPanel detail={detail} />
+
       <p className="text-sm text-zinc-600 dark:text-zinc-400">
         Each workflow runs one or more agents. Click an agent to see its input, output, and every
         model turn and tool call it made.
@@ -153,6 +155,114 @@ export default async function RunPage({
         </Card>
       </details>
     </main>
+  );
+}
+
+/**
+ * Per-agent aggregate panel (#335). Surfaces "where did the time and
+ * money go" at a glance, especially for the multi-agent careful
+ * profile (planner/coder/reviewer) where the flat step list buries
+ * the structure.
+ *
+ * Aggregates client-side from data already loaded for the page — no
+ * new endpoint is needed. For legacy single-agent runs this renders
+ * one card; for careful-profile runs it renders one card per kind.
+ * If no agentSteps exist (still scheduling), the panel is hidden
+ * entirely so the page doesn't render an empty section.
+ */
+function AgentPanel({ detail }: { detail: RunDetail }) {
+  const byKind = new Map<
+    string,
+    {
+      stepCount: number;
+      inputTokens: number;
+      outputTokens: number;
+      usd: number;
+      turnCount: number;
+      latencyMs: number;
+    }
+  >();
+  for (const w of detail.workflows) {
+    for (const s of w.agentSteps) {
+      const k = s.agentKind;
+      const row = byKind.get(k) ?? {
+        stepCount: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        usd: 0,
+        turnCount: 0,
+        latencyMs: 0,
+      };
+      row.stepCount += 1;
+      row.inputTokens += s.totalInputTokens;
+      row.outputTokens += s.totalOutputTokens;
+      row.usd += Number(s.totalUsdEstimate ?? 0);
+      row.turnCount += s.modelTurns.length;
+      for (const t of s.modelTurns) row.latencyMs += t.latencyMs;
+      byKind.set(k, row);
+    }
+  }
+  if (byKind.size === 0) return null;
+
+  // Stable canonical order: Planner, Coder, Reviewer first, then any
+  // custom kinds in alpha order. So a careful-profile run reads
+  // top-to-bottom matching the actual execution sequence.
+  const CANONICAL = ['Planner', 'Coder', 'Reviewer'];
+  const kinds = Array.from(byKind.keys()).sort((a, b) => {
+    const ai = CANONICAL.indexOf(a);
+    const bi = CANONICAL.indexOf(b);
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    return a.localeCompare(b);
+  });
+
+  return (
+    <section>
+      <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-zinc-500">
+        Agents ({byKind.size})
+      </h2>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+        {kinds.map((kind) => {
+          const r = byKind.get(kind)!;
+          return (
+            <Card key={kind}>
+              <div className="flex items-baseline justify-between">
+                <div className="font-medium">{kind}</div>
+                {r.stepCount > 1 && (
+                  <span
+                    className="rounded-full bg-zinc-200 px-2 py-0.5 font-mono text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                    title="Number of times this agent ran in this run — multiple rounds appear here when the reviewer requests changes (#334)"
+                  >
+                    {r.stepCount}×
+                  </span>
+                )}
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-y-1 text-xs text-zinc-500">
+                <div>tokens</div>
+                <div className="font-mono tabular-nums text-zinc-700 dark:text-zinc-300">
+                  {r.inputTokens.toLocaleString()} in / {r.outputTokens.toLocaleString()} out
+                </div>
+                <div>cost</div>
+                <div className="font-mono tabular-nums text-zinc-700 dark:text-zinc-300">
+                  ${r.usd.toFixed(4)}
+                </div>
+                <div>model turns</div>
+                <div className="font-mono tabular-nums text-zinc-700 dark:text-zinc-300">
+                  {r.turnCount}
+                </div>
+                <div>wall (model)</div>
+                <div className="font-mono tabular-nums text-zinc-700 dark:text-zinc-300">
+                  {r.latencyMs >= 1000
+                    ? `${(r.latencyMs / 1000).toFixed(1)}s`
+                    : `${r.latencyMs}ms`}
+                </div>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
