@@ -95,4 +95,50 @@ export class EvalService {
       cases: cases.map((c) => ({ ...c, usdEstimate: Number(c.usdEstimate) })),
     };
   }
+
+  /**
+   * A/B compare detail (#302). Returns both EvalRun rows + their cases
+   * + profile names. The web compare page renders them side-by-side.
+   */
+  async compare(abRunId: string) {
+    const t = this.tenant.require();
+    const ab = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.evalAbRun.findFirst({
+        where: { id: abRunId, organizationId: t.organizationId },
+      }),
+    );
+    if (!ab) throw new NotFoundError();
+    const [runA, runB, profileA, profileB] = await Promise.all([
+      this.prisma.withTenant(t.organizationId, (tx) =>
+        tx.evalRun.findFirst({ where: { id: ab.runAId, organizationId: t.organizationId } }),
+      ),
+      this.prisma.withTenant(t.organizationId, (tx) =>
+        tx.evalRun.findFirst({ where: { id: ab.runBId, organizationId: t.organizationId } }),
+      ),
+      this.prisma.withTenant(t.organizationId, (tx) =>
+        tx.llmProfile.findFirst({ where: { id: ab.profileAId } }),
+      ),
+      this.prisma.withTenant(t.organizationId, (tx) =>
+        tx.llmProfile.findFirst({ where: { id: ab.profileBId } }),
+      ),
+    ]);
+    if (!runA || !runB) throw new NotFoundError();
+    const [casesA, casesB] = await Promise.all([
+      this.prisma.withTenant(t.organizationId, (tx) =>
+        tx.evalCase.findMany({ where: { evalRunId: runA.id }, orderBy: { fixtureId: 'asc' } }),
+      ),
+      this.prisma.withTenant(t.organizationId, (tx) =>
+        tx.evalCase.findMany({ where: { evalRunId: runB.id }, orderBy: { fixtureId: 'asc' } }),
+      ),
+    ]);
+    return {
+      abRun: ab,
+      runA: { ...runA, totalUsd: Number(runA.totalUsd) },
+      runB: { ...runB, totalUsd: Number(runB.totalUsd) },
+      profileA: profileA ? { id: profileA.id, name: profileA.name } : null,
+      profileB: profileB ? { id: profileB.id, name: profileB.name } : null,
+      casesA: casesA.map((c) => ({ ...c, usdEstimate: Number(c.usdEstimate) })),
+      casesB: casesB.map((c) => ({ ...c, usdEstimate: Number(c.usdEstimate) })),
+    };
+  }
 }

@@ -659,6 +659,25 @@ model EvalCase {
   @@map("eval_cases")
 }
 
+/// Pair of EvalRuns produced by a single `--ab` invocation (#302).
+/// Both child runs see the same fixture corpus; the comparison page
+/// reads the two side-by-side. `profileAId` / `profileBId` carry the
+/// LLM profile each side used — the runs themselves also link back
+/// via llmProfileId but having it on the parent saves a join.
+model EvalAbRun {
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @map("organization_id") @db.Uuid
+  profileAId      String    @map("profile_a_id") @db.Uuid
+  profileBId      String    @map("profile_b_id") @db.Uuid
+  runAId          String    @map("run_a_id") @db.Uuid
+  runBId          String    @map("run_b_id") @db.Uuid
+  startedAt       DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt      DateTime? @map("finished_at") @db.Timestamptz(6)
+
+  @@index([organizationId, startedAt(sort: Desc)])
+  @@map("eval_ab_runs")
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Changesets, deploys, decisions, approvals
 // ─────────────────────────────────────────────────────────────────────────────
