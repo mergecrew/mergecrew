@@ -74,7 +74,7 @@ In the UI:
 1. **Projects → New project**. Slug: `quickstart`. Name: `Quickstart`.
 2. Inside the project → **Connected repo**. Provider: `local`. Path: `/tmp/quickstart-sample`. Default branch: `main`.
 3. **Deploy targets → New**. Kind: `dev`. Adapter: `local-noop`. (No real deploy happens; mergecrew just needs to know a dev target exists.)
-4. **Lifecycle**. The default lifecycle works — Discovery → Implement → Review.
+4. **Lifecycle**. The default lifecycle works — a multi-agent **careful** profile that runs **Planner → Coder → Reviewer** with reviewer loop-back. (Settings → Agent graph if you want to switch to the cheaper single-agent `fast` profile.)
 
 ## 5. Trigger the first run
 
@@ -83,7 +83,7 @@ In the project header, click **Run now**.
 Watch the **Timeline** tab:
 
 - A `run.started` event appears immediately.
-- Steps flow through the Discovery → Implement → Review agents. Each step's transcript is one click away.
+- Steps flow through Planner → Coder → Reviewer. Each step's transcript is one click away. If the Reviewer requests changes, the Coder reruns with the feedback (up to 3 rounds before `REVIEW_LOOP_EXHAUSTED`).
 - After ~2-5 minutes (longer on Ollama, faster on Anthropic), a `changeset.proposed` event fires.
 
 If you got here, you have **an agentic PR ready for review**. Open the **Changesets** tab to see it.
