@@ -1,0 +1,17 @@
+apiVersion: v2
+name: mergecrew
+description: Agentic product-lifecycle platform — multi-tenant Postgres-backed runner that opens daily PRs against your repo.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - agents
+  - llm
+  - autonomous-coding
+  - sdlc
+home: https://github.com/mergecrew/mergecrew
+sources:
+  - https://github.com/mergecrew/mergecrew
+maintainers:
+  - name: mergecrew
+    url: https://github.com/mergecrew

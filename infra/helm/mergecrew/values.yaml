@@ -1,0 +1,141 @@
+# Default values for the mergecrew chart.
+# This file is the source of truth for what's tunable. Override with
+# `helm install ... --values your-overrides.yaml` or `--set k=v`.
+#
+# Postgres + Redis are NOT subcharts. Bring your own (RDS, ElastiCache,
+# a separate Bitnami chart, etc.) and point the env block at them.
+
+# Image coords — assume one repo per service so a CI pipeline can roll
+# them independently. Override .tag in each environment.
+image:
+  pullPolicy: IfNotPresent
+  api:
+    repository: ghcr.io/mergecrew/api
+    tag: ""
+  orchestrator:
+    repository: ghcr.io/mergecrew/orchestrator
+    tag: ""
+  runner:
+    repository: ghcr.io/mergecrew/runner
+    tag: ""
+  workerCron:
+    repository: ghcr.io/mergecrew/worker-cron
+    tag: ""
+  web:
+    repository: ghcr.io/mergecrew/web
+    tag: ""
+
+# Replicas. Defaults are conservative — start at 1 of each and scale
+# up via the HPA below or override per-service explicitly. The runner
+# is the workhorse; scale that first.
+replicaCount:
+  api: 1
+  orchestrator: 1
+  runner: 1
+  workerCron: 1
+  web: 1
+
+# Resource requests + limits. Conservative defaults assume a small
+# cluster with one node-per-service-pod. Override per env.
+resources:
+  api:
+    requests: { cpu: 250m, memory: 256Mi }
+    limits:   { cpu: 1,    memory: 1Gi }
+  orchestrator:
+    requests: { cpu: 250m, memory: 256Mi }
+    limits:   { cpu: 1,    memory: 1Gi }
+  runner:
+    requests: { cpu: 500m, memory: 512Mi }
+    limits:   { cpu: 2,    memory: 2Gi }
+  workerCron:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  web:
+    requests: { cpu: 250m, memory: 256Mi }
+    limits:   { cpu: 1,    memory: 1Gi }
+
+# Secrets MUST come from an existing Secret in the same namespace.
+# Never set raw secret values in this chart — the rendered manifests
+# stay in git, and that would be a credential-leak vector.
+secrets:
+  # Required keys in the referenced Secret:
+  #   DATABASE_URL
+  #   DATABASE_MIGRATE_URL
+  #   REDIS_URL
+  #   KMS_MASTER_KEY      (base64:<32 bytes>)
+  #   JWT_SECRET
+  #   NEXTAUTH_SECRET
+  #   BFF_TRUST_TOKEN
+  #
+  # Optional (depending on enabled features):
+  #   ANTHROPIC_API_KEY, OPENAI_API_KEY, GITHUB_APP_PRIVATE_KEY,
+  #   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
+  #   TRANSCRIPT_S3_BUCKET, S3_ENDPOINT_URL
+  existingSecret: mergecrew-secrets
+
+# Non-secret env (everything else). Lifted into ConfigMap-style env
+# rather than the Secret so a `kubectl edit` doesn't risk leaking
+# auth credentials.
+env:
+  NODE_ENV: production
+  LOG_LEVEL: info
+  AWS_REGION: us-east-1
+  # Web → API connectivity. Override if the in-cluster service name differs.
+  API_BASE_URL: "http://mergecrew-api:4000"
+  WEB_BASE_URL: ""  # set this to the public hostname operators visit
+
+# Service definitions. ClusterIP by default — the operator wires an
+# ingress separately (no Ingress manifest in this chart yet).
+service:
+  api:
+    type: ClusterIP
+    port: 4000
+  web:
+    type: ClusterIP
+    port: 3000
+
+# Pod security context applied to every workload. runAsNonRoot is the
+# important one; readOnlyRootFilesystem is left to per-service overrides
+# because Prisma's engine occasionally writes into node_modules at start.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+
+# Horizontal Pod Autoscaler. Off by default; enable per service when
+# you have metrics-server installed and real traffic numbers.
+autoscaling:
+  enabled: false
+  api:
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+  web:
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+  runner:
+    minReplicas: 1
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+# Probe configuration. The endpoints themselves come from #317 — every
+# service exposes /healthz (liveness, cheap) and /readyz (readiness,
+# checks db/redis).
+probes:
+  liveness:
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 1
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 1
+    failureThreshold: 3

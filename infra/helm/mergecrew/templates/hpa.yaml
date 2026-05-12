@@ -1,0 +1,29 @@
+{{- if .Values.autoscaling.enabled }}
+{{- $componentMap := dict "api" .Values.autoscaling.api "web" .Values.autoscaling.web "runner" .Values.autoscaling.runner -}}
+{{- range $component, $config := $componentMap }}
+{{- if $config }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "mergecrew.fullname" $ }}-{{ $component }}
+  labels:
+    {{- include "mergecrew.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "mergecrew.fullname" $ }}-{{ $component }}
+  minReplicas: {{ $config.minReplicas }}
+  maxReplicas: {{ $config.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $config.targetCPUUtilizationPercentage }}
+{{- end }}
+{{- end }}
+{{- end }}

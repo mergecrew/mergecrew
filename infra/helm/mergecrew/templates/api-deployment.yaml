@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mergecrew.fullname" . }}-api
+  labels:
+    {{- include "mergecrew.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: {{ .Values.replicaCount.api }}
+  selector:
+    matchLabels:
+      {{- include "mergecrew.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        {{- include "mergecrew.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: api
+          image: "{{ .Values.image.api.repository }}:{{ .Values.image.api.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 4000
+              protocol: TCP
+          env:
+            {{- include "mergecrew.env" . | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            {{- toYaml .Values.probes.liveness | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            {{- toYaml .Values.probes.readiness | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources.api | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mergecrew.fullname" . }}-api
+  labels:
+    {{- include "mergecrew.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  type: {{ .Values.service.api.type }}
+  ports:
+    - port: {{ .Values.service.api.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "mergecrew.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: api
