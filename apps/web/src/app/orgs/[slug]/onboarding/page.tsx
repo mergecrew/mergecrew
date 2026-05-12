@@ -1,0 +1,127 @@
+import Link from 'next/link';
+import { Check, ChevronRight, Circle } from 'lucide-react';
+import clsx from 'clsx';
+import { api } from '@/lib/api';
+import { requireSession } from '@/lib/session';
+import { Card, LinkButton } from '@/components/ui';
+
+interface OnboardingStep {
+  key: 'llm_provider' | 'first_project' | 'connected_repo' | 'deploy_target';
+  label: string;
+  status: 'complete' | 'pending';
+  actionUrl: string;
+}
+interface OnboardingState {
+  steps: OnboardingStep[];
+  complete: boolean;
+}
+
+// Human-readable why-this-matters lines per step. Kept here rather than
+// on the API response because the copy is UI-shaped and changes
+// independently of the underlying state computation.
+const STEP_HELP: Record<OnboardingStep['key'], string> = {
+  llm_provider:
+    'Pick a provider (Anthropic, OpenAI, AWS Bedrock, or Ollama) and paste an API key. Without one, agent steps fail with "no LLM profile configured".',
+  first_project:
+    'A project is the unit a daily run targets. Each project has its own repo, deploy target, lifecycle, and changeset list.',
+  connected_repo:
+    'Mergecrew opens its PRs here. The bundled GitHub adapter handles app install + repo selection; pick "local" for a synthetic walkthrough.',
+  deploy_target:
+    'The dev target is where the agent\'s changesets get deployed for human review before prod. Use `local-noop` if you just want to see the loop and skip real deploys.',
+};
+
+export default async function OnboardingPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+  const session = await requireSession();
+  const state = await api<OnboardingState>(`/v1/orgs/${slug}/onboarding`, { session });
+
+  const activeIndex = state.steps.findIndex((s) => s.status === 'pending');
+
+  return (
+    <main className="mx-auto max-w-3xl space-y-6 p-6">
+      <header className="space-y-1">
+        <h1 className="text-2xl font-semibold">Set up your org</h1>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Four steps from a fresh install to your first real agent run. The seeded demo project (
+          <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">acme</code>) is already wired
+          for demo mode — these steps cover your own project.
+        </p>
+      </header>
+
+      {state.complete && (
+        <Card className="border-emerald-200 bg-emerald-50/50 dark:border-emerald-700/40 dark:bg-emerald-950/30">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="font-medium">You&apos;re all set</div>
+              <p className="text-sm text-zinc-700 dark:text-zinc-200">
+                Trigger your first run from the project page — agents will plan, code, and review against the connected repo.
+              </p>
+            </div>
+            <LinkButton href={`/orgs/${slug}`}>Back to Today</LinkButton>
+          </div>
+        </Card>
+      )}
+
+      <ol className="space-y-3">
+        {state.steps.map((step, i) => {
+          const isComplete = step.status === 'complete';
+          const isActive = i === activeIndex;
+          return (
+            <li key={step.key}>
+              <Link
+                href={step.actionUrl}
+                className={clsx(
+                  'block rounded-lg border p-4 shadow-sm transition-colors',
+                  isActive
+                    ? 'border-sky-400 bg-sky-50/60 hover:bg-sky-50 dark:border-sky-600 dark:bg-sky-950/30 dark:hover:bg-sky-950/40'
+                    : 'border-zinc-200 bg-[rgb(var(--card))] hover:border-zinc-300 dark:border-zinc-700 dark:hover:border-zinc-600',
+                  isComplete && 'opacity-75',
+                )}
+              >
+                <div className="flex items-start gap-4">
+                  <div className="mt-0.5 shrink-0">
+                    {isComplete ? (
+                      <Check className="h-5 w-5 text-emerald-600 dark:text-emerald-400" aria-label="complete" />
+                    ) : (
+                      <Circle
+                        className={clsx(
+                          'h-5 w-5',
+                          isActive
+                            ? 'text-sky-600 dark:text-sky-400'
+                            : 'text-zinc-400 dark:text-zinc-500',
+                        )}
+                        aria-label={isActive ? 'active' : 'pending'}
+                      />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className={clsx(
+                          'font-medium',
+                          isComplete && 'line-through decoration-zinc-300 dark:decoration-zinc-600',
+                        )}
+                      >
+                        Step {i + 1} · {step.label}
+                      </span>
+                      {!isComplete && (
+                        <ChevronRight className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden />
+                      )}
+                    </div>
+                    <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                      {STEP_HELP[step.key]}
+                    </p>
+                  </div>
+                </div>
+              </Link>
+            </li>
+          );
+        })}
+      </ol>
+    </main>
+  );
+}
