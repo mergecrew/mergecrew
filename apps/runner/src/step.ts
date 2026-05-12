@@ -630,6 +630,23 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
       agentKind: agentDef.kind,
       eventlog,
     });
+    // Demo-mode synthesis (#373). The stub coder doesn't invoke
+    // `repo.write_file` / `repo.git.commit`, so no Changeset row gets
+    // created via the normal skill path. Without one, the careful
+    // flow advances past the Coder with nothing for the Reviewer to
+    // look at and nothing for the human reviewer to see in the
+    // Changesets list. Synthesize a placeholder here so demo runs
+    // produce visible artifacts.
+    if (process.env.MERGECREW_AGENT_STUB === '1') {
+      await synthesizeStubChangeset({
+        organizationId,
+        projectId,
+        runId,
+        workflowRunId,
+        stepId,
+        eventlog,
+      });
+    }
   }
 
   // Reviewer agents (#334) emit REVIEW_APPROVED or
@@ -1864,6 +1881,89 @@ async function emitOutOfScopeIfAny(opts: {
     type: 'AGENT_DECISION',
     actor: { kind: 'agent', id: stepId, agentKind },
     payload: { kind: 'out_of_scope_edit', allowedFiles: parsed.filesToTouch, offending: outOfScope },
+  });
+}
+
+/**
+ * Demo-mode placeholder changeset (#373). The stub coder never calls
+ * `repo.git.commit`, so no Changeset row is created via the normal
+ * skill path. We synthesize a minimal Changeset here so the careful
+ * chain produces a visible artifact for the run-detail page +
+ * Changesets list, and so the Reviewer step that follows has
+ * something to reason about (its verdict is canned anyway under
+ * stub mode).
+ *
+ * Pulls the why-paragraph from the most recent planner step's output
+ * for verisimilitude — the seeded sample run (#362) does the same
+ * thing statically.
+ *
+ * Idempotent within a run: skips silently when a Changeset already
+ * exists for this workflowRunId. That happens on coder loop-back
+ * rounds — the first round created the placeholder, retries don't
+ * need to duplicate it.
+ */
+async function synthesizeStubChangeset(opts: {
+  organizationId: string;
+  projectId: string;
+  runId: string;
+  workflowRunId: string;
+  stepId: string;
+  eventlog: Eventlog;
+}): Promise<void> {
+  const { organizationId, projectId, runId, workflowRunId, stepId, eventlog } = opts;
+  const existing = await withTenant(organizationId, (tx) =>
+    tx.changeset.findFirst({ where: { workflowRunId }, select: { id: true } }),
+  );
+  if (existing) return;
+
+  const planStep = await withTenant(organizationId, (tx) =>
+    tx.agentStep.findFirst({
+      where: {
+        workflowRun: { dailyRunId: runId },
+        agentKind: PLANNER_AGENT_KIND,
+        status: 'completed',
+      },
+      orderBy: { finishedAt: 'desc' },
+      select: { output: true },
+    }),
+  );
+  const planSnippet = ((planStep?.output as { planMarkdown?: string } | null)?.planMarkdown ?? '')
+    .split('\n')
+    .filter((l) => l.trim().length > 0)
+    .slice(0, 4)
+    .join('\n');
+
+  const changesetId = `cs-demo-stub-${stepId.slice(0, 8)}`;
+  const branch = `stub/demo-${stepId.slice(0, 8)}`;
+  await withTenant(organizationId, (tx) =>
+    tx.changeset.create({
+      data: {
+        id: changesetId,
+        organizationId,
+        projectId,
+        dailyRunId: runId,
+        workflowRunId,
+        title: 'Stub: sample multi-agent change (demo mode)',
+        whyParagraph:
+          planSnippet ||
+          'Synthesized placeholder for demo-mode runs. The stub coder does not edit files; this row exists so the careful chain produces a visible artifact.',
+        branch,
+        status: 'proposed',
+        riskChip: 'low',
+        estimatedUsd: 0,
+      },
+    }),
+  );
+  await eventlog.emit({
+    organizationId,
+    projectId,
+    dailyRunId: runId,
+    workflowRunId,
+    agentStepId: stepId,
+    changesetId,
+    type: 'CHANGESET_OPENED',
+    actor: { kind: 'agent', id: stepId, agentKind: CODER_AGENT_KIND },
+    payload: { changesetId, title: 'Stub: sample multi-agent change (demo mode)', stub: true },
   });
 }
 
