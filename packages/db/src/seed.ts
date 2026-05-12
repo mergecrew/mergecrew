@@ -131,13 +131,22 @@ async function main() {
   // connectedRepo, no deployTargets, so /v1/.../runs and the cron
   // scheduler both stay disabled until the operator wires them up.
   //
-  // For the local e2e (#228) we need the project to be runnable: the
-  // harness flips MERGECREW_AGENT_STUB=1 and MERGECREW_E2E_LOCAL_API_KEY
-  // together, so we only fill in fake repo + dev target when both are
-  // set. The stub agent path never actually hits GitHub or the deploy
-  // adapter, so these dummy values exist purely to satisfy the new
-  // runNow / cron preconditions.
-  if (process.env.MERGECREW_AGENT_STUB === '1' && process.env.MERGECREW_E2E_LOCAL_API_KEY) {
+  // Two paths flip the project into "runnable":
+  //   1. e2e CI (#228): the harness sets MERGECREW_AGENT_STUB=1 AND
+  //      MERGECREW_E2E_LOCAL_API_KEY. The pair gates a stub-only,
+  //      api-key-only run.
+  //   2. demo mode (#372, V2.ag): the operator sets MERGECREW_DEMO_MODE=1
+  //      on a fresh boot to get a no-credentials, click-to-run demo.
+  //      Default in `docker-compose.full.yml`.
+  //
+  // Both paths share the same stub agent backend, so they need the
+  // same shape of ConnectedRepo + DeployTarget. None of these values
+  // hit a real provider — the runner short-circuits before any
+  // outbound call.
+  const wireDemoRunnable =
+    process.env.MERGECREW_DEMO_MODE === '1' ||
+    (process.env.MERGECREW_AGENT_STUB === '1' && process.env.MERGECREW_E2E_LOCAL_API_KEY);
+  if (wireDemoRunnable) {
     await prisma.connectedRepo.upsert({
       where: { projectId: demoProject.id },
       update: {},
@@ -162,7 +171,9 @@ async function main() {
         config: { workflowFile: 'deploy.yml' },
       },
     });
-    console.log(`[seed] e2e stub repo + dev deploy target wired for project "${demoProject.slug}".`);
+    const mode =
+      process.env.MERGECREW_DEMO_MODE === '1' ? 'demo' : 'e2e';
+    console.log(`[seed] ${mode} stub repo + dev deploy target wired for project "${demoProject.slug}".`);
   }
 
   // Optional: pre-issue an API key whose plaintext matches
