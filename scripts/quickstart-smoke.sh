@@ -76,4 +76,38 @@ if ! echo "$cs" | grep -q "/healthz"; then
 fi
 echo "[quickstart-smoke] ✓ seeded sample changeset visible"
 
+# Onboarding banner (#384) on Today + wizard page renders (#383, #385).
+# Fresh stack has no operator-defined LLM provider, project, repo, or
+# deploy target, so at least one onboarding step must be pending and
+# the banner copy must be in the SSR'd /orgs/{slug} body.
+if ! echo "$home" | grep -q "Finish setting up your org"; then
+  echo "::error::onboarding banner not present on /orgs/${ORG_SLUG}"
+  echo "--- first 8 KB of body ---"
+  echo "$home" | head -c 8192
+  exit 1
+fi
+echo "[quickstart-smoke] ✓ onboarding banner present on Today"
+
+echo "[quickstart-smoke] GET ${WEB_URL}/orgs/${ORG_SLUG}/onboarding"
+wiz=$(curl -sf "${WEB_URL}/orgs/${ORG_SLUG}/onboarding" || true)
+if [ -z "$wiz" ]; then
+  echo "::error::/orgs/${ORG_SLUG}/onboarding returned no body"
+  exit 1
+fi
+# Page header copy is a stable, page-only marker.
+if ! echo "$wiz" | grep -q "Set up your org"; then
+  echo "::error::wizard page didn't render its header"
+  exit 1
+fi
+# Step rows include "Step N · …". The fresh-stack state always has
+# at least Step 1 (LLM provider) visible — the only step that might
+# render as complete on first boot is `connected_repo`/`deploy_target`
+# *if* the operator left MERGECREW_DEMO_MODE=1 and somehow created a
+# non-demo project, which a fresh stack hasn't done.
+if ! echo "$wiz" | grep -q "Step 1"; then
+  echo "::error::wizard didn't render Step 1 row"
+  exit 1
+fi
+echo "[quickstart-smoke] ✓ onboarding wizard renders the stepper"
+
 echo "[quickstart-smoke] All checks passed."
