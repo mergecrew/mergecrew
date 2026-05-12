@@ -70,3 +70,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
           pytest
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.0
+      - name: helm lint
+        run: helm lint infra/helm/mergecrew
+      - name: helm template (renders without error)
+        run: |
+          helm template mergecrew infra/helm/mergecrew \
+            --set image.api.tag=v0.0.0 \
+            --set image.orchestrator.tag=v0.0.0 \
+            --set image.runner.tag=v0.0.0 \
+            --set image.workerCron.tag=v0.0.0 \
+            --set image.web.tag=v0.0.0 \
+            > /tmp/helm-render.yaml
+          test -s /tmp/helm-render.yaml

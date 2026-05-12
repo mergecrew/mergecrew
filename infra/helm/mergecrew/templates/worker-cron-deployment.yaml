@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mergecrew.fullname" . }}-worker-cron
+  labels:
+    {{- include "mergecrew.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker-cron
+spec:
+  replicas: {{ .Values.replicaCount.workerCron }}
+  selector:
+    matchLabels:
+      {{- include "mergecrew.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker-cron
+  template:
+    metadata:
+      labels:
+        {{- include "mergecrew.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker-cron
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: worker-cron
+          image: "{{ .Values.image.workerCron.repository }}:{{ .Values.image.workerCron.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: probe
+              containerPort: 9092
+              protocol: TCP
+          env:
+            {{- include "mergecrew.env" . | nindent 12 }}
+            - name: WORKER_CRON_HEALTH_PORT
+              value: "9092"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: probe
+            {{- toYaml .Values.probes.liveness | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: probe
+            {{- toYaml .Values.probes.readiness | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources.workerCron | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
