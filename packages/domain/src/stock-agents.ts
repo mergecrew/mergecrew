@@ -39,6 +39,13 @@ export const STOCK_PLANNER_AGENT: AgentDefinition = {
     tokens: 50_000,
     usd: 0.5,
   },
+  // Planner runs once per careful run (the reviewer loop-back goes
+  // coder → reviewer → coder; the planner doesn't re-fire), so the
+  // run cap matches the per-step cap.
+  runBudget: {
+    tokens: 50_000,
+    usd: 0.5,
+  },
 };
 
 /**
@@ -75,6 +82,14 @@ export const STOCK_CODER_AGENT: AgentDefinition = {
     tokens: 200_000,
     usd: 4.0,
   },
+  // Up to three coder passes per run (initial + 2 reviewer-driven
+  // retries; matches REVIEW_LOOP_CAP=3 in the orchestrator). Cap the
+  // kind's total spend at 3 × per-step so a misbehaving reviewer
+  // can't drag the run past its expected ceiling.
+  runBudget: {
+    tokens: 600_000,
+    usd: 12.0,
+  },
 };
 
 /**
@@ -96,6 +111,12 @@ export const STOCK_REVIEWER_AGENT: AgentDefinition = {
   budget: {
     tokens: 30_000,
     usd: 0.3,
+  },
+  // Reviewer fires up to three times per run (one verdict pass after
+  // each coder round). Cap the cumulative spend at 3 × per-step.
+  runBudget: {
+    tokens: 90_000,
+    usd: 0.9,
   },
 };
 
@@ -122,6 +143,52 @@ export const STOCK_AGENTS_BY_REF: Record<string, AgentDefinition> = {
   coder: STOCK_CODER_AGENT,
   reviewer: STOCK_REVIEWER_AGENT,
 };
+
+/**
+ * Pure-math clamp for #351 per-kind run budgets. Given the agent's
+ * per-step budget, its run-cumulative cap, and the kind's prior spend
+ * in this run, returns the effective budget for the next step:
+ *
+ *   - If `runBudget` is unset, returns `perStep` unchanged (legacy).
+ *   - If a dimension's `runBudget` is set, the effective dimension is
+ *     `min(perStep, runBudget - prior)`, never going negative.
+ *   - When `runBudget - prior` reaches 0 the next step is born with a
+ *     zero budget — the runner's BudgetTracker reports exhausted on
+ *     the first turn.
+ *
+ * Lives in domain so it's unit-testable without a DB; the runner is
+ * responsible for loading `prior` from `model_turns`.
+ */
+export interface RunBudgetClampInput {
+  perStep?: { tokens?: number; usd?: number };
+  runBudget?: { tokens?: number; usd?: number };
+  prior: { tokens: number; usd: number };
+}
+export function clampBudgetForRun(
+  input: RunBudgetClampInput,
+): { tokens?: number; usd?: number } | undefined {
+  const { perStep, runBudget, prior } = input;
+  if (!runBudget) return perStep;
+
+  const remainingTokens =
+    runBudget.tokens !== undefined ? Math.max(0, runBudget.tokens - prior.tokens) : undefined;
+  const remainingUsd =
+    runBudget.usd !== undefined ? Math.max(0, runBudget.usd - prior.usd) : undefined;
+
+  const effectiveTokens =
+    perStep?.tokens !== undefined && remainingTokens !== undefined
+      ? Math.min(perStep.tokens, remainingTokens)
+      : (perStep?.tokens ?? remainingTokens);
+  const effectiveUsd =
+    perStep?.usd !== undefined && remainingUsd !== undefined
+      ? Math.min(perStep.usd, remainingUsd)
+      : (perStep?.usd ?? remainingUsd);
+
+  return {
+    ...(effectiveTokens !== undefined ? { tokens: effectiveTokens } : {}),
+    ...(effectiveUsd !== undefined ? { usd: effectiveUsd } : {}),
+  };
+}
 
 /**
  * Resolve an `agentRef` against the project's lifecycle, with stock

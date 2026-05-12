@@ -8,6 +8,7 @@ import {
   AutoPromoteRule,
   autoPromoteMatches,
   checkBlastRadius,
+  clampBudgetForRun,
   computeRiskScore,
   parsePackageJsonDiff,
   resolveAgentByRef,
@@ -328,7 +329,20 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     projectHardBlocked: ['**/.env*'],
   });
 
-  const budget = new BudgetTracker(agentDef.budget);
+  // Per-kind run budget enforcement (#351). When the agentDef declares
+  // a `runBudget`, clamp this step's effective budget so cumulative
+  // spend by this kind across the workflow run stays under the cap. A
+  // kind that's already at/over its runBudget gets an exhausted
+  // tracker — the step short-circuits to budget_exhausted before any
+  // model turn fires.
+  const effectiveBudgetSpec = await computeEffectiveBudget({
+    organizationId,
+    workflowRunId,
+    agentKind: agentDef.kind,
+    perStep: agentDef.budget,
+    runBudget: agentDef.runBudget,
+  });
+  const budget = new BudgetTracker(effectiveBudgetSpec);
   const abortController = new AbortController();
   // Hook into the runner-wide cancellation coordinator so a `run-cancel`
   // pubsub message aborts this step mid-flight. The agent runtime already
@@ -1850,5 +1864,53 @@ async function emitOutOfScopeIfAny(opts: {
     type: 'AGENT_DECISION',
     actor: { kind: 'agent', id: stepId, agentKind },
     payload: { kind: 'out_of_scope_edit', allowedFiles: parsed.filesToTouch, offending: outOfScope },
+  });
+}
+
+/**
+ * Compute the step's effective budget spec for #351 per-kind run
+ * budgets. Loads the kind's prior model-turn spend from this workflow
+ * run and delegates the clamp math to `clampBudgetForRun` so the
+ * arithmetic can be unit-tested in domain without a DB.
+ */
+async function computeEffectiveBudget(opts: {
+  organizationId: string;
+  workflowRunId: string;
+  agentKind: string;
+  perStep?: { tokens?: number; usd?: number };
+  runBudget?: { tokens?: number; usd?: number };
+}): Promise<{ tokens?: number; usd?: number } | undefined> {
+  const { organizationId, workflowRunId, agentKind, perStep, runBudget } = opts;
+  if (!runBudget) return perStep;
+
+  const priorTurns = await withTenant(organizationId, (tx) =>
+    tx.modelTurn.findMany({
+      where: { step: { workflowRunId, agentKind } },
+      select: {
+        inputTokens: true,
+        outputTokens: true,
+        cacheReadTokens: true,
+        cacheWriteTokens: true,
+        thinkingTokens: true,
+        usdEstimate: true,
+      },
+    }),
+  );
+  const priorTokens = priorTurns.reduce(
+    (sum, t) =>
+      sum +
+      t.inputTokens +
+      t.outputTokens +
+      (t.cacheReadTokens ?? 0) +
+      (t.cacheWriteTokens ?? 0) +
+      (t.thinkingTokens ?? 0),
+    0,
+  );
+  const priorUsd = priorTurns.reduce((sum, t) => sum + Number(t.usdEstimate), 0);
+
+  return clampBudgetForRun({
+    perStep,
+    runBudget,
+    prior: { tokens: priorTokens, usd: priorUsd },
   });
 }
