@@ -109,3 +109,39 @@ export const STOCK_AGENTS: Record<'Planner' | 'Coder' | 'Reviewer', AgentDefinit
   Coder: STOCK_CODER_AGENT,
   Reviewer: STOCK_REVIEWER_AGENT,
 };
+
+/**
+ * Same map, keyed by the lowercase agentRef strings used as CAREFUL_GRAPH
+ * node keys (`planner`, `coder`, `reviewer`). Both orchestrator dispatch
+ * and runner fallback use this when the project's lifecycle YAML doesn't
+ * define a matching agent — careful flow stays usable without forcing
+ * operators to copy three agent stubs into their `mergecrew.yaml`.
+ */
+export const STOCK_AGENTS_BY_REF: Record<string, AgentDefinition> = {
+  planner: STOCK_PLANNER_AGENT,
+  coder: STOCK_CODER_AGENT,
+  reviewer: STOCK_REVIEWER_AGENT,
+};
+
+/**
+ * Resolve an `agentRef` against the project's lifecycle, with stock
+ * fallback. The orchestrator + runner both use this so the resolution
+ * rule stays single-sourced.
+ *
+ * Order:
+ *   1. `lifecycleAgents[agentRef]` — the operator-defined agent.
+ *   2. `STOCK_AGENTS_BY_REF[agentRef]` — the built-in planner/coder/
+ *      reviewer when the operator didn't define one.
+ *
+ * Returns undefined when neither matches (caller decides whether to
+ * stub or fail). The orchestrator treats undefined as a hard error for
+ * careful-profile dispatch; the runner already has its own stub path
+ * for V1 single-agent runs.
+ */
+export function resolveAgentByRef(
+  lifecycleAgents: Record<string, AgentDefinition> | undefined,
+  agentRef: string,
+): AgentDefinition | undefined {
+  if (lifecycleAgents && lifecycleAgents[agentRef]) return lifecycleAgents[agentRef];
+  return STOCK_AGENTS_BY_REF[agentRef];
+}

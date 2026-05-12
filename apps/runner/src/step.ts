@@ -10,6 +10,7 @@ import {
   checkBlastRadius,
   computeRiskScore,
   parsePackageJsonDiff,
+  resolveAgentByRef,
   type AgentDefinition,
   type AutoPromoteRule as AutoPromoteRuleType,
   type BlastRadiusLimits,
@@ -153,7 +154,12 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     tx.lifecycle.findFirst({ where: { projectId }, orderBy: { version: 'desc' } }),
   );
   const cfg = (lc?.parsed ?? {}) as MergecrewConfig;
-  const agentDef = (cfg.agents?.[agentRef] ?? {
+  // Resolution order: lifecycle agents → stock fallback (planner/coder/
+  // reviewer for careful-profile projects whose lifecycle YAML doesn't
+  // define them) → empty stub for V1 single-agent agentRefs like
+  // 'discovery'/'pm'/etc. Keeping all three in one place so the runner
+  // never has to know about graphProfile directly.
+  const agentDef = (resolveAgentByRef(cfg.agents, agentRef) ?? {
     kind: agentRef,
     skills: [],
     do_not_touch: [],

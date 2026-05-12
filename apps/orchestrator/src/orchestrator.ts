@@ -3,8 +3,16 @@ import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import { withTenant } from '@mergecrew/db';
 import type { Eventlog } from '@mergecrew/eventlog';
-import type { MergecrewConfig } from '@mergecrew/domain';
-import { newRunIdForDate, shortId } from '@mergecrew/domain';
+import type { GraphDefinition, MergecrewConfig } from '@mergecrew/domain';
+import {
+  CAREFUL_GRAPH,
+  GRAPH_END,
+  findGraphEntryNode,
+  findNextGraphNode,
+  newRunIdForDate,
+  resolveAgentByRef,
+  shortId,
+} from '@mergecrew/domain';
 import { syncLifecycleFromRepo } from './lifecycle-sync.js';
 import { dispatchSlackDigest } from './digest-slack.js';
 import { dispatchEmailDigest } from './digest-email.js';
@@ -157,10 +165,130 @@ export class Orchestrator {
       await this.completeWorkflow(organizationId, projectId, runId, wfr.id, 'no-such-workflow');
       return wfr.id;
     }
+
+    // Graph-profile dispatch (#348). For careful-profile projects, ignore
+    // the parallel `wf.agents` fan-out and chain through CAREFUL_GRAPH:
+    // dispatch the entry node only; each step's completion drives the
+    // next (`onStepReply` calls `dispatchGraphNext`). Operator-defined
+    // Planner/Coder/Reviewer agents in `mergecrew.yaml` override the
+    // stock fallback by sharing the same agentRef.
+    const project = await withTenant(organizationId, (tx) =>
+      tx.project.findUnique({ where: { id: projectId }, select: { graphProfile: true } }),
+    );
+    if (project?.graphProfile === 'careful') {
+      await this.dispatchGraphEntry(organizationId, projectId, runId, wfr.id, cfg, CAREFUL_GRAPH);
+      return wfr.id;
+    }
+
     for (const agentRef of wf.agents) {
       await this.dispatchAgentStep(organizationId, projectId, runId, wfr.id, agentRef, cfg);
     }
     return wfr.id;
+  }
+
+  /**
+   * Graph-driven successor dispatch (#348). Called after a step completes.
+   * Returns true when a follow-up step was queued — telling the caller to
+   * skip `maybeAdvanceWorkflow` because the chain isn't done. Returns
+   * false when no successor exists (step had no graphNodeKey, or its
+   * graph node terminated at `__end__`), so the caller falls through to
+   * normal workflow-advance logic.
+   *
+   * The graph signal for #348 is fixed at undefined — meaning the
+   * reviewer node's two-edge fork resolves to the `when:'approve'`
+   * branch via `findNextGraphNode`'s minimal-behavior fallback. #349
+   * threads the reviewer's verdict in and removes that assumption.
+   */
+  private async dispatchGraphNext(
+    organizationId: string,
+    projectId: string,
+    runId: string,
+    workflowRunId: string,
+    stepId: string,
+  ): Promise<boolean> {
+    const step = await withTenant(organizationId, (tx) =>
+      tx.agentStep.findUnique({
+        where: { id: stepId },
+        select: { graphNodeKey: true, input: true },
+      }),
+    );
+    if (!step?.graphNodeKey) return false;
+
+    const project = await withTenant(organizationId, (tx) =>
+      tx.project.findUnique({
+        where: { id: projectId },
+        select: { graphProfile: true, graphYaml: true },
+      }),
+    );
+    // Custom-profile (graphYaml) chains land in #350; for now only
+    // careful uses the chain path.
+    if (project?.graphProfile !== 'careful') return false;
+    const graph = CAREFUL_GRAPH;
+
+    const nextKey = findNextGraphNode(graph, step.graphNodeKey);
+    if (nextKey === null || nextKey === GRAPH_END) return false;
+
+    const node = graph.graph.nodes[nextKey];
+    if (!node) {
+      this.deps.logger.warn(
+        { runId, stepId, nextKey },
+        'graph dispatch: next node not in graph.nodes — falling back to workflow advance',
+      );
+      return false;
+    }
+
+    const lc = await withTenant(organizationId, (tx) =>
+      tx.lifecycle.findFirst({ where: { projectId }, orderBy: { version: 'desc' } }),
+    );
+    const cfg = (lc?.parsed ?? {}) as MergecrewConfig;
+    await this.dispatchAgentStep(
+      organizationId,
+      projectId,
+      runId,
+      workflowRunId,
+      node.agentRef,
+      cfg,
+      { graphNodeKey: nextKey },
+    );
+    return true;
+  }
+
+  /**
+   * Careful-profile entry: pick the graph's entry node and queue the
+   * first step. Records `graphNodeKey` on the agent_step so
+   * `onStepReply` can find the next node when the step completes.
+   * Fails the workflow cleanly when the entry node is ambiguous or
+   * its agent can't be resolved — neither should happen on a project
+   * created through the normal settings UI (the validator catches both
+   * at save time), but a hand-edited DB row could land here.
+   */
+  private async dispatchGraphEntry(
+    organizationId: string,
+    projectId: string,
+    runId: string,
+    workflowRunId: string,
+    cfg: MergecrewConfig,
+    graph: GraphDefinition,
+  ) {
+    const entry = findGraphEntryNode(graph);
+    if (!entry) {
+      this.deps.logger.warn(
+        { runId, workflowRunId },
+        'careful dispatch: graph has no unique entry node — failing workflow',
+      );
+      await this.completeWorkflow(organizationId, projectId, runId, workflowRunId, 'careful-no-entry');
+      return;
+    }
+    const node = graph.graph.nodes[entry]!;
+    await this.dispatchAgentStep(
+      organizationId,
+      projectId,
+      runId,
+      workflowRunId,
+      node.agentRef,
+      cfg,
+      { graphNodeKey: entry },
+    );
   }
 
   private async dispatchAgentStep(
@@ -170,8 +298,15 @@ export class Orchestrator {
     workflowRunId: string,
     agentRef: string,
     cfg: MergecrewConfig,
+    opts?: { graphNodeKey?: string },
   ) {
-    const agentDef = cfg.agents?.[agentRef];
+    // `resolveAgentByRef` covers careful-profile stock fallback so a
+    // project on `graphProfile=careful` doesn't have to copy three
+    // agent stubs into its `mergecrew.yaml`. For `fast` it still falls
+    // back to lifecycle agents only — operators see the same warning
+    // they did before for V1 single-agent flows that reference an
+    // undefined agentRef.
+    const agentDef = resolveAgentByRef(cfg.agents, agentRef);
     if (!agentDef) {
       this.deps.logger.warn({ agentRef }, 'unknown agent ref');
       return;
@@ -244,6 +379,7 @@ export class Orchestrator {
           agentInstanceId: stableUuid(`${projectId}:${agentRef}`),
           status: 'pending',
           input: { agentRef, workflowRunId },
+          ...(opts?.graphNodeKey ? { graphNodeKey: opts.graphNodeKey } : {}),
         },
       }),
     );
@@ -379,7 +515,21 @@ export class Orchestrator {
         actor: { kind: 'system' },
         payload: { totalTokens: outcome.totalTokens },
       });
-      await this.maybeAdvanceWorkflow(organizationId, projectId, runId, workflowRunId);
+      // Graph-driven dispatch (#348): if the completed step belongs to
+      // a graph chain, queue the next node before deciding whether the
+      // workflow is done. `dispatchGraphNext` returns true when it
+      // queued another step — in that case we skip `maybeAdvanceWorkflow`
+      // because the workflow still has work in flight.
+      const dispatched = await this.dispatchGraphNext(
+        organizationId,
+        projectId,
+        runId,
+        workflowRunId,
+        stepId,
+      );
+      if (!dispatched) {
+        await this.maybeAdvanceWorkflow(organizationId, projectId, runId, workflowRunId);
+      }
       return;
     }
     if (outcome.kind === 'gated_reject') {

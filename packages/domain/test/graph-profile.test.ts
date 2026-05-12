@@ -8,6 +8,8 @@ import { describe, expect, it } from 'vitest';
 import {
   CAREFUL_GRAPH,
   GRAPH_END,
+  findGraphEntryNode,
+  findNextGraphNode,
   parseAndValidateGraphYaml,
   validateGraphDefinition,
   type GraphDefinition,
@@ -161,5 +163,81 @@ graph:
     expect(() => parseAndValidateGraphYaml(yaml, { availableAgentRefs: ['planner'] })).toThrow(
       /agentRef.*nonexistent/,
     );
+  });
+});
+
+describe('findGraphEntryNode (#348)', () => {
+  it('returns the planner node for CAREFUL_GRAPH', () => {
+    expect(findGraphEntryNode(CAREFUL_GRAPH)).toBe('planner');
+  });
+
+  it('returns undefined when no candidate exists (every node has an inbound edge)', () => {
+    const g: GraphDefinition = {
+      version: 1,
+      graph: {
+        nodes: { a: { agentRef: 'x' }, b: { agentRef: 'y' } },
+        edges: [
+          { from: 'a', to: 'b' },
+          { from: 'b', to: 'a' },
+          { from: 'a', to: GRAPH_END },
+        ],
+      },
+    };
+    expect(findGraphEntryNode(g)).toBeUndefined();
+  });
+
+  it('returns undefined when multiple candidates exist', () => {
+    const g: GraphDefinition = {
+      version: 1,
+      graph: {
+        nodes: { a: { agentRef: 'x' }, b: { agentRef: 'y' } },
+        edges: [
+          { from: 'a', to: GRAPH_END },
+          { from: 'b', to: GRAPH_END },
+        ],
+      },
+    };
+    expect(findGraphEntryNode(g)).toBeUndefined();
+  });
+});
+
+describe('findNextGraphNode (#348)', () => {
+  it('returns the single successor when there is exactly one outgoing edge', () => {
+    expect(findNextGraphNode(CAREFUL_GRAPH, 'planner')).toBe('coder');
+    expect(findNextGraphNode(CAREFUL_GRAPH, 'coder')).toBe('reviewer');
+  });
+
+  it('routes by `when` signal when multiple edges share a `from`', () => {
+    expect(findNextGraphNode(CAREFUL_GRAPH, 'reviewer', 'approve')).toBe(GRAPH_END);
+    expect(findNextGraphNode(CAREFUL_GRAPH, 'reviewer', 'requestChanges')).toBe('coder');
+  });
+
+  it('falls back to the approve edge when no signal is supplied (#348 minimal behavior)', () => {
+    expect(findNextGraphNode(CAREFUL_GRAPH, 'reviewer')).toBe(GRAPH_END);
+  });
+
+  it('returns null when no edge leaves the given node', () => {
+    const g: GraphDefinition = {
+      version: 1,
+      graph: {
+        nodes: { a: { agentRef: 'x' } },
+        edges: [{ from: 'a', to: GRAPH_END }],
+      },
+    };
+    expect(findNextGraphNode(g, 'no-such-node')).toBeNull();
+  });
+
+  it('returns null when multiple `when` edges exist but no signal matches and none is `approve`', () => {
+    const g: GraphDefinition = {
+      version: 1,
+      graph: {
+        nodes: { a: { agentRef: 'x' }, b: { agentRef: 'y' } },
+        edges: [
+          { from: 'a', to: 'b', when: 'foo' },
+          { from: 'a', to: GRAPH_END, when: 'bar' },
+        ],
+      },
+    };
+    expect(findNextGraphNode(g, 'a', 'baz')).toBeNull();
   });
 });
