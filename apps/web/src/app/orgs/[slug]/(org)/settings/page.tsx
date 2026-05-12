@@ -70,10 +70,35 @@ async function setTelemetryAction(formData: FormData) {
   revalidatePath(`/orgs/${slug}/settings`);
 }
 
+async function setEvalsAction(formData: FormData) {
+  'use server';
+  const slug = String(formData.get('slug') ?? '');
+  const enabled = formData.get('enabled') === 'on';
+  const session = await requireSession();
+  await api(`/v1/orgs/${slug}/evals/settings`, {
+    method: 'PATCH',
+    body: JSON.stringify({ enabled }),
+    session,
+  });
+  revalidatePath(`/orgs/${slug}/settings`);
+}
+
 export default async function OrgSettingsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const session = await requireSession();
-  const [org, members, providers, profiles, budget, spendCap, canEdit, mfaStatus, telemetry, telemetryRecent] = await Promise.all([
+  const [
+    org,
+    members,
+    providers,
+    profiles,
+    budget,
+    spendCap,
+    canEdit,
+    mfaStatus,
+    telemetry,
+    telemetryRecent,
+    evals,
+  ] = await Promise.all([
     api<any>(`/v1/orgs/${slug}`, { session }),
     api<{ items: any[] }>(`/v1/orgs/${slug}/members`, { session }),
     api<{ items: any[] }>(`/v1/orgs/${slug}/llm/providers`, { session }),
@@ -89,6 +114,10 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
       `/v1/orgs/${slug}/telemetry/recent`,
       { session },
     ).catch(() => ({ items: [] })),
+    api<{ enabled: boolean; lastRanAt: string | null }>(
+      `/v1/orgs/${slug}/evals/settings`,
+      { session },
+    ).catch(() => ({ enabled: false, lastRanAt: null })),
   ]);
   const monthlyPct =
     spendCap.monthlySpendCapUsd && spendCap.monthlySpendCapUsd > 0
@@ -319,6 +348,47 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
           </form>
         ) : (
           <p className="mt-4 text-xs text-zinc-500">Only admins can change this.</p>
+        )}
+      </Card>
+
+      <Card>
+        <div className="flex items-baseline justify-between">
+          <h2 className="font-medium">Nightly evals</h2>
+          <LinkButton href={`/orgs/${slug}/evals`} variant="secondary">
+            View dashboard →
+          </LinkButton>
+        </div>
+        <p className="mt-1 text-sm text-zinc-500">
+          Auto-runs the eval fixture corpus once per day against the org&apos;s default LLM
+          profile. Each tick costs a few dollars at typical profile pricing — off by default. Pair
+          with a tight monthly spend cap while you&apos;re tuning thresholds.{' '}
+          <a
+            href="https://github.com/mergecrew/mergecrew/blob/main/docs/03-infrastructure/15-evals.md"
+            target="_blank"
+            rel="noreferrer"
+            className="text-zinc-700 underline decoration-dotted hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
+          >
+            Eval cookbook →
+          </a>
+        </p>
+        {evals.lastRanAt && (
+          <p className="mt-2 text-xs text-zinc-500">
+            Last cron run: {new Date(evals.lastRanAt).toLocaleString()}
+          </p>
+        )}
+        {canEdit ? (
+          <form action={setEvalsAction} className="mt-3 flex items-center gap-2">
+            <input type="hidden" name="slug" value={slug} />
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="enabled" defaultChecked={evals.enabled} />
+              <span>Run evals nightly</span>
+            </label>
+            <Button variant="primary" type="submit">
+              Save
+            </Button>
+          </form>
+        ) : (
+          <p className="mt-3 text-xs text-zinc-500">Only admins can change this.</p>
         )}
       </Card>
 

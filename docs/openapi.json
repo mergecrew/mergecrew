@@ -227,6 +227,32 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/evals/settings": {
+      "get": {
+        "operationId": "OrgController_evalsSettings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
+      },
+      "patch": {
+        "operationId": "OrgController_updateEvalsSettings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/projects": {
       "get": {
         "operationId": "ProjectController_list",

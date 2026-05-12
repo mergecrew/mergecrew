@@ -70,6 +70,15 @@ model Organization {
   /// push month-to-date past the cap is rejected with reason `cap_exceeded`
   /// rather than truncated mid-step.
   monthlySpendCapUsd       Decimal?  @map("monthly_spend_cap_usd") @db.Decimal(10, 2)
+  /// Nightly eval auto-run (#303). Off by default — each run costs a few
+  /// dollars at typical profile pricing. When true, worker-cron picks the
+  /// org up once daily and runs the full fixture corpus against the org's
+  /// default LLM profile. Results land in eval_runs with source='cron'.
+  evalsEnabled             Boolean   @default(false) @map("evals_enabled")
+  /// Most-recent successful eval cron tick. Used by worker-cron to dedup
+  /// — a 23h-old timestamp marks the org as due. Bumped BEFORE the run
+  /// fires so a flaky tick can't double-dispatch.
+  evalsLastRanAt           DateTime? @map("evals_last_ran_at") @db.Timestamptz(6)
   /// Max concurrent agent steps for this org (V1.3, #9). The orchestrator
   /// counts agent_steps with status in ('pending','running') and defers
   /// new dispatches when the count is at or above this cap. 0 = unlimited

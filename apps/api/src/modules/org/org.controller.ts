@@ -150,4 +150,20 @@ export class OrgController {
     const t = this.tenant.require();
     return { items: await this.telemetry.getRecent(t.organizationId) };
   }
+
+  @UseGuards(RoleGuard)
+  @Get('orgs/:slug/evals/settings')
+  async evalsSettings(@Param('slug') _slug: string) {
+    return this.orgs.getEvalsSettings();
+  }
+
+  @UseGuards(RoleGuard)
+  @RequireRole('admin')
+  @Patch('orgs/:slug/evals/settings')
+  async updateEvalsSettings(
+    @Param('slug') _slug: string,
+    @Body() body: { enabled: boolean },
+  ) {
+    return this.orgs.updateEvalsSettings(Boolean(body.enabled));
+  }
 }
