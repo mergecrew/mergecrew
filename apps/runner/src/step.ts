@@ -48,7 +48,7 @@ import { LinearProvider, GitHubIssuesProvider, type TrackerProvider } from '@mer
 const TRACKER_TOKEN_SECRET = 'TRACKER_TOKEN';
 const ERROR_TRACKER_TOKEN_SECRET = 'ERROR_TRACKER_TOKEN';
 import { CompositeCommsProvider } from '@mergecrew/adapters-comms';
-import { runAgentStep, BudgetTracker, PolicyEngine } from '@mergecrew/agent-runtime';
+import { runAgentStep, BudgetTracker, PolicyEngine, PLANNER_AGENT_KIND } from '@mergecrew/agent-runtime';
 import { transcriptStoreFromEnv } from '@mergecrew/transcript-store';
 import type { CancellationCoordinator } from './cancellation.js';
 
@@ -584,6 +584,37 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
       }
     },
   });
+
+  // Planner agents (#332) persist their final markdown plan on
+  // agent_steps.output and emit PLAN_PROPOSED so downstream agents
+  // (coder, reviewer) and the timeline UI can consume it. We only
+  // persist on a clean `completed` outcome — partial outcomes
+  // (failed/budget_exhausted/cancelled) leave the field null because
+  // a truncated plan is worse than no plan for the coder's purposes.
+  if (
+    agentDef.kind === PLANNER_AGENT_KIND &&
+    outcome.kind === 'completed' &&
+    typeof outcome.output === 'string' &&
+    outcome.output.trim().length > 0
+  ) {
+    const planMarkdown = outcome.output.trim();
+    await withTenant(organizationId, (tx) =>
+      tx.agentStep.update({
+        where: { id: stepId },
+        data: { output: { planMarkdown } as any },
+      }),
+    );
+    await eventlog.emit({
+      organizationId,
+      projectId,
+      dailyRunId: runId,
+      workflowRunId,
+      agentStepId: stepId,
+      type: 'PLAN_PROPOSED',
+      actor: { kind: 'agent', id: stepId, agentKind: agentDef.kind },
+      payload: { planMarkdown },
+    });
+  }
 
   // After the loop: open PRs for any active changesets that don't have one
   // yet. Best-effort — failures log + leave the changeset in its current
