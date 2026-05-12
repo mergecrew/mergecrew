@@ -1,10 +1,18 @@
-# One-command self-host for trial use (#223). Boots the whole stack —
-# Postgres, Redis, API, orchestrator, runner, worker-cron, web — plus a
-# one-shot migrate + seed so the operator lands on a usable web UI at
-# http://localhost:3000 with a pre-created `demo` org.
+# One-command self-host for trial use (#223, #315). Boots the whole stack —
+# Postgres, Redis, MinIO (S3-compatible), API, orchestrator, runner,
+# worker-cron, web — plus a one-shot migrate + seed so the operator lands
+# on a usable web UI at http://localhost:3000 with a pre-created `demo` org.
+#
+# Profiles:
+#   default        — full app stack on its own (assumes an LLM key is set or
+#                    that you point an existing profile at an external host)
+#   with-ollama    — also brings up Ollama on http://ollama:11434 and pre-pulls
+#                    a small model (llama3.2:3b). Slower first-run, but means
+#                    zero outside API keys are needed for evaluation.
 #
 # Usage:
-#   docker compose -f docker-compose.full.yml up
+#   docker compose -f docker-compose.full.yml up                   # without Ollama
+#   docker compose -f docker-compose.full.yml --profile with-ollama up
 #
 # For production self-host use docker-compose.prod.yml instead — it
 # expects host-installed Postgres, an external reverse proxy, and
@@ -40,6 +48,44 @@ services:
       timeout: 3s
       retries: 10
 
+  # S3-compatible object store for transcripts + artifacts. Default
+  # credentials are well-known + dev-only; rotate or replace with real
+  # AWS in production. Web console exposed on :9001 for debugging.
+  minio:
+    image: minio/minio:latest
+    container_name: mergecrew-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: mergecrew
+      MINIO_ROOT_PASSWORD: mergecrew-dev-only
+    volumes:
+      - minio_data:/data
+    networks: [internal]
+    ports:
+      - '127.0.0.1:9001:9001'
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-shot: creates the `mergecrew` bucket if it doesn't exist. Every
+  # app service waits on this completing successfully via depends_on so
+  # the transcript-store never writes against a missing bucket.
+  minio-init:
+    image: minio/mc:latest
+    container_name: mergecrew-minio-init
+    networks: [internal]
+    depends_on:
+      minio: { condition: service_healthy }
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 mergecrew mergecrew-dev-only &&
+      mc mb --ignore-existing local/mergecrew &&
+      echo 'minio-init: bucket ready'
+      "
+    restart: 'no'
+
   # One-shot: applies the Prisma migration set, then exits. Every app
   # service waits on this completing successfully via depends_on, so the
   # API never starts against a schema-less DB.
@@ -61,6 +107,15 @@ services:
         NEXTAUTH_URL: http://localhost:3000
         API_BASE_URL: http://api:4000
         WEB_BASE_URL: http://localhost:3000
+        # S3 (MinIO) — transcript-store + artifact-store honor S3_ENDPOINT_URL
+        # so the same code paths run against AWS S3, MinIO, and LocalStack
+        # without a kind switch.
+        S3_ENDPOINT_URL: http://minio:9000
+        TRANSCRIPT_S3_BUCKET: mergecrew
+        ARTIFACT_S3_BUCKET: mergecrew
+        AWS_ACCESS_KEY_ID: mergecrew
+        AWS_SECRET_ACCESS_KEY: mergecrew-dev-only
+        AWS_REGION: us-east-1
         # Dev auto-login wires the seeded demo user without OAuth setup
         # so the operator lands directly on a usable UI.
         MERGECREW_DEV_AUTO_LOGIN: 'true'
@@ -122,6 +177,7 @@ services:
     depends_on:
       seed: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
 
   orchestrator:
     build:
@@ -136,6 +192,7 @@ services:
     depends_on:
       seed: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
 
   runner:
     build:
@@ -150,6 +207,7 @@ services:
     depends_on:
       seed: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
 
   worker-cron:
     build:
@@ -180,9 +238,46 @@ services:
       - '127.0.0.1:3000:3000'
     depends_on: [api]
 
+  # OSS-only LLM path. Slow on first run (model pull is ~2GB) so off by
+  # default. Operators with their own Anthropic/OpenAI key don't need this.
+  ollama:
+    profiles: ['with-ollama']
+    image: ollama/ollama:latest
+    container_name: mergecrew-ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    networks: [internal]
+    ports:
+      - '127.0.0.1:11434:11434'
+    healthcheck:
+      test: ['CMD', 'ollama', 'list']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # One-shot: pulls a small chat model so the seeded LLM profile points
+  # at something real. llama3.2:3b is a 2GB download — runs once, then
+  # cached in the named volume across compose restarts.
+  ollama-pull:
+    profiles: ['with-ollama']
+    image: ollama/ollama:latest
+    container_name: mergecrew-ollama-pull
+    entrypoint: >
+      /bin/sh -c "
+      OLLAMA_HOST=http://ollama:11434 ollama pull llama3.2:3b &&
+      echo 'ollama-pull: model ready'
+      "
+    networks: [internal]
+    depends_on:
+      ollama: { condition: service_healthy }
+    restart: 'no'
+
 networks:
   internal:
 
 volumes:
   postgres_data:
   redis_data:
+  minio_data:
+  ollama_data:
