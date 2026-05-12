@@ -92,13 +92,19 @@ const StateAnnotation = Annotation.Root({
 type State = typeof StateAnnotation.State;
 
 export async function runAgentStep(ctx: RunCtx): Promise<StepOutcome> {
-  // E2E stub mode (#191). When `MERGECREW_AGENT_STUB=1` is set the runtime
-  // bypasses the LLM and returns a deterministic `completed` outcome
-  // immediately. This is for the full-loop CI test where we want to
-  // exercise the orchestration plumbing (BullMQ → orchestrator → runner →
-  // eventlog → DB → API readback) without paying for or depending on
-  // model output. Production runs and unit tests don't see this path.
-  if (process.env.MERGECREW_AGENT_STUB === '1') {
+  // Stub-agent path: bypasses the LLM and returns a deterministic
+  // `completed` outcome immediately. Two activators:
+  //   - `MERGECREW_AGENT_STUB=1` — original e2e gate (#191).
+  //   - `MERGECREW_DEMO_MODE=1`  — V2.ag demo (#374). Aliased here so
+  //     a self-host operator gets the same plumbing-bypass behavior
+  //     without having to learn the e2e flag name.
+  // Both paths exercise BullMQ → orchestrator → runner → eventlog →
+  // DB → API readback without paying for or depending on model output.
+  // Production runs and unit tests don't see this path.
+  if (
+    process.env.MERGECREW_AGENT_STUB === '1' ||
+    process.env.MERGECREW_DEMO_MODE === '1'
+  ) {
     return runStubAgentStep(ctx);
   }
 

@@ -90,17 +90,19 @@ The **Changesets** tab shows the resulting changeset. The seed ships it as `dev_
 
 That's the 5-minute path. You've seen the multi-agent flow end-to-end without triggering anything yourself.
 
-## 4. (Optional) Trigger your own run
+## 4. Trigger your own run
 
-If you want to watch the agents work live:
+The default compose env sets `MERGECREW_DEMO_MODE=1`, which routes every agent step through a deterministic stub instead of an LLM. That means you can click **Run now** on the demo project immediately — no API key, no Ollama wait, no Settings tour. An amber **Demo mode** banner at the top of the page makes the mode unambiguous.
 
-1. Make sure an LLM profile is configured. The `--profile with-ollama` flag already wired an Ollama profile at `http://ollama:11434`. Otherwise: **Settings → LLM providers → New provider**, paste your Anthropic / OpenAI key, save.
-2. The demo project's lifecycle ships `Planner / Coder / Reviewer` agents on the **careful** graph profile. No editing needed.
-3. From the project header, click **Run now**.
+1. From the project header on `/orgs/demo/projects/acme`, click **Run now**.
+2. Watch the **Timeline** tab fill: the Planner emits a canned markdown plan, the Coder produces a placeholder changeset, the Reviewer emits a `VERDICT: approve`.
+3. A new `CHANGESET_OPENED` event appears in <2s; the resulting changeset is visible on the Changesets tab.
 
-Watch the **Timeline** tab fill in real time. The Planner emits its plan (a markdown blob listing files to touch + a validation plan), the Coder produces a diff, the Reviewer parses a structured `VERDICT:` line. If the Reviewer requests changes, the Coder reruns with the feedback — up to 3 rounds before `REVIEW_LOOP_EXHAUSTED` fires and the run advances anyway (the cap is tunable via `REVIEW_LOOP_CAP`).
+To switch to real agent runs:
 
-After ~2–5 minutes (longer on Ollama, faster on a frontier model) a new `CHANGESET_OPENED` event fires.
+1. Set `MERGECREW_DEMO_MODE=0` in your `.env` (or unset the var) and restart the stack.
+2. Configure an LLM profile: the `--profile with-ollama` flag wires Ollama automatically; otherwise **Settings → LLM providers → New provider** with your Anthropic / OpenAI key.
+3. Click **Run now** again. The Planner takes ~30s on a frontier model, the Coder ~2-5 min depending on repo size. If the Reviewer requests changes, the Coder reruns with the feedback — up to 3 rounds before `REVIEW_LOOP_EXHAUSTED` fires and the run advances anyway (cap tunable via `REVIEW_LOOP_CAP`).
 
 ## 5. Connect your own repo
 

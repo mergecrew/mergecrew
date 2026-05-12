@@ -127,6 +127,13 @@ services:
         # trial use; set to `1` by scripts/e2e-local.sh so the agent loop
         # returns deterministic `completed` outcomes without an LLM call.
         MERGECREW_AGENT_STUB: '${MERGECREW_AGENT_STUB:-}'
+        # V2.ag demo mode (#374). Defaults to `1` so a fresh
+        # `docker compose up` delivers a clickable demo without forcing
+        # the operator to wire an LLM provider first. Aliases
+        # MERGECREW_AGENT_STUB on the runtime side; the web reads it
+        # to render the demo-mode banner. Operators flip to `0` (and
+        # configure a real LLM in Settings) once they outgrow the demo.
+        MERGECREW_DEMO_MODE: '${MERGECREW_DEMO_MODE:-1}'
         # Opt-in telemetry receiver URL (#253). Empty by default — the
         # transport stays NoopTransport, no events leave the box. Point
         # at infra/telemetry/server.mjs or your own collector to opt in.
