@@ -54,7 +54,15 @@ export function startObservabilityServer(opts: ServerOpts): http.Server {
     try {
       const url = req.url ?? '/';
       if (url === '/healthz') {
-        await handleHealth(req, res, opts);
+        // Liveness: process is up. No I/O — kubelet just wants to
+        // know whether to restart the pod.
+        res.statusCode = 200;
+        res.setHeader('content-type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+      if (url === '/readyz') {
+        await handleReady(req, res, opts);
         return;
       }
       if (url === '/metrics' || url === '/metrics/') {
@@ -76,12 +84,23 @@ export function startObservabilityServer(opts: ServerOpts): http.Server {
   return server;
 }
 
-async function handleHealth(_req: http.IncomingMessage, res: http.ServerResponse, opts: ServerOpts): Promise<void> {
+const READY_TIMEOUT_MS = 500;
+
+function withTimeout<T>(p: Promise<T>, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_resolve, reject) =>
+      setTimeout(() => reject(new Error(`${label} check exceeded ${READY_TIMEOUT_MS}ms`)), READY_TIMEOUT_MS),
+    ),
+  ]);
+}
+
+async function handleReady(_req: http.IncomingMessage, res: http.ServerResponse, opts: ServerOpts): Promise<void> {
   const checks: Record<string, 'ok' | 'fail'> = { redis: 'ok', tick: 'ok' };
   const details: Record<string, string> = {};
 
   try {
-    const pong = await opts.redis.ping();
+    const pong = await withTimeout(opts.redis.ping(), 'redis');
     if (pong !== 'PONG') {
       checks.redis = 'fail';
       details.redis = `ping returned ${pong}`;

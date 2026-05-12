@@ -29,7 +29,7 @@ async function bootstrap() {
   // counter; /metrics on the HealthController serves the exposition.
   initMetrics({ service: 'api' });
   app.use((req: Request, res: Response, next: NextFunction) => {
-    if (req.path === '/metrics' || req.path === '/healthz') {
+    if (req.path === '/metrics' || req.path === '/healthz' || req.path === '/readyz') {
       next();
       return;
     }

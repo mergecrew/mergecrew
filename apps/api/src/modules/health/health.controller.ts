@@ -4,7 +4,7 @@ import { PrismaService } from '../../common/prisma.service.js';
 import { QueueService } from '../../common/queue.service.js';
 import { exposition, queueDepthGauge } from './metrics.js';
 
-interface HealthBody {
+interface ReadyBody {
   status: 'ok' | 'degraded';
   checks: {
     db: 'ok' | 'fail';
@@ -13,34 +13,56 @@ interface HealthBody {
   details?: { db?: string; redis?: string };
 }
 
-// Liveness/readiness + Prometheus exposition. Both endpoints are
+const CHECK_TIMEOUT_MS = 500;
+
+function withTimeout<T>(p: Promise<T>, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_resolve, reject) =>
+      setTimeout(() => reject(new Error(`${label} check exceeded ${CHECK_TIMEOUT_MS}ms`)), CHECK_TIMEOUT_MS),
+    ),
+  ]);
+}
+
+// Liveness, readiness + Prometheus exposition. All three endpoints are
 // unauthenticated by design — they're scraped by infra, not users — and
 // sit at the root path (no /v1 prefix) so the existing API tenant
 // middleware skips them.
 @Controller()
 export class HealthController {
-  // The health check runs SELECT 1 + redis.ping every request. Both are
-  // sub-millisecond on a healthy stack; we don't bother caching the result
-  // because liveness probes typically run on a 10s interval anyway.
   constructor(private prisma: PrismaService, private queue: QueueService) {}
 
+  // Liveness: returns 200 as long as the process is up. Used by
+  // kubelet to decide whether to restart the pod. Cheap — no I/O.
   @Get('healthz')
-  async healthz(@Res({ passthrough: true }) res: Response): Promise<HealthBody> {
-    const body: HealthBody = {
+  healthz(): { ok: true } {
+    return { ok: true };
+  }
+
+  // Readiness: 200 only when downstream dependencies are reachable.
+  // Used by kubelet to decide whether to route traffic. Each check is
+  // bounded at CHECK_TIMEOUT_MS so a hung dependency doesn't block the
+  // probe past the kubelet's own timeout (kubelet default = 1s).
+  @Get('readyz')
+  async readyz(@Res({ passthrough: true }) res: Response): Promise<ReadyBody> {
+    const body: ReadyBody = {
       status: 'ok',
       checks: { db: 'ok', redis: 'ok' },
     };
     const details: { db?: string; redis?: string } = {};
 
     try {
-      await this.prisma.withSystem((tx) => tx.$queryRaw`select 1`);
+      await withTimeout(
+        this.prisma.withSystem((tx) => tx.$queryRaw`select 1`),
+        'db',
+      );
     } catch (e: any) {
       body.checks.db = 'fail';
       details.db = String(e?.message ?? e);
     }
 
     try {
-      const pong = await this.queue.connectionHandle().ping();
+      const pong = await withTimeout(this.queue.connectionHandle().ping(), 'redis');
       if (pong !== 'PONG') {
         body.checks.redis = 'fail';
         details.redis = `redis ping returned ${pong}`;

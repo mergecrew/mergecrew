@@ -1827,6 +1827,20 @@
         ]
       }
     },
+    "/readyz": {
+      "get": {
+        "operationId": "HealthController_readyz",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Health"
+        ]
+      }
+    },
     "/metrics": {
       "get": {
         "operationId": "HealthController_metrics",
