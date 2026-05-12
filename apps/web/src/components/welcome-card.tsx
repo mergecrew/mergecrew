@@ -9,25 +9,26 @@ const STORAGE_KEY = 'mergecrew:welcome-dismissed';
 /**
  * First-visit welcome card on the Today page (#363, V2.af).
  *
- * Visible until the user clicks dismiss; the dismissed state lives in
- * localStorage so a single dismissal sticks across reloads + tabs in
- * the same browser profile. We can't read localStorage on the server,
- * so the card renders as `null` until the client-side mount effect
- * fires — this avoids a hydration mismatch and prevents the card
- * flashing into view on dismissed visits.
+ * Renders eagerly on SSR so first-visit users (and CI smokes that
+ * curl the page) see the card without waiting for client-side state.
+ * The mount effect reads localStorage and hides the card if the user
+ * has dismissed it — that causes a brief flash on dismissed visits,
+ * which we accept in exchange for a discoverable, server-rendered
+ * marker.
  */
 export function WelcomeCard({ orgSlug }: { orgSlug: string }) {
-  const [state, setState] = useState<'loading' | 'visible' | 'dismissed'>('loading');
+  const [state, setState] = useState<'visible' | 'dismissed'>('visible');
 
   useEffect(() => {
     try {
-      const dismissed = window.localStorage.getItem(STORAGE_KEY);
-      setState(dismissed ? 'dismissed' : 'visible');
+      if (window.localStorage.getItem(STORAGE_KEY)) {
+        setState('dismissed');
+      }
     } catch {
       // localStorage can throw in restricted contexts (private mode +
-      // certain browsers). Fail closed — don't show the card if we
-      // can't track dismissal, or we'll never stop showing it.
-      setState('dismissed');
+      // certain browsers). Leave the card visible — the worst case is
+      // a card that re-appears on reload, which is better than one
+      // that never appears.
     }
   }, []);
 
