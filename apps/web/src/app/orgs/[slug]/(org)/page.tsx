@@ -4,6 +4,7 @@ import { requireSession } from '@/lib/session';
 import { Card, StatusDot, LinkButton, Chip } from '@/components/ui';
 import { FirstRunEmptyState } from '@/components/first-run-empty-state';
 import { WelcomeCard } from '@/components/welcome-card';
+import { OnboardingBanner } from '@/components/onboarding-banner';
 import { relativeTime, runStatusToDot } from '@/lib/format';
 
 type Project = {
@@ -43,7 +44,7 @@ export default async function OrgHomePage({
   const { slug } = await params;
   const session = await requireSession();
 
-  const [projectsRes, inboxRes, activityRes, spendCapRes, evalsRes] = await Promise.all([
+  const [projectsRes, inboxRes, activityRes, spendCapRes, evalsRes, onboardingRes] = await Promise.all([
     safe(() => api<{ items: Project[] }>(`/v1/orgs/${slug}/projects`, { session })),
     safe(() => api<{ items: ApprovalRequest[] }>(`/v1/orgs/${slug}/inbox`, { session })),
     safe(() => api<{ items: TimelineEvent[] }>(`/v1/orgs/${slug}/activity?limit=10`, { session })),
@@ -66,6 +67,12 @@ export default async function OrgHomePage({
           source: string;
         }>;
       }>(`/v1/orgs/${slug}/evals?limit=1`, { session }),
+    ),
+    safe(() =>
+      api<{
+        steps: Array<{ status: 'complete' | 'pending' }>;
+        complete: boolean;
+      }>(`/v1/orgs/${slug}/onboarding`, { session }),
     ),
   ]);
 
@@ -123,6 +130,14 @@ export default async function OrgHomePage({
       </header>
 
       <WelcomeCard orgSlug={slug} />
+
+      {onboardingRes && !onboardingRes.complete && (
+        <OnboardingBanner
+          orgSlug={slug}
+          totalSteps={onboardingRes.steps.length}
+          pendingSteps={onboardingRes.steps.filter((s) => s.status === 'pending').length}
+        />
+      )}
 
       {inbox.length > 0 && (
         <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-700/40 dark:bg-amber-950/30">
