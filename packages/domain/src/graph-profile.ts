@@ -164,6 +164,58 @@ export function validateGraphDefinition(
 }
 
 /**
+ * Pick the entry node of a graph — the unique node that no edge
+ * targets. Returns undefined when zero or multiple candidates exist
+ * (the validator catches this on save; callers can treat undefined as
+ * a hard error at dispatch time).
+ */
+export function findGraphEntryNode(def: GraphDefinition): string | undefined {
+  const referencedAsTo = new Set<string>();
+  for (const e of def.graph.edges) {
+    if (e.to !== GRAPH_END) referencedAsTo.add(e.to);
+  }
+  const candidates = Object.keys(def.graph.nodes).filter((k) => !referencedAsTo.has(k));
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
+/**
+ * Find the next node to dispatch given the current node + an optional
+ * routing `signal` (used by conditional edges — for the reviewer node,
+ * 'approve' or 'requestChanges').
+ *
+ * Resolution:
+ *   - If only one edge leaves `from`, take it.
+ *   - If multiple edges share `from`, pick the one whose `when`
+ *     matches `signal`. Falls back to the `when: 'approve'` edge for
+ *     #348 minimal behavior (no verdict-driven routing yet); #349
+ *     wires verdict parsing into the orchestrator and removes that
+ *     fallback.
+ *
+ * Returns the literal `__end__` sentinel when the picked edge
+ * terminates. Returns null when no edge resolves — the orchestrator
+ * treats that as "advance the workflow as if no graph was wired".
+ */
+export function findNextGraphNode(
+  def: GraphDefinition,
+  fromNodeKey: string,
+  signal?: string,
+): string | null {
+  const candidates = def.graph.edges.filter((e) => e.from === fromNodeKey);
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0]!.to;
+  if (signal) {
+    const match = candidates.find((e) => e.when === signal);
+    if (match) return match.to;
+  }
+  // #348 default for the reviewer node: assume approve until verdict
+  // parsing lands in #349. Picks the explicit approve edge if present
+  // so a careful-profile run terminates cleanly today.
+  const approve = candidates.find((e) => e.when === 'approve');
+  if (approve) return approve.to;
+  return null;
+}
+
+/**
  * Parse a custom-profile YAML body and validate it. Returns the parsed
  * definition on success, throws an Error with concatenated issue
  * messages on failure. Wraps zod parse errors + structural issues
