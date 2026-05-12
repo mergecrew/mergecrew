@@ -72,12 +72,22 @@ export default async function CompareEvalsPage({
       >
         ← Back to evals
       </Link>
-      <header>
-        <h1 className="text-xl font-semibold">A/B comparison</h1>
-        <p className="text-sm text-zinc-500">
-          {new Date(data.abRun.startedAt).toLocaleString()} ·{' '}
-          <code>{profileA?.name ?? 'A'}</code> vs <code>{profileB?.name ?? 'B'}</code>
-        </p>
+      <header className="flex items-baseline justify-between">
+        <div>
+          <h1 className="text-xl font-semibold">A/B comparison</h1>
+          <p className="text-sm text-zinc-500">
+            {new Date(data.abRun.startedAt).toLocaleString()} ·{' '}
+            <code>{profileA?.name ?? 'A'}</code> vs <code>{profileB?.name ?? 'B'}</code>
+          </p>
+        </div>
+        <a
+          href="https://github.com/mergecrew/mergecrew/blob/main/docs/03-infrastructure/15-evals.md#ab-compare"
+          target="_blank"
+          rel="noreferrer"
+          className="text-xs text-zinc-500 underline decoration-dotted hover:text-zinc-700 dark:hover:text-zinc-300"
+        >
+          Eval cookbook →
+        </a>
       </header>
 
       <Card>
