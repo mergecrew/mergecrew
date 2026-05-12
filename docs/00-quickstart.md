@@ -59,11 +59,15 @@ The first thing you should see is the **welcome card** at the top of the Today p
 │  • Projects is where you wire your own repo …        │
 │  • The Lifecycle page edits the YAML that defines …  │
 │                                                       │
-│  5-minute quickstart →                                │
+│  [ Try a sample run ]   5-minute quickstart →         │
 └──────────────────────────────────────────────────────┘
 ```
 
 Below it, the Today page shows the demo project `acme` with one recent completed run.
+
+The welcome card includes a **Try a sample run** primary button (#406). Clicking it triggers a fresh run on the demo project and redirects you to the live timeline within a second or two — the fastest path from "I just opened the app" to "I'm watching agents work." Section 4 walks through what happens after the click.
+
+Just below the welcome card you'll see the **onboarding checklist banner** (#384) — five steps from a fresh install to your first real agent run on your own repo. The banner is dismissable and re-appears each time a step's state changes.
 
 ## 3. Click into the seeded sample run
 
@@ -92,19 +96,37 @@ That's the 5-minute path. You've seen the multi-agent flow end-to-end without tr
 
 ## 4. Trigger your own run
 
-The default compose env sets `MERGECREW_DEMO_MODE=1`, which routes every agent step through a deterministic stub instead of an LLM. That means you can click **Run now** on the demo project immediately — no API key, no Ollama wait, no Settings tour. An amber **Demo mode** banner at the top of the page makes the mode unambiguous.
+The default compose env sets `MERGECREW_DEMO_MODE=1`, which routes every agent step through a deterministic stub instead of an LLM. That means you can trigger a run immediately — no API key, no Ollama wait, no Settings tour. An amber **Demo mode** banner at the top of the page makes the mode unambiguous.
 
-1. From the project header on `/orgs/demo/projects/acme`, click **Run now**.
+The fastest trigger path is the **Try a sample run** button on the welcome card (back on `/orgs/demo`). It POSTs to the runNow API, pre-creates the DailyRun row, and redirects you straight to the live run-detail page so the SSE timeline starts streaming the agent steps as they happen.
+
+Alternatively, from `/orgs/demo/projects/acme` click **Run now** on the project header — same trigger, same redirect.
+
+Either way:
+
+1. The page redirects to the new run's detail view.
 2. Watch the **Timeline** tab fill: the Planner emits a canned markdown plan, the Coder produces a placeholder changeset, the Reviewer emits a `VERDICT: approve`.
 3. A new `CHANGESET_OPENED` event appears in <2s; the resulting changeset is visible on the Changesets tab.
 
 To switch to real agent runs:
 
 1. Set `MERGECREW_DEMO_MODE=0` in your `.env` (or unset the var) and restart the stack.
-2. Configure an LLM profile: the `--profile with-ollama` flag wires Ollama automatically; otherwise **Settings → LLM providers → New provider** with your Anthropic / OpenAI key.
+2. Configure an LLM profile. The onboarding wizard at `/orgs/demo/onboarding` (#383) is the most discoverable path — click **Add an LLM provider** and paste your Anthropic / OpenAI key directly inline (#385). The `--profile with-ollama` flag wires Ollama automatically.
 3. Click **Run now** again. The Planner takes ~30s on a frontier model, the Coder ~2-5 min depending on repo size. If the Reviewer requests changes, the Coder reruns with the feedback — up to 3 rounds before `REVIEW_LOOP_EXHAUSTED` fires and the run advances anyway (cap tunable via `REVIEW_LOOP_CAP`).
 
-## 5. Connect your own repo
+## 5. Set up your own project with the onboarding wizard
+
+The onboarding wizard at `/orgs/demo/onboarding` (#383, V2.ah) is the canonical path for first-time setup. It walks you through five checklist steps:
+
+1. **Add an LLM provider** — inline form, no Settings detour.
+2. **Create your first project** — your own slug + name.
+3. **Connect a repo** — GitHub App install or `local` adapter for a synthetic walkthrough.
+4. **Add a dev deploy target** — `local-noop` if you just want to see the loop.
+5. **Pick a lifecycle template** (#395, V2.ai) — opens the project's Lifecycle page where four stock templates ship out of the box: `generic-careful`, `nextjs-vercel`, `python-render`, `go-fly`. One click installs the chosen template as your project lifecycle; you can still edit the YAML after.
+
+Each step shows pending vs complete and a one-line description of what the step buys you. Completion is computed from DB state, so closing the browser and coming back picks up where you left off.
+
+## 6. Connect your own repo
 
 Once the sample run has shown you what to expect, point mergecrew at a real codebase:
 
@@ -113,12 +135,12 @@ Once the sample run has shown you what to expect, point mergecrew at a real code
 git clone https://github.com/mergecrew/quickstart-sample.git /tmp/quickstart-sample
 ```
 
-In the UI:
+In the UI (the onboarding wizard from section 5 will walk you through these, but here they are explicitly):
 
 1. **Projects → New project**. Slug: `quickstart`. Name: `Quickstart`.
 2. Inside the project → **Connected repo**. Provider: `local`. Path: `/tmp/quickstart-sample`. Default branch: `main`.
 3. **Deploy targets → New**. Kind: `dev`. Adapter: `local-noop`. (No real deploy happens; mergecrew just needs to know a dev target exists.)
-4. **Lifecycle**. The default lifecycle works — same careful profile as the demo project. (Settings → Agent graph if you want to switch to the cheaper single-agent `fast` profile.)
+4. **Lifecycle**. Pick a stock template from the picker at the top of the page (#394). The `generic-careful` template is a safe default; if your repo is a Next.js / Python / Go service, the stack-specific templates tune the agent descriptions accordingly. (Settings → Agent graph if you want to switch to the cheaper single-agent `fast` profile.)
 5. **Run now**.
 
 Approve the resulting changeset from the Changesets tab when you're satisfied. The merge lands on the local sample repo's `main` branch.
