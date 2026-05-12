@@ -22,13 +22,15 @@ export interface DigestProject {
 }
 
 /**
- * Anomaly highlight surfaced at the top of the daily digest (#288).
- * Five kinds covering the V2.aa guardrails:
+ * Anomaly highlight surfaced at the top of the daily digest (#288, #304).
+ * Six kinds:
  *   - cost_spike: today's LLM spend was > 2× the trailing-7-day daily avg
  *   - blocked_changeset: a changeset was rejected by the blast-radius gate
  *   - risk_gate_hit: a changeset landed in the inbox via the risk-score gate
  *   - rollback: an admin rolled back a merged changeset
  *   - file_spike: a single changeset touched >2× the trailing-30-day median
+ *   - eval_regression: today's nightly eval pass-rate dropped >10% vs the
+ *     trailing-7-day median (#304)
  *
  * `link` is a deep link the email + slack renderers wrap appropriately
  * (`mailto:` for email digests, `<url|text>` for slack mrkdwn).
@@ -69,6 +71,14 @@ export type DigestAnomaly =
       title: string;
       filesChanged: number;
       medianFiles: number;
+      link: string;
+    }
+  | {
+      kind: 'eval_regression';
+      todayPassRate: number;
+      trailingMedian: number;
+      dropPct: number;
+      runId: string;
       link: string;
     };
 
