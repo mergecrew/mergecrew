@@ -3,6 +3,7 @@ import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { Card, StatusDot, LinkButton, Chip } from '@/components/ui';
 import { FirstRunEmptyState } from '@/components/first-run-empty-state';
+import { WelcomeCard } from '@/components/welcome-card';
 import { relativeTime, runStatusToDot } from '@/lib/format';
 
 type Project = {
@@ -120,6 +121,8 @@ export default async function OrgHomePage({
         </div>
         <span className="text-sm text-zinc-500">{new Date().toDateString()}</span>
       </header>
+
+      <WelcomeCard orgSlug={slug} />
 
       {inbox.length > 0 && (
         <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-700/40 dark:bg-amber-950/30">
