@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { GitHubProvider } from '@mergecrew/adapters-vcs';
+import { GitHubProvider, getGitHubAppCredentials } from '@mergecrew/adapters-vcs';
 import { GitHubActionsProvider } from '@mergecrew/adapters-deploy';
 import { effectiveBaseBranch } from '@mergecrew/db';
 import { ValidationError } from '@mergecrew/domain';
@@ -66,19 +66,17 @@ export class SmokeTestService {
         `smoke test only supports the github-actions adapter today; this project's dev target is ${dt.adapterId}`,
       );
     }
-    if (!process.env.GITHUB_APP_ID || !process.env.GITHUB_APP_PRIVATE_KEY) {
+    const creds = getGitHubAppCredentials();
+    if (!creds) {
       throw new ValidationError(
         'smoke test requires GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY',
       );
     }
 
-    const vcs = new GitHubProvider({
-      appId: process.env.GITHUB_APP_ID,
-      privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
-    });
+    const vcs = new GitHubProvider(creds);
     const deploy = new GitHubActionsProvider({
-      appId: process.env.GITHUB_APP_ID,
-      privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
+      appId: creds.appId,
+      privateKey: creds.privateKey,
     });
 
     const branch = `mergecrew-smoke/${new Date().toISOString().replace(/[:.]/g, '-')}`;

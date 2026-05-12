@@ -331,19 +331,17 @@ export class ProjectService {
    * the caller's UI degrades to a free-text input in that case.
    */
   async listInstallationRepos(installationId: string) {
-    if (!process.env.GITHUB_APP_ID || !process.env.GITHUB_APP_PRIVATE_KEY) {
+    // Lazy-import so the API doesn't pull execa-via-adapters-vcs into the
+    // module graph until a request actually needs it.
+    const { GitHubProvider, getGitHubAppCredentials } = await import('@mergecrew/adapters-vcs');
+    const creds = getGitHubAppCredentials();
+    if (!creds) {
       return [];
     }
     if (!installationId || !/^\d+$/.test(installationId)) {
       throw new ValidationError('installationId must be a numeric string');
     }
-    // Lazy-import so the API doesn't pull execa-via-adapters-vcs into the
-    // module graph until a request actually needs it.
-    const { GitHubProvider } = await import('@mergecrew/adapters-vcs');
-    const gh = new GitHubProvider({
-      appId: process.env.GITHUB_APP_ID,
-      privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
-    });
+    const gh = new GitHubProvider(creds);
     return gh.listInstallationRepos(installationId);
   }
 

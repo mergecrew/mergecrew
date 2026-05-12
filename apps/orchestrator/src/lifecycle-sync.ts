@@ -1,7 +1,7 @@
 import type { Logger } from 'pino';
 import { effectiveBaseBranch, withTenant } from '@mergecrew/db';
 import { parseMergecrewYaml, mergeWithDefault } from '@mergecrew/config-yaml';
-import { GitHubProvider } from '@mergecrew/adapters-vcs';
+import { GitHubProvider, getGitHubAppCredentials } from '@mergecrew/adapters-vcs';
 
 const CONFIG_PATH = 'mergecrew.yaml';
 
@@ -31,7 +31,8 @@ export async function syncLifecycleFromRepo(opts: {
 }): Promise<SyncOutcome> {
   const { organizationId, projectId, logger } = opts;
 
-  if (!process.env.GITHUB_APP_ID || !process.env.GITHUB_APP_PRIVATE_KEY) {
+  const ghCreds = getGitHubAppCredentials();
+  if (!ghCreds) {
     return { synced: false, reason: 'github-app-not-configured' };
   }
 
@@ -40,10 +41,7 @@ export async function syncLifecycleFromRepo(opts: {
   );
   if (!repo) return { synced: false, reason: 'no-connected-repo' };
 
-  const vcs = new GitHubProvider({
-    appId: process.env.GITHUB_APP_ID,
-    privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
-  });
+  const vcs = new GitHubProvider(ghCreds);
 
   let yaml: string;
   try {

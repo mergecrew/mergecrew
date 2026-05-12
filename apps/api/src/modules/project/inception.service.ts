@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { GitHubProvider } from '@mergecrew/adapters-vcs';
+import { GitHubProvider, getGitHubAppCredentials } from '@mergecrew/adapters-vcs';
 import { effectiveBaseBranch } from '@mergecrew/db';
 import { ValidationError } from '@mergecrew/domain';
 import { runInception, type InceptionResult } from '@mergecrew/inception';
@@ -42,16 +42,14 @@ export class InceptionService {
         'no repository connected — install the GitHub App and connect a repo first',
       );
     }
-    if (!process.env.GITHUB_APP_ID || !process.env.GITHUB_APP_PRIVATE_KEY) {
+    const creds = getGitHubAppCredentials();
+    if (!creds) {
       throw new ValidationError(
         'inception requires GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY to clone the repo',
       );
     }
 
-    const vcs = new GitHubProvider({
-      appId: process.env.GITHUB_APP_ID,
-      privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
-    });
+    const vcs = new GitHubProvider(creds);
 
     const workspace = await mkdtemp(path.join(tmpdir(), 'mergecrew-inception-'));
     try {
