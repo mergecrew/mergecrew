@@ -84,6 +84,8 @@ docs/                  Spec set (read this first)
 
 ## Quick start
 
+> **First time?** Follow [`docs/00-quickstart.md`](docs/00-quickstart.md) for a 15-minute step-by-step walkthrough that takes you from `git clone` to your first agent-generated PR using only Docker. The two paths below are the abbreviated versions.
+
 Two paths, pick whichever fits. New here? Pair either path with the
 [**mergecrew-sample-app**](https://github.com/mergecrew/mergecrew-sample-app)
 — a tiny Next.js app with one deliberate bug, designed to be connected to a
