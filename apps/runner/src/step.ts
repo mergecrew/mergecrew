@@ -48,7 +48,14 @@ import { LinearProvider, GitHubIssuesProvider, type TrackerProvider } from '@mer
 const TRACKER_TOKEN_SECRET = 'TRACKER_TOKEN';
 const ERROR_TRACKER_TOKEN_SECRET = 'ERROR_TRACKER_TOKEN';
 import { CompositeCommsProvider } from '@mergecrew/adapters-comms';
-import { runAgentStep, BudgetTracker, PolicyEngine, PLANNER_AGENT_KIND } from '@mergecrew/agent-runtime';
+import {
+  runAgentStep,
+  BudgetTracker,
+  PolicyEngine,
+  PLANNER_AGENT_KIND,
+  CODER_AGENT_KIND,
+  parsePlanPaths,
+} from '@mergecrew/agent-runtime';
 import { transcriptStoreFromEnv } from '@mergecrew/transcript-store';
 import type { CancellationCoordinator } from './cancellation.js';
 
@@ -428,7 +435,7 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     };
   }
 
-  const initialInput = await synthesizeAgentInput(organizationId, projectId, runId, agentRef, cfg);
+  const initialInput = await synthesizeAgentInput(organizationId, projectId, runId, agentRef, agentDef, cfg);
 
   const outcome = await runAgentStep({
     organizationId,
@@ -584,6 +591,24 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
       }
     },
   });
+
+  // Coder agents (#333) get an out-of-scope edit guard. After the
+  // step finishes, we compare the file paths touched by any changesets
+  // produced in this run against the planner's "Files to touch" list.
+  // Out-of-scope paths emit an AGENT_DECISION event so the reviewer
+  // agent in #334 can route to a synthetic 'request_changes' verdict.
+  // This PR only emits the signal; #334 wires the loop-back.
+  if (agentDef.kind === CODER_AGENT_KIND && outcome.kind === 'completed') {
+    await emitOutOfScopeIfAny({
+      organizationId,
+      projectId,
+      runId,
+      workflowRunId,
+      stepId,
+      agentKind: agentDef.kind,
+      eventlog,
+    });
+  }
 
   // Planner agents (#332) persist their final markdown plan on
   // agent_steps.output and emit PLAN_PROPOSED so downstream agents
@@ -1494,8 +1519,38 @@ async function synthesizeAgentInput(
   projectId: string,
   runId: string,
   agentRef: string,
+  agentDef: { kind: string },
   _cfg: MergecrewConfig,
 ): Promise<unknown> {
+  // Coder agents (#333) consume the planner's markdown plan from the
+  // most recent planner step in this run. We use the persisted
+  // agent_steps.output rather than scanning timeline events — the
+  // output is the canonical store; the event is just a notification.
+  if (agentDef.kind === CODER_AGENT_KIND) {
+    const planStep = await withTenant(organizationId, (tx) =>
+      tx.agentStep.findFirst({
+        where: {
+          workflowRun: { dailyRunId: runId },
+          agentKind: PLANNER_AGENT_KIND,
+          status: 'completed',
+          output: { not: undefined },
+        },
+        orderBy: { finishedAt: 'desc' },
+        select: { output: true },
+      }),
+    );
+    const planMarkdown =
+      (planStep?.output as { planMarkdown?: string } | null)?.planMarkdown ?? null;
+    return {
+      runId,
+      agentRef,
+      instruction: `You are the ${agentRef} coder. Implement the plan below using your tools.`,
+      planMarkdown,
+      // reviewerFeedback is filled by the graph wiring in #334 — this
+      // PR just leaves the field for the contract.
+    };
+  }
+
   // Pull recent intent inbox + recent issues + last digest to seed the Discovery agent.
   if (agentRef === 'discovery') {
     const intents = await withTenant(organizationId, (tx) =>
@@ -1590,4 +1645,74 @@ async function loadReviewerFeedback(
       createdAt: r.createdAt.toISOString(),
     })),
   };
+}
+
+/**
+ * After a Coder step (#333), check whether any of its changesets
+ * touched files outside the planner's "Files to touch" list. Emits an
+ * AGENT_DECISION event when out-of-scope edits exist so the reviewer
+ * agent (#334) can route the changeset back for revision. Silently
+ * skips when no plan is available (legacy / non-multi-agent runs).
+ */
+async function emitOutOfScopeIfAny(opts: {
+  organizationId: string;
+  projectId: string;
+  runId: string;
+  workflowRunId: string;
+  stepId: string;
+  agentKind: string;
+  eventlog: Eventlog;
+}): Promise<void> {
+  const { organizationId, projectId, runId, workflowRunId, stepId, agentKind, eventlog } = opts;
+  // Find the latest plan in this run. Same query shape as
+  // synthesizeAgentInput for the coder.
+  const planStep = await withTenant(organizationId, (tx) =>
+    tx.agentStep.findFirst({
+      where: {
+        workflowRun: { dailyRunId: runId },
+        agentKind: PLANNER_AGENT_KIND,
+        status: 'completed',
+        output: { not: undefined },
+      },
+      orderBy: { finishedAt: 'desc' },
+      select: { output: true },
+    }),
+  );
+  const planMarkdown =
+    (planStep?.output as { planMarkdown?: string } | null)?.planMarkdown ?? null;
+  if (!planMarkdown) return;
+
+  const parsed = parsePlanPaths(planMarkdown);
+  if (!parsed) return;
+
+  // Look up changesets created in this run; compare their `filesChanged`
+  // against the allowed set. We trust the existing riskScoreBreakdown
+  // path-list rather than re-reading the diff.
+  const changesets = await withTenant(organizationId, (tx) =>
+    tx.changeset.findMany({
+      where: { projectId, dailyRunId: runId },
+      select: { id: true, riskScoreBreakdown: true },
+    }),
+  );
+  const outOfScope: Array<{ changesetId: string; paths: string[] }> = [];
+  for (const cs of changesets) {
+    const paths =
+      (cs.riskScoreBreakdown as { paths?: string[] } | null)?.paths ?? [];
+    const touchedOutside = paths.filter((p) => !parsed.filesToTouch.includes(p));
+    if (touchedOutside.length > 0) {
+      outOfScope.push({ changesetId: cs.id, paths: touchedOutside });
+    }
+  }
+  if (outOfScope.length === 0) return;
+
+  await eventlog.emit({
+    organizationId,
+    projectId,
+    dailyRunId: runId,
+    workflowRunId,
+    agentStepId: stepId,
+    type: 'AGENT_DECISION',
+    actor: { kind: 'agent', id: stepId, agentKind },
+    payload: { kind: 'out_of_scope_edit', allowedFiles: parsed.filesToTouch, offending: outOfScope },
+  });
 }
