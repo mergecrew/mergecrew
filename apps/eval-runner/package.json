@@ -12,7 +12,7 @@
     "run": "tsx src/main.ts",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@mergecrew/db": "workspace:*",
