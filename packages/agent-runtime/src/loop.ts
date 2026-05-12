@@ -344,23 +344,86 @@ export async function runAgentStep(ctx: RunCtx): Promise<StepOutcome> {
  * is materialized — the test harness exercises the plumbing around the
  * step, not the agent itself.
  */
+/**
+ * Stub planner output. Matches the shape `parsePlanPaths` expects so
+ * the V2.ae careful chain advances correctly under stub mode (#371).
+ * Generic enough that it works for any demo repo — the runner's
+ * out-of-scope guard treats "Files to touch" as a hint, not a hard
+ * constraint, when the stub coder produces no actual edits.
+ */
+export const STUB_PLAN_MARKDOWN = `## Plan
+
+### Goal
+This is a stub plan emitted by the demo-mode agent. It exists so the orchestrator's careful chain advances through the planner → coder → reviewer flow without an LLM behind it.
+
+### Files to touch
+- README.md
+
+### Files NOT to touch
+- package.json
+- .env
+
+### Validation
+1. Inspect the generated changeset on the Changesets tab.
+2. Confirm the run-detail page shows three agent rows with realistic token counts (zero for the stub).
+`;
+
+export const STUB_REVIEWER_APPROVE = `VERDICT: approve
+REASONING: stub reviewer — approved by default. Set MERGECREW_STUB_REVIEWER_VERDICT=request_changes to exercise the loop-back path.
+REQUESTED_CHANGES:
+`;
+
+export const STUB_REVIEWER_REQUEST_CHANGES = `VERDICT: request_changes
+REASONING: stub reviewer — env override flipped the verdict so the careful loop exercises its retry path.
+REQUESTED_CHANGES:
+  - placeholder: add a regression test
+  - placeholder: tighten the error message
+`;
+
 async function runStubAgentStep(ctx: RunCtx): Promise<StepOutcome> {
   if (ctx.abortSignal.aborted) {
     return { kind: 'cancelled' };
   }
+
+  // Per-kind output so the V2.ae careful chain (#348/#349) can parse
+  // each step's result the same way it does in production. Planner
+  // produces a markdown plan with the canonical headings; reviewer
+  // produces a `VERDICT:` line; coder produces a brief because the
+  // runner separately synthesizes the Changeset row (#373).
+  let output: string;
+  switch (ctx.agent.kind) {
+    case PLANNER_AGENT_KIND:
+      output = STUB_PLAN_MARKDOWN;
+      break;
+    case REVIEWER_AGENT_KIND: {
+      const verdictOverride = process.env.MERGECREW_STUB_REVIEWER_VERDICT;
+      output = verdictOverride === 'request_changes'
+        ? STUB_REVIEWER_REQUEST_CHANGES
+        : STUB_REVIEWER_APPROVE;
+      break;
+    }
+    case CODER_AGENT_KIND:
+      output = 'stub coder: changeset is synthesized by the runner.';
+      break;
+    default:
+      // V1 single-agent / Discovery / PM / etc. — keep the old token so
+      // the e2e-loop assertions that match on `'stub'` still pass.
+      output = 'stub';
+  }
+
   const transcript = [
     {
       type: 'system',
-      content: `[mergecrew e2e stub] agent ${ctx.agent.kind} run=${ctx.runId} step=${ctx.agentStepId}`,
+      content: `[mergecrew demo-mode stub] agent ${ctx.agent.kind} run=${ctx.runId} step=${ctx.agentStepId}`,
     },
     {
       type: 'ai',
-      content: 'stub agent completed without invoking tools',
+      content: output,
     },
   ];
   return {
     kind: 'completed',
-    output: 'stub',
+    output,
     toolCallsMade: 0,
     totalTokens: 0,
     transcript,
