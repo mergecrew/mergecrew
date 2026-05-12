@@ -34,6 +34,18 @@ export class ChangesetController {
     return this.cs.decide(csId, body.kind, body.comment);
   }
 
+  /**
+   * One-click rollback (#287). Opens a `git revert` PR for a merged
+   * changeset via the project's VCS adapter and stamps the revert PR
+   * number + URL onto the changeset. Admin-only — we don't want
+   * operator-tier accidentally undoing each other's merges.
+   */
+  @Post('changesets/:csId/rollback')
+  @RequireRole('admin')
+  async rollback(@Param('csId') csId: string) {
+    return this.cs.rollback(csId);
+  }
+
   @Get('digest/:date')
   async digest(@Param('projectSlug') projectSlug: string, @Param('date') date: string) {
     return this.cs.digestFor(projectSlug, date);

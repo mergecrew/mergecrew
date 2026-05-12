@@ -669,6 +669,12 @@ model Changeset {
   /// see WHY a score is high. Shape: {filesChanged,linesChanged,
   /// sensitiveHits:[{path,glob}]}.
   riskScoreBreakdown Json?         @map("risk_score_breakdown")
+  /// One-click rollback target (#287). When an admin rolls back a
+  /// merged changeset we open a `git revert` PR via the VCS adapter
+  /// and stamp its number + URL here so the detail page can link to
+  /// the active revert without re-querying the host.
+  revertPrNumber  Int?             @map("revert_pr_number")
+  revertPrUrl     String?          @map("revert_pr_url")
   createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 

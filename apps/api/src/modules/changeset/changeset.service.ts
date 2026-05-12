@@ -162,6 +162,126 @@ export class ChangesetService {
     return { prNumber: cs.prNumber, files };
   }
 
+  /**
+   * One-click rollback (#287). Opens a `git revert` PR via the VCS
+   * adapter for an already-merged changeset, then marks the row
+   * rolled_back and writes an audit entry. The detail page reads the
+   * stamped `revertPrNumber + revertPrUrl` to render a link.
+   *
+   * Migrations caveat: if any path in the original PR matches
+   * `**\/migration*` we surface the warning in the response so the UI
+   * shows the operator before they click confirm — but we don't refuse
+   * the action, only document the consequence.
+   */
+  async rollback(csId: string): Promise<{
+    ok: true;
+    revertPrNumber: number;
+    revertPrUrl: string;
+    migrationsWarning: boolean;
+    migrationFiles: string[];
+  }> {
+    const t = this.tenant.require();
+    const cs = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.changeset.findFirst({ where: { id: csId, organizationId: t.organizationId } }),
+    );
+    if (!cs) throw new NotFoundError();
+    if (cs.status !== 'promoted') {
+      throw new ValidationError(
+        `rollback requires status=promoted, got ${cs.status}. Only merged changesets can be rolled back.`,
+      );
+    }
+    if (!cs.prNumber) {
+      throw new ValidationError('changeset has no PR number — nothing to revert');
+    }
+    if (cs.revertPrNumber) {
+      throw new ValidationError(
+        `changeset already rolled back via PR #${cs.revertPrNumber}`,
+      );
+    }
+    const repo = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.connectedRepo.findUnique({ where: { projectId: cs.projectId } }),
+    );
+    if (!repo) {
+      throw new ValidationError('project has no connected repo — cannot open revert PR');
+    }
+    if (!process.env.GITHUB_APP_ID || !process.env.GITHUB_APP_PRIVATE_KEY) {
+      throw new ValidationError('GitHub App not configured on this server');
+    }
+    const provider = new GitHubProvider({
+      appId: process.env.GITHUB_APP_ID,
+      privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
+    });
+    const repoRef = {
+      installationId: repo.installationId,
+      repoId: repo.repoId ?? undefined,
+      repoFullName: repo.repoFullName,
+      defaultBranch: repo.defaultBranch,
+    };
+
+    // Pre-flight: enumerate files in the original PR so the response
+    // can flag the migrations caveat. Best-effort — a fetch failure
+    // doesn't block the revert; the caveat just goes unmentioned.
+    let migrationFiles: string[] = [];
+    try {
+      const files = await provider.getPullRequestFiles(repoRef, cs.prNumber);
+      migrationFiles = files
+        .map((f) => f.path)
+        .filter((p) => /(^|\/)migrations?\//i.test(p) || /\/prisma\/migrations\//i.test(p));
+    } catch {
+      /* swallow — caveat detection is non-essential */
+    }
+
+    const { revertPrNumber } = await provider.revertPullRequest(repoRef, cs.prNumber);
+    // GitHub-style revert PR URL — the provider only returns the number,
+    // not the URL, but the URL is mechanical from the repo + number.
+    const revertPrUrl = `https://github.com/${repo.repoFullName}/pull/${revertPrNumber}`;
+
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.changeset.update({
+        where: { id: csId },
+        data: {
+          status: 'rolled_back',
+          revertPrNumber,
+          revertPrUrl,
+          updatedAt: new Date(),
+        },
+      }),
+    );
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.auditLogEntry.create({
+        data: {
+          organizationId: t.organizationId,
+          actorUserId: t.userId,
+          action: 'changeset.rollback_initiated',
+          target: { changesetId: csId, projectId: cs.projectId },
+          metadata: {
+            originalPrNumber: cs.prNumber,
+            revertPrNumber,
+            revertPrUrl,
+            migrationsTouched: migrationFiles,
+          },
+        },
+      }),
+    );
+    await this.elSvc.eventlog.emit({
+      organizationId: t.organizationId,
+      projectId: cs.projectId,
+      dailyRunId: cs.dailyRunId,
+      changesetId: csId,
+      type: 'CHANGESET_ROLLED_BACK',
+      actor: { kind: 'user', id: t.userId },
+      payload: { revertPrNumber, revertPrUrl, source: 'one_click' },
+    });
+
+    return {
+      ok: true,
+      revertPrNumber,
+      revertPrUrl,
+      migrationsWarning: migrationFiles.length > 0,
+      migrationFiles,
+    };
+  }
+
   async groupPromote(projectSlug: string, dateISO: string, ids: string[]) {
     const t = this.tenant.require();
     const project = await this.prisma.withTenant(t.organizationId, (tx) =>
