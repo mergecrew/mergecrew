@@ -152,6 +152,9 @@ services:
   # user, so MERGECREW_DEV_AUTO_LOGIN drops the operator straight onto a
   # working dashboard with no manual signup.
   seed:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
     image: mergecrew/api:latest
     container_name: mergecrew-seed
     environment:
@@ -166,6 +169,9 @@ services:
     restart: 'no'
 
   api:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
     image: mergecrew/api:latest
     container_name: mergecrew-api
     restart: unless-stopped
