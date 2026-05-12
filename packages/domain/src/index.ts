@@ -14,3 +14,4 @@ export * from './parse-package-diff.js';
 export * from './blast-radius.js';
 export * from './risk-score.js';
 export * from './graph-profile.js';
+export * from './stock-agents.js';
