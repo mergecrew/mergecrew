@@ -140,6 +140,8 @@ export class ProjectService {
       maxFilesChanged?: number;
       maxLinesChanged?: number;
       deniedPaths?: string[];
+      autoMergeThreshold?: number;
+      sensitivePaths?: string[];
     },
   ) {
     const project = await this.detail(slug);
@@ -151,6 +153,8 @@ export class ProjectService {
       maxFilesChanged?: number;
       maxLinesChanged?: number;
       deniedPaths?: any;
+      autoMergeThreshold?: number;
+      sensitivePaths?: any;
     } = {};
     if (patch.name !== undefined) {
       const trimmed = patch.name.trim();
@@ -183,6 +187,18 @@ export class ProjectService {
         throw new ValidationError('deniedPaths must be an array of non-empty glob strings');
       }
       data.deniedPaths = patch.deniedPaths.map((p) => p.trim());
+    }
+    if (patch.autoMergeThreshold !== undefined) {
+      if (!Number.isInteger(patch.autoMergeThreshold) || patch.autoMergeThreshold < 0) {
+        throw new ValidationError('autoMergeThreshold must be a non-negative integer');
+      }
+      data.autoMergeThreshold = patch.autoMergeThreshold;
+    }
+    if (patch.sensitivePaths !== undefined) {
+      if (!Array.isArray(patch.sensitivePaths) || patch.sensitivePaths.some((p) => typeof p !== 'string' || !p.trim())) {
+        throw new ValidationError('sensitivePaths must be an array of non-empty glob strings');
+      }
+      data.sensitivePaths = patch.sensitivePaths.map((p) => p.trim());
     }
     return this.prisma.withTenant(project.organizationId, (tx) =>
       tx.project.update({ where: { id: project.id }, data }),

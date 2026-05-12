@@ -16,12 +16,17 @@ export class ApprovalService {
 
   async listInbox() {
     const t = this.tenant.require();
-    return this.prisma.withTenant(t.organizationId, (tx) =>
+    const rows = await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.approvalRequest.findMany({
         where: { organizationId: t.organizationId, resolvedAt: null },
         orderBy: { createdAt: 'asc' },
+        include: { project: { select: { slug: true } } },
       }),
     );
+    // Flatten the project slug into the response so the inbox UI can
+    // link directly to the changeset detail page (#286) without a
+    // round-trip per row.
+    return rows.map(({ project, ...r }) => ({ ...r, projectSlug: project?.slug ?? null }));
   }
 
   async listForProject(projectSlug: string) {

@@ -15,6 +15,8 @@ export async function updateProjectAction(
     maxFilesChanged?: number;
     maxLinesChanged?: number;
     deniedPaths?: string[];
+    autoMergeThreshold?: number;
+    sensitivePaths?: string[];
   },
 ) {
   const session = await requireSession();

@@ -8,6 +8,7 @@ import {
   AutoPromoteRule,
   autoPromoteMatches,
   checkBlastRadius,
+  computeRiskScore,
   parsePackageJsonDiff,
   type AgentDefinition,
   type AutoPromoteRule as AutoPromoteRuleType,
@@ -800,6 +801,7 @@ async function openPendingChangesetPrs(opts: {
   if (!repo) return;
 
   const limits = await loadBlastRadiusLimits(organizationId, projectId);
+  const riskConfig = await loadRiskScoreConfig(organizationId, projectId);
 
   const changesets = await withTenant(organizationId, (tx) =>
     tx.changeset.findMany({
@@ -913,10 +915,74 @@ async function openPendingChangesetPrs(opts: {
         actor: { kind: 'system' },
         payload: { prNumber: pr.number, prUrl: pr.url, branch: cs.branch },
       });
+
+      // Risk-score gate (#286). Reuses the same `stats` we computed for
+      // blast-radius — no extra git work. A score over the threshold
+      // suppresses auto-promote (regardless of rules) and lands an
+      // ApprovalRequest on the inbox with the breakdown verbatim.
+      const breakdown = computeRiskScore({ files: stats }, riskConfig.sensitivePaths);
+      await withTenant(organizationId, (tx) =>
+        tx.changeset.update({
+          where: { id: cs.id },
+          data: {
+            riskScore: breakdown.score,
+            riskScoreBreakdown: {
+              filesChanged: breakdown.filesChanged,
+              linesChanged: breakdown.linesChanged,
+              sensitiveHits: breakdown.sensitiveHits,
+            } as any,
+          },
+        }),
+      );
+      const needsApproval = breakdown.score > riskConfig.autoMergeThreshold;
+      if (needsApproval) {
+        await withTenant(organizationId, (tx) =>
+          tx.approvalRequest.create({
+            data: {
+              organizationId,
+              projectId,
+              workflowRunId,
+              changesetId: cs.id,
+              reason: 'risk_score_high',
+              details: {
+                score: breakdown.score,
+                threshold: riskConfig.autoMergeThreshold,
+                filesChanged: breakdown.filesChanged,
+                linesChanged: breakdown.linesChanged,
+                sensitiveHits: breakdown.sensitiveHits,
+                prNumber: pr.number,
+                prUrl: pr.url,
+              } as any,
+              requiredRole: 'operator',
+            },
+          }),
+        );
+        await eventlog.emit({
+          organizationId,
+          projectId,
+          dailyRunId: runId,
+          workflowRunId,
+          changesetId: cs.id,
+          type: 'GATE_REACHED',
+          actor: { kind: 'system' },
+          payload: {
+            reason: 'risk_score_high',
+            score: breakdown.score,
+            threshold: riskConfig.autoMergeThreshold,
+          },
+        });
+        logger.info(
+          { changesetId: cs.id, score: breakdown.score, threshold: riskConfig.autoMergeThreshold },
+          'risk-score: above threshold; suppressing auto-promote, surfaced to inbox',
+        );
+      }
+
       // Auto-promote check (#154): if the project has rules and the diff
       // matches one, flip the changeset straight to 'promoted' without
       // sitting in the manual approval gate. Errors here are non-fatal —
       // a failure leaves the changeset as 'pr_open' for the human gate.
+      // Skipped when the risk-score gate has surfaced this changeset.
+      if (needsApproval) continue;
       try {
         await applyAutoPromoteIfMatches({
           organizationId,
@@ -1267,6 +1333,29 @@ async function loadBlastRadiusLimits(
     deniedPaths: Array.isArray(row?.deniedPaths)
       ? (row.deniedPaths as string[])
       : ['**/migration*', '**/secrets*', '**/.env*', '**/*.pem', '**/*.key'],
+  };
+}
+
+/**
+ * Read the project's risk-score config (#286). Same back-compat posture
+ * as loadBlastRadiusLimits — defaults match the migration's defaults so
+ * old rows behave the same as new ones once they're filled in.
+ */
+async function loadRiskScoreConfig(
+  organizationId: string,
+  projectId: string,
+): Promise<{ autoMergeThreshold: number; sensitivePaths: string[] }> {
+  const row = await withTenant(organizationId, (tx) =>
+    tx.project.findUnique({
+      where: { id: projectId },
+      select: { autoMergeThreshold: true, sensitivePaths: true },
+    }),
+  );
+  return {
+    autoMergeThreshold: row?.autoMergeThreshold ?? 50,
+    sensitivePaths: Array.isArray(row?.sensitivePaths)
+      ? (row.sensitivePaths as string[])
+      : ['**/config/**', '**/auth/**', '**/*.sql'],
   };
 }
 
