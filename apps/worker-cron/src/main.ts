@@ -9,6 +9,7 @@ import { isSkipped, dateInTz } from './skip.js';
 import { auditRetentionTick } from './audit-retention-tick.js';
 import { stuckRunWatchdog } from './stuck-run-watchdog.js';
 import { evalTick } from './eval-tick.js';
+import { startProbeServer } from './probe-server.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
@@ -116,7 +117,11 @@ async function tick() {
   }
 }
 
+const probePort = Number(process.env.WORKER_CRON_HEALTH_PORT ?? 9092);
+const probeServer = startProbeServer({ port: probePort, redis: conn, logger });
+
 async function shutdown() {
+  probeServer.close();
   await queue.close();
   await digestQueue.close();
   await fanoutQueue.close();

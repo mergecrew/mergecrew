@@ -11,6 +11,7 @@ import {
 import { withTenant } from '@mergecrew/db';
 import { runStep } from './step.js';
 import { CancellationCoordinator } from './cancellation.js';
+import { startProbeServer } from './probe-server.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
@@ -100,6 +101,9 @@ worker.on('failed', (job, err) => {
   }
 });
 
+const probePort = Number(process.env.RUNNER_HEALTH_PORT ?? 9091);
+const probeServer = startProbeServer({ port: probePort, redis: conn, logger });
+
 logger.info({ concurrency }, 'runner started');
 
 async function shutdown() {
@@ -107,6 +111,7 @@ async function shutdown() {
   if (cancelUnsub) {
     await cancelUnsub().catch(() => {});
   }
+  probeServer.close();
   await Promise.all([
     worker.close(),
     pubsub.close(),
