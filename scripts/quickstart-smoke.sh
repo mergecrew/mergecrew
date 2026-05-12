@@ -52,6 +52,47 @@ if ! echo "$home" | grep -q "Welcome to mergecrew"; then
 fi
 echo "[quickstart-smoke] ✓ welcome card present"
 
+# Try-a-sample-run CTA (#406, V2.aj) — primary button on the welcome
+# card when the demo project is reachable. Greps on the visible copy.
+if ! echo "$home" | grep -q "Try a sample run"; then
+  echo "::error::welcome card missing the 'Try a sample run' CTA"
+  echo "--- first 8 KB of body ---"
+  echo "$home" | head -c 8192
+  exit 1
+fi
+echo "[quickstart-smoke] ✓ welcome card exposes the sample-run CTA"
+
+# End-to-end check (#407, #408, V2.aj): the runNow endpoint pre-creates
+# a DailyRun and returns its id; that id must resolve to a real
+# run-detail page (where the CTA's redirect lands).
+API_URL="${API_URL:-http://localhost:4000}"
+if [ -n "${MERGECREW_E2E_LOCAL_API_KEY:-}" ]; then
+  echo "[quickstart-smoke] POST ${API_URL}/v1/orgs/${ORG_SLUG}/projects/${PROJECT_SLUG}/runs"
+  run_resp=$(curl -sf -X POST \
+    -H "Authorization: Bearer ${MERGECREW_E2E_LOCAL_API_KEY}" \
+    -H "Content-Type: application/json" \
+    -d '{}' \
+    "${API_URL}/v1/orgs/${ORG_SLUG}/projects/${PROJECT_SLUG}/runs" || true)
+  if [ -z "$run_resp" ]; then
+    echo "::error::runNow returned no body"
+    exit 1
+  fi
+  run_id=$(echo "$run_resp" | grep -o '"runId":"[^"]*"' | head -1 | cut -d'"' -f4)
+  if [ -z "$run_id" ]; then
+    echo "::error::runNow response missing runId — got: $run_resp"
+    exit 1
+  fi
+  echo "[quickstart-smoke] ✓ runNow returned runId ${run_id}"
+  echo "[quickstart-smoke] GET ${WEB_URL}/orgs/${ORG_SLUG}/projects/${PROJECT_SLUG}/runs/${run_id}"
+  if ! curl -sf "${WEB_URL}/orgs/${ORG_SLUG}/projects/${PROJECT_SLUG}/runs/${run_id}" >/dev/null; then
+    echo "::error::run-detail page not reachable for the freshly-created run"
+    exit 1
+  fi
+  echo "[quickstart-smoke] ✓ pre-created run is visible on the run-detail page"
+else
+  echo "[quickstart-smoke] ! MERGECREW_E2E_LOCAL_API_KEY unset; skipping runNow assertion"
+fi
+
 # Demo project link should be in the page (Today lists projects).
 if ! echo "$home" | grep -q "/orgs/${ORG_SLUG}/projects/${PROJECT_SLUG}"; then
   echo "::error::demo project link (/orgs/${ORG_SLUG}/projects/${PROJECT_SLUG}) not present in Today page"
