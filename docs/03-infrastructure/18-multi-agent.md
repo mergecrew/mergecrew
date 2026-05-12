@@ -37,7 +37,7 @@ planner → coder → reviewer
                     └─ request_changes → coder (retry with feedback)
 ```
 
-The default loop cap is **3 rounds** (one initial coder pass plus up to 2 retries). After exhaustion the run records `REVIEW_LOOP_EXHAUSTED` and routes the changeset to the human inbox unchanged — the reviewer's last `requestedChanges` list is attached to the inbox item so the human reviewer sees what the LLM reviewer was unhappy about.
+The default loop cap is **3 rounds** (one initial coder pass plus up to 2 retries), tunable via `REVIEW_LOOP_CAP`. After exhaustion the run records `REVIEW_LOOP_EXHAUSTED` with the reviewer's last `reasoning` + `requestedChanges` in the event payload, then the workflow advances normally — the changeset surfaces on its existing path (Changesets list / inbox / Slack) with no further coder retries. The timeline event on the run-detail page is where to read what the LLM reviewer was unhappy about.
 
 Each loop round runs the full coder agent, which is expensive. Watch the **Agents** card on the run-detail page: a coder with a `3×` badge tells you the reviewer was unhappy twice. If you see that pattern on many runs, the planner is probably under-specifying — tighten the prompt or use a richer planner model.
 
@@ -167,27 +167,37 @@ These fixtures catch regressions at the agent level rather than the loop level. 
 
 Read more in [`docs/03-infrastructure/15-evals.md`](15-evals.md).
 
+## Per-kind run budgets
+
+Each stock agent declares a per-step `budget` *and* a cumulative
+`runBudget`. `runBudget` caps the kind's total spend across one
+workflow run — so two reviewer-driven loop-backs can't drag the run
+past its expected ceiling. Stock defaults:
+
+| Kind | per-step (tokens / USD) | run cumulative (tokens / USD) |
+|---|---|---|
+| Planner | 50k / 0.5 | 50k / 0.5 (single pass) |
+| Coder | 200k / 4.0 | 600k / 12.0 (≤ 3 passes) |
+| Reviewer | 30k / 0.3 | 90k / 0.9 (≤ 3 passes) |
+
+The runner subtracts the kind's prior `model_turns` spend from the
+`runBudget` before constructing the step's `BudgetTracker`, so a step
+born into an already-exhausted kind short-circuits to `budget_exhausted`
+on the first turn. Operator-defined agents in `mergecrew.yaml` can
+override either field — see `packages/domain/src/stock-agents.ts` for
+the shape.
+
+## Tunable limits
+
+| Env | Default | What it does |
+|---|---|---|
+| `REVIEW_LOOP_CAP` | `3` | Max coder passes per careful run before `REVIEW_LOOP_EXHAUSTED` fires and the changeset surfaces to humans without further coder retries. |
+
 ## Migration notes
 
 Existing projects default to **`fast`** on upgrade — no behavior change without an explicit operator action. Old fixture YAMLs (no `kind:` field) load as `kind: end-to-end`.
 
-### Current state (V2.ad merge)
-
-The three agent kinds (planner / coder / reviewer) are recognized by the runner and produce the right behavior — tool filtering, system prompts, plan persistence, structured verdict, loop-back detection — **when the project's lifecycle YAML defines agents with those kinds and chains them in workflows**.
-
-The Settings → Agent graph toggle exists today as a forward-looking switch. Auto-wiring — i.e. flipping the toggle and getting the planner → coder → reviewer chain without writing the lifecycle YAML yourself — lands in a follow-up. Track it in the V2.ae milestone or open an issue.
-
-### Practical paths today
-
-| You want | Do this |
-|---|---|
-| V1 behavior, no changes | Nothing — `fast` is the default |
-| Try the multi-agent flow now | Edit your project's `mergecrew.yaml`: define three agents with kinds `Planner`, `Coder`, `Reviewer`; create a workflow chaining them. The reviewer's verdict parsing + loop-back signal will fire automatically. |
-| Wait for the auto-wiring | Stay on `fast`. When the V2.ae follow-up lands, flip to `careful` and the auto-wiring will kick in. |
-
-### When the auto-wiring lands
-
-The toggle will simply work: select **Careful**, trigger a run, watch three rows in the Agents card. If you've manually wired your own multi-agent lifecycle YAML before that, the auto-wiring respects your YAML — your existing chain stays.
+Flipping a project to **`careful`** in Settings → Agent graph wires planner → coder → reviewer automatically. The orchestrator falls back to `STOCK_AGENTS_BY_REF` for any of the three kinds the operator hasn't defined in their `mergecrew.yaml`; operator-defined agents with matching agentRefs win over the stock fallback. **`custom`** parses the YAML body, validates it against the project's lifecycle agentRefs at save time, and runs the same chain dispatch (entry node → successor nodes; reviewer verdict drives routing on conditional edges).
 
 ## Related
 
