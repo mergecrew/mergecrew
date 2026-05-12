@@ -10,9 +10,17 @@ import {
   findGraphEntryNode,
   findNextGraphNode,
   newRunIdForDate,
+  parseAndValidateGraphYaml,
   resolveAgentByRef,
   shortId,
 } from '@mergecrew/domain';
+
+// Mirrors agent-runtime's exported kind constants. Inlined here (rather
+// than imported from `@mergecrew/agent-runtime`) so the orchestrator
+// doesn't pull the langgraph runtime into its dependency tree just to
+// branch on three string literals.
+const REVIEWER_KIND = 'Reviewer';
+const CODER_KIND = 'Coder';
 import { syncLifecycleFromRepo } from './lifecycle-sync.js';
 import { dispatchSlackDigest } from './digest-slack.js';
 import { dispatchEmailDigest } from './digest-email.js';
@@ -166,17 +174,22 @@ export class Orchestrator {
       return wfr.id;
     }
 
-    // Graph-profile dispatch (#348). For careful-profile projects, ignore
-    // the parallel `wf.agents` fan-out and chain through CAREFUL_GRAPH:
-    // dispatch the entry node only; each step's completion drives the
-    // next (`onStepReply` calls `dispatchGraphNext`). Operator-defined
-    // Planner/Coder/Reviewer agents in `mergecrew.yaml` override the
-    // stock fallback by sharing the same agentRef.
+    // Graph-profile dispatch (#348, #350). For careful or custom-profile
+    // projects, ignore the parallel `wf.agents` fan-out and chain through
+    // the resolved GraphDefinition: dispatch the entry node only; each
+    // step's completion drives the next (`onStepReply` calls
+    // `dispatchGraphNext`). Operator-defined Planner/Coder/Reviewer
+    // agents in `mergecrew.yaml` override the stock fallback by sharing
+    // the same agentRef.
     const project = await withTenant(organizationId, (tx) =>
-      tx.project.findUnique({ where: { id: projectId }, select: { graphProfile: true } }),
+      tx.project.findUnique({
+        where: { id: projectId },
+        select: { graphProfile: true, graphYaml: true },
+      }),
     );
-    if (project?.graphProfile === 'careful') {
-      await this.dispatchGraphEntry(organizationId, projectId, runId, wfr.id, cfg, CAREFUL_GRAPH);
+    const graph = this.resolveProjectGraph(project, cfg, { runId, workflowRunId: wfr.id });
+    if (graph) {
+      await this.dispatchGraphEntry(organizationId, projectId, runId, wfr.id, cfg, graph);
       return wfr.id;
     }
 
@@ -184,6 +197,46 @@ export class Orchestrator {
       await this.dispatchAgentStep(organizationId, projectId, runId, wfr.id, agentRef, cfg);
     }
     return wfr.id;
+  }
+
+  /**
+   * Resolve the project's effective graph definition from its
+   * `graphProfile` + (for custom) `graphYaml`. Returns null for the
+   * legacy `fast` profile so the caller falls back to the parallel
+   * `wf.agents` dispatch.
+   *
+   * Custom YAML is re-parsed on each call (cheap — the validator runs
+   * on save and the YAML is small). A parse failure here means the row
+   * was hand-edited or the validator regressed; we log and treat the
+   * project as `fast` rather than failing the whole run.
+   */
+  private resolveProjectGraph(
+    project: { graphProfile: string; graphYaml: string | null } | null,
+    cfg: MergecrewConfig,
+    ctx: { runId: string; workflowRunId: string },
+  ): GraphDefinition | null {
+    if (project?.graphProfile === 'careful') return CAREFUL_GRAPH;
+    if (project?.graphProfile === 'custom') {
+      if (!project.graphYaml) {
+        this.deps.logger.warn(
+          { ...ctx },
+          'custom graph dispatch: graphYaml is empty — falling back to fast/legacy parallel dispatch',
+        );
+        return null;
+      }
+      try {
+        return parseAndValidateGraphYaml(project.graphYaml, {
+          availableAgentRefs: Object.keys(cfg.agents ?? {}),
+        });
+      } catch (err) {
+        this.deps.logger.warn(
+          { ...ctx, err: (err as Error).message },
+          'custom graph dispatch: graphYaml failed validation at dispatch time — falling back to legacy parallel dispatch',
+        );
+        return null;
+      }
+    }
+    return null;
   }
 
   /**
@@ -224,15 +277,19 @@ export class Orchestrator {
         select: { graphProfile: true, graphYaml: true },
       }),
     );
-    // Custom-profile (graphYaml) chains land in #350; for now only
-    // careful uses the chain path.
-    if (project?.graphProfile !== 'careful') return false;
-    const graph = CAREFUL_GRAPH;
+    const lc = await withTenant(organizationId, (tx) =>
+      tx.lifecycle.findFirst({ where: { projectId }, orderBy: { version: 'desc' } }),
+    );
+    const cfg = (lc?.parsed ?? {}) as MergecrewConfig;
+    const graph = this.resolveProjectGraph(project, cfg, { runId, workflowRunId });
+    if (!graph) return false;
 
-    // Reviewer verdict → routing signal. We persist `output.verdict` in
-    // the runner (#334), so the orchestrator just reads it here.
+    // Reviewer verdict → routing signal. We branch on agentKind (not
+    // graphNodeKey) so a custom graph using arbitrary node names still
+    // routes correctly as long as its reviewer node binds to an agent
+    // of kind 'Reviewer'.
     let signal: string | undefined;
-    if (step.graphNodeKey === 'reviewer') {
+    if (step.agentKind === REVIEWER_KIND) {
       const verdict = (step.output as { verdict?: string } | null)?.verdict;
       signal = verdict === 'approve' ? 'approve' : 'requestChanges';
     }
@@ -249,16 +306,18 @@ export class Orchestrator {
       return false;
     }
 
-    // Loop-back guard (#349). When the reviewer loops back to the
-    // coder, count completed coder steps in this workflow run. The cap
-    // is set in env (`REVIEW_LOOP_CAP`, default 3) and matches the
-    // doc'd 3-round budget: one initial coder pass + up to 2 retries.
-    if (step.graphNodeKey === 'reviewer' && nextKey === 'coder') {
+    // Loop-back guard (#349, generalized for #350). When a reviewer-kind
+    // step routes to a coder-kind node, count completed coder-kind
+    // steps in this workflow run. The cap is env-set (REVIEW_LOOP_CAP,
+    // default 3) — one initial coder pass + up to two retries.
+    const nextAgentDef = resolveAgentByRef(cfg.agents, node.agentRef);
+    const nextKind = nextAgentDef?.kind;
+    if (step.agentKind === REVIEWER_KIND && nextKind === CODER_KIND) {
       const coderRounds = await withTenant(organizationId, (tx) =>
         tx.agentStep.count({
           where: {
             workflowRunId,
-            graphNodeKey: 'coder',
+            agentKind: CODER_KIND,
             status: { in: ['done', 'failed', 'cancelled'] },
           },
         }),
@@ -287,15 +346,10 @@ export class Orchestrator {
           { runId, workflowRunId, coderRounds, cap },
           'careful loop exhausted: routing changeset to human review without further coder retries',
         );
-        // Return false so the caller falls through to maybeAdvanceWorkflow.
         return false;
       }
     }
 
-    const lc = await withTenant(organizationId, (tx) =>
-      tx.lifecycle.findFirst({ where: { projectId }, orderBy: { version: 'desc' } }),
-    );
-    const cfg = (lc?.parsed ?? {}) as MergecrewConfig;
     await this.dispatchAgentStep(
       organizationId,
       projectId,
