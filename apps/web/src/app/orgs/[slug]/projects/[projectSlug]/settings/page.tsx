@@ -13,6 +13,7 @@ import { DeployTargetForm, type DeployTargetRow } from './deploy-target-form';
 import { SmokeTestForm } from './smoke-test-form';
 import { DryRunForm } from './dry-run-form';
 import { BlastRadiusForm } from './blast-radius-form';
+import { RiskScoreForm } from './risk-score-form';
 
 export default async function ProjectSettings({
   params,
@@ -35,6 +36,8 @@ export default async function ProjectSettings({
     maxFilesChanged: number;
     maxLinesChanged: number;
     deniedPaths: string[] | null;
+    autoMergeThreshold: number;
+    sensitivePaths: string[] | null;
     connectedRepo: {
       repoFullName: string;
       defaultBranch: string;
@@ -253,6 +256,18 @@ export default async function ProjectSettings({
                 initialMaxFiles={project.maxFilesChanged}
                 initialMaxLines={project.maxLinesChanged}
                 initialDeniedPaths={project.deniedPaths ?? []}
+                canEdit={canEdit}
+              />
+            </div>
+          </div>
+          <div className="border-t pt-4 dark:border-zinc-800">
+            <h3 className="text-sm font-medium">Risk-score gate</h3>
+            <div className="mt-2">
+              <RiskScoreForm
+                slug={slug}
+                projectSlug={projectSlug}
+                initialThreshold={project.autoMergeThreshold}
+                initialSensitivePaths={project.sensitivePaths ?? []}
                 canEdit={canEdit}
               />
             </div>

@@ -195,6 +195,18 @@ model Project {
   maxFilesChanged  Int     @default(25)  @map("max_files_changed")
   maxLinesChanged  Int     @default(1000) @map("max_lines_changed")
   deniedPaths      Json    @default("[\"**/migration*\", \"**/secrets*\", \"**/.env*\", \"**/*.pem\", \"**/*.key\"]") @map("denied_paths")
+  /// Risk-score gate (#286). After a changeset clears blast-radius and a
+  /// PR is opened, the runner computes a simple weighted score:
+  ///   score = filesChanged + linesChanged*0.1 + sensitivePathHits*10
+  /// `sensitivePaths` is an OR-list of picomatch globs flagging files
+  /// where a single touch matters disproportionately (config, auth,
+  /// schema). A changeset whose score exceeds `autoMergeThreshold` is
+  /// surfaced to the inbox as `risk_score_high` and auto-promote is
+  /// suppressed even if a rule would match. Threshold=Infinity is the
+  /// cheap way to disable the gate; threshold=0 makes every changeset
+  /// require human review.
+  autoMergeThreshold Int   @default(50)  @map("auto_merge_threshold")
+  sensitivePaths     Json  @default("[\"**/config/**\", \"**/auth/**\", \"**/*.sql\"]") @map("sensitive_paths")
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
@@ -649,6 +661,14 @@ model Changeset {
   /// Shape: {kind:'files'|'lines'|'denied_paths', filesChanged?, maxFiles?,
   /// linesChanged?, maxLines?, deniedHits?:[{path,glob}]}. Null otherwise.
   blockedReason   Json?            @map("blocked_reason")
+  /// Risk score (#286) — null until the post-push gate evaluates the
+  /// changeset. Higher = more attention needed. Compared against the
+  /// project's autoMergeThreshold to decide auto-promote eligibility.
+  riskScore       Float?           @map("risk_score")
+  /// Per-component breakdown the inbox + detail page render so operators
+  /// see WHY a score is high. Shape: {filesChanged,linesChanged,
+  /// sensitiveHits:[{path,glob}]}.
+  riskScoreBreakdown Json?         @map("risk_score_breakdown")
   createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 

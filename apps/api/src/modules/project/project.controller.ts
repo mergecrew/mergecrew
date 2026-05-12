@@ -41,6 +41,8 @@ export class ProjectController {
       maxFilesChanged?: number;
       maxLinesChanged?: number;
       deniedPaths?: string[];
+      autoMergeThreshold?: number;
+      sensitivePaths?: string[];
     },
   ) {
     return this.projects.update(projectSlug, body);
