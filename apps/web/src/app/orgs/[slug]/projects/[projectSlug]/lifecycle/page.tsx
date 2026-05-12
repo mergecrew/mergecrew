@@ -7,6 +7,10 @@ import {
   type ParsedConfig,
 } from '@/components/lifecycle/lifecycle-editor';
 import type { LifecycleScope } from '@/components/lifecycle/scope';
+import {
+  StockTemplatePicker,
+  type StockTemplateSummary,
+} from '@/components/lifecycle/stock-template-picker';
 
 interface SkillRow {
   name: string;
@@ -21,7 +25,7 @@ export default async function LifecyclePage({
 }) {
   const { slug, projectSlug } = await params;
   const session = await requireSession();
-  const [lc, catalog, canEdit, layout] = await Promise.all([
+  const [lc, catalog, canEdit, layout, stockTemplates] = await Promise.all([
     api<{ version: number; sourceYaml: string; parsed: ParsedConfig }>(
       `/v1/orgs/${slug}/projects/${projectSlug}/lifecycle`,
       { session },
@@ -33,6 +37,11 @@ export default async function LifecyclePage({
       `/v1/orgs/${slug}/projects/${projectSlug}/lifecycle/graph-layout`,
       { session },
     ).catch(() => ({ positions: {} })),
+    // Stock template catalog (#393, V2.ai). Public endpoint — failure
+    // here shouldn't block the editor, so we fall back to an empty list.
+    api<{ items: StockTemplateSummary[] }>(`/v1/lifecycle-templates/stock`, { session }).catch(
+      () => ({ items: [] }),
+    ),
   ]);
 
   const scope: LifecycleScope = { kind: 'project', orgSlug: slug, projectSlug };
@@ -47,6 +56,19 @@ export default async function LifecyclePage({
           Each save creates a new versioned snapshot.
         </p>
       </header>
+      {canEdit && stockTemplates.items.length > 0 && (
+        <Card>
+          <div className="mb-3">
+            <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
+              Start from a stock template
+            </h2>
+            <p className="mt-1 text-xs text-zinc-500">
+              Pre-built Planner / Coder / Reviewer setups tuned for common stacks. Applying a template replaces this project&apos;s lifecycle — the previous version is kept in the versions list.
+            </p>
+          </div>
+          <StockTemplatePicker scope={scope} templates={stockTemplates.items} />
+        </Card>
+      )}
       <Card>
         <LifecycleEditor
           scope={scope}
