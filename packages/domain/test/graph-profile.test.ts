@@ -240,4 +240,44 @@ describe('findNextGraphNode (#348)', () => {
     };
     expect(findNextGraphNode(g, 'a', 'baz')).toBeNull();
   });
+
+  it('walks a custom four-node graph end-to-end via entry + nextNode (#350)', () => {
+    // Mirrors the "four-agent with a test-writer" example from the
+    // multi-agent cookbook (docs/18-multi-agent.md).
+    const yaml = `
+version: 1
+graph:
+  nodes:
+    plan:   { agentRef: planner }
+    tests:  { agentRef: test_writer }
+    code:   { agentRef: coder }
+    review: { agentRef: reviewer }
+  edges:
+    - from: plan
+      to: tests
+    - from: tests
+      to: code
+    - from: code
+      to: review
+    - from: review
+      to: code
+      when: requestChanges
+    - from: review
+      to: __end__
+      when: approve
+`;
+    const g = parseAndValidateGraphYaml(yaml, {
+      availableAgentRefs: ['planner', 'test_writer', 'coder', 'reviewer'],
+    });
+
+    const entry = findGraphEntryNode(g);
+    expect(entry).toBe('plan');
+
+    expect(findNextGraphNode(g, 'plan')).toBe('tests');
+    expect(findNextGraphNode(g, 'tests')).toBe('code');
+    expect(findNextGraphNode(g, 'code')).toBe('review');
+    // Reviewer routes based on its verdict signal.
+    expect(findNextGraphNode(g, 'review', 'requestChanges')).toBe('code');
+    expect(findNextGraphNode(g, 'review', 'approve')).toBe(GRAPH_END);
+  });
 });
