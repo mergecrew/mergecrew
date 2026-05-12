@@ -13,3 +13,4 @@ export * from './auto-promote.js';
 export * from './parse-package-diff.js';
 export * from './blast-radius.js';
 export * from './risk-score.js';
+export * from './graph-profile.js';

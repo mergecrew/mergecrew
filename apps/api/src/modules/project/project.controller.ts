@@ -43,6 +43,8 @@ export class ProjectController {
       deniedPaths?: string[];
       autoMergeThreshold?: number;
       sensitivePaths?: string[];
+      graphProfile?: 'fast' | 'careful' | 'custom';
+      graphYaml?: string | null;
     },
   ) {
     return this.projects.update(projectSlug, body);

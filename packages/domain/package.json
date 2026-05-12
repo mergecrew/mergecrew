@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "picomatch": "^4.0.2",
+    "yaml": "^2.6.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
