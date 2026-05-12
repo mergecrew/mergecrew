@@ -8,6 +8,15 @@
 
 Mergecrew is the open-source platform for running an **agentic software development lifecycle** — multi-agent product teams that operate on a daily cadence against your real repo, deploy automatically to your dev environment, and require an explicit human approval before anything ships to prod.
 
+> **Try it in 5 minutes:** `docker compose -f docker-compose.full.yml up`, open `http://localhost:3000`, click **Try a sample run** on the welcome card. The full walkthrough lives in [docs/00-quickstart.md](docs/00-quickstart.md).
+
+### What you get on first boot
+
+- **Demo mode** is the default — every agent step routes through a deterministic stub, so the full multi-agent loop works with zero LLM keys configured.
+- **Welcome card with a one-click sample run** — click the primary CTA on the Today page and you land on the live timeline as agents work.
+- **Onboarding wizard** at `/orgs/{slug}/onboarding` walks you through provider → project → repo → deploy target → lifecycle in five DB-derived checklist steps.
+- **Stock lifecycle templates** — pick `generic-careful`, `nextjs-vercel`, `python-render`, or `go-fly` from the project Lifecycle page; no YAML editing required.
+
 ---
 
 ## Why Mergecrew exists
