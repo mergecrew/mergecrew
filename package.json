@@ -24,13 +24,15 @@
     "compose:down": "docker compose -f docker-compose.yml down",
     "compose:full": "docker compose -f docker-compose.full.yml up",
     "compose:full:down": "docker compose -f docker-compose.full.yml down",
-    "e2e:local": "bash scripts/e2e-local.sh"
+    "e2e:local": "bash scripts/e2e-local.sh",
+    "screenshots": "tsx scripts/screenshots/capture.ts"
   },
   "devDependencies": {
     "@types/node": "^25.7.0",
     "dotenv": "^17.4.2",
     "dotenv-cli": "^8.0.0",
     "eslint": "^9.12.0",
+    "playwright": "^1.49.0",
     "prettier": "^3.3.3",
     "tsx": "^4.19.1",
     "turbo": "^2.9.12",

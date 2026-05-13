@@ -43,6 +43,18 @@ Documentation for contributors and operators of [Mergecrew](https://github.com/m
 ### 4 — Roadmap
 - [Vision-tier roadmap](04-roadmap.md). Tactical milestones live in [GitHub Issues](https://github.com/mergecrew/mergecrew/issues) and the [project board](https://github.com/orgs/mergecrew/projects).
 
+## Visuals
+
+- **Diagrams** are embedded inline as [Mermaid](https://mermaid.js.org/) — GitHub
+  renders them natively in markdown. See
+  [`02-architecture/01-overview.md`](02-architecture/01-overview.md) (component
+  map + run sequence), [`02-architecture/04-agentic-runtime.md`](02-architecture/04-agentic-runtime.md)
+  (agent loop), and [`03-infrastructure/18-multi-agent.md`](03-infrastructure/18-multi-agent.md)
+  (reviewer loop).
+- **UI screenshots** live under [`assets/screenshots/`](assets/screenshots/),
+  captured by [`scripts/screenshots`](../scripts/screenshots/). Regenerate
+  after any UI change with `pnpm screenshots`.
+
 ## Conventions
 
 - **Tense.** These docs describe the system as it is, not as it might be. Forward-looking work belongs in the roadmap or in issues.

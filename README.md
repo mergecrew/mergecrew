@@ -8,7 +8,30 @@
 
 Mergecrew is the open-source platform for running an **agentic software development lifecycle** — multi-agent product teams that operate on a daily cadence against your real repo, deploy automatically to your dev environment, and require an explicit human approval before anything ships to prod.
 
-> **Try it in 5 minutes:** `docker compose -f docker-compose.full.yml up`, open `http://localhost:3000`. You land directly in the seeded `demo-saas` project — a guided coachmark tour walks you through the completed sample run, then drops you in the wizard when you click **Set up your own project →**. Full walkthrough: [docs/00-quickstart.md](docs/00-quickstart.md).
+```mermaid
+flowchart LR
+    Cron([Cron trigger<br/>no ticket needed]) --> Plan[Planner<br/>spec the change]
+    Plan --> Code[Coder<br/>build the diff]
+    Code --> Rev{LLM reviewer}
+    Rev -- request_changes --> Code
+    Rev -- approve --> Dev[Deploy to dev]
+    Dev --> Scan[Bug scan<br/>preview env]
+    Scan --> Digest[Daily digest]
+    Digest --> Human{Human approval}
+    Human -- approve --> Prod[Production]
+    Human -- reject --> Stop([Stop])
+
+    classDef trigger fill:#fef3c7,stroke:#d97706,color:#92400e
+    classDef agent fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    classDef gate fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    classDef ship fill:#dcfce7,stroke:#16a34a,color:#14532d
+    class Cron trigger
+    class Plan,Code,Rev,Scan agent
+    class Human gate
+    class Dev,Digest,Prod ship
+```
+
+> **Try it in 5 minutes:** `docker compose -f docker-compose.full.yml up`, open `http://localhost:3000`. You land directly in the seeded `demo-saas` project — a guided coachmark tour walks you through the completed sample run, then drops you in the wizard when you click **Set up your own project →**. Full walkthrough: [docs/00-quickstart.md](docs/00-quickstart.md). Screenshots of the live UI live in [docs/assets/screenshots](docs/assets/screenshots/).
 
 ### What you get on first boot
 

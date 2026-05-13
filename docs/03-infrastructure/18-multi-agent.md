@@ -30,11 +30,18 @@ The `careful` graph definition lives in `@mergecrew/domain/graph-profile.ts` as 
 
 ## Reviewer loop
 
-```
-planner → coder → reviewer
-                    │
-                    ├─ approve         → __end__ (open PR)
-                    └─ request_changes → coder (retry with feedback)
+```mermaid
+flowchart LR
+    Start([__start__]) --> Plan[planner<br/>read-only tools]
+    Plan -->|planMarkdown| Code[coder<br/>full edit surface]
+    Code -->|diff| Rev{reviewer<br/>read-only}
+    Rev -- approve --> End([__end__<br/>open PR])
+    Rev -- request_changes<br/>up to REVIEW_LOOP_CAP --> Code
+
+    classDef agent fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    classDef gate fill:#fef3c7,stroke:#d97706,color:#92400e
+    class Plan,Code agent
+    class Rev gate
 ```
 
 The default loop cap is **3 rounds** (one initial coder pass plus up to 2 retries), tunable via `REVIEW_LOOP_CAP`. After exhaustion the run records `REVIEW_LOOP_EXHAUSTED` with the reviewer's last `reasoning` + `requestedChanges` in the event payload, then the workflow advances normally — the changeset surfaces on its existing path (Changesets list / inbox / Slack) with no further coder retries. The timeline event on the run-detail page is where to read what the LLM reviewer was unhappy about.
