@@ -22,6 +22,10 @@ export const TimelineEventType = z.enum([
   'CHANGESET_PROMOTED',
   'CHANGESET_AUTO_PROMOTED',
   'CHANGESET_ROLLED_BACK',
+  // Native PR review surface (#420, V2.al). Fires when the runner
+  // posts the reviewer agent's verdict as a GitHub PR review and
+  // (on approve) flips the draft PR to ready-for-review.
+  'CHANGESET_REVIEW_POSTED',
   // agent
   'AGENT_STEP_STARTED',
   'AGENT_STEP_COMPLETED',
