@@ -45,7 +45,7 @@ committed.
    - `BFF_TRUST_TOKEN` — shared secret with the API for `/v1/auth/
      exchange` (must match the api's env)
    - `MERGECREW_DEV_AUTO_LOGIN=false`
-   - OAuth secrets if used (`GITHUB_OAUTH_CLIENT_ID`, etc.)
+   - OAuth secrets if used (`GITHUB_APP_CLIENT_ID` / `GITHUB_APP_CLIENT_SECRET` for GitHub sign-in, `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` for Google)
    - `NEXTAUTH_SECRET`, `NEXTAUTH_URL` (production URL)
 
 ## Smoke test

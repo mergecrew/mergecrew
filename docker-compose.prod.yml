@@ -28,7 +28,7 @@ services:
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     networks: [internal]
-    command: ["node", "/app/node_modules/.bin/prisma", "migrate", "deploy", "--schema", "/app/packages/db/prisma/schema.prisma"]
+    command: ["/app/apps/api/node_modules/.bin/prisma", "migrate", "deploy", "--schema", "/app/packages/db/prisma/schema.prisma"]
 
   # Per-service `deploy.resources.limits` (#187). In non-swarm Compose v2
   # these are honored as cgroup limits at `up` time. Runner is the most
@@ -55,7 +55,7 @@ services:
       - 'host.docker.internal:host-gateway'
     networks: [internal]
     ports:
-      - '127.0.0.1:4000:4000'
+      - '127.0.0.1:${API_HOST_PORT:-4000}:4000'
     depends_on:
       redis: { condition: service_healthy }
     deploy:
@@ -133,7 +133,7 @@ services:
       API_BASE_URL: http://api:4000
     networks: [internal]
     ports:
-      - '127.0.0.1:3000:3000'
+      - '127.0.0.1:${WEB_HOST_PORT:-3000}:3000'
     depends_on: [api]
     deploy:
       resources:

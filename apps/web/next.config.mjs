@@ -6,7 +6,7 @@ const nextConfig = {
   // surface — node:bookworm-slim + the standalone output, nothing else.
   output: 'standalone',
   experimental: {
-    serverActions: { allowedOrigins: ['localhost:3000'] },
+    serverActions: { allowedOrigins: ['localhost:3000', 'mergecrew.dev'] },
   },
   async rewrites() {
     return [

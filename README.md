@@ -284,11 +284,10 @@ The API also accepts an `x-mergecrew-user-id` header for programmatic access (us
 If you want real OAuth in your local environment:
 
 1. Set `MERGECREW_DEV_AUTO_LOGIN=false` in `.env`.
-2. Create OAuth apps:
-   - GitHub: <https://github.com/settings/developers> — callback `http://localhost:3000/api/auth/callback/github`
-   - Google: <https://console.cloud.google.com/apis/credentials> — callback `http://localhost:3000/api/auth/callback/google`
-3. Fill `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET` (and/or Google equivalents) in `.env`.
-4. Restart the web app.
+2. Configure sign-in providers:
+   - GitHub: reuses the GitHub App you set up for repo integration. In the App's settings → **Identifying and authorizing users**, set the callback URL to `http://localhost:3000/api/auth/callback/github` (or your prod equivalent). NextAuth reads `GITHUB_APP_CLIENT_ID` / `GITHUB_APP_CLIENT_SECRET` from `.env`.
+   - Google (optional): <https://console.cloud.google.com/apis/credentials> — callback `http://localhost:3000/api/auth/callback/google`. Fill `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET`.
+3. Restart the web app.
 
 ## Switching to a hosted LLM (Anthropic / OpenAI / Bedrock)
 
