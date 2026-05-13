@@ -49,7 +49,7 @@ import { LinearProvider, GitHubIssuesProvider, type TrackerProvider } from '@mer
 
 const TRACKER_TOKEN_SECRET = 'TRACKER_TOKEN';
 const ERROR_TRACKER_TOKEN_SECRET = 'ERROR_TRACKER_TOKEN';
-import { CompositeCommsProvider } from '@mergecrew/adapters-comms';
+import { CompositeCommsProvider, emailConfigFromEnv } from '@mergecrew/adapters-comms';
 import {
   runAgentStep,
   BudgetTracker,
@@ -276,7 +276,7 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   }
 
   const comms = new CompositeCommsProvider({
-    email: { from: process.env.MERGECREW_EMAIL_FROM ?? 'noreply@mergecrew.dev', smtpUrl: process.env.SMTP_URL },
+    email: emailConfigFromEnv(),
   });
 
   // Error-tracker config — per-project. Reads error_targets + the encrypted

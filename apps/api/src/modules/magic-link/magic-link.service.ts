@@ -1,13 +1,12 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { ValidationError } from '@mergecrew/domain';
-import { EmailClient } from '@mergecrew/adapters-comms';
+import { EmailClient, emailConfigFromEnv } from '@mergecrew/adapters-comms';
 import { PrismaService } from '../../common/prisma.service.js';
 import { AuthService } from '../auth/auth.service.js';
 
 const TOKEN_BYTES = 32;
 const TOKEN_TTL_MS = 15 * 60 * 1000;
-const FROM_DEFAULT = 'noreply@mergecrew.dev';
 
 function hashToken(t: string): string {
   return createHash('sha256').update(t).digest('hex');
@@ -21,10 +20,7 @@ export class MagicLinkService {
     private prisma: PrismaService,
     private auth: AuthService,
   ) {
-    this.email = new EmailClient({
-      from: process.env.MERGECREW_EMAIL_FROM ?? FROM_DEFAULT,
-      smtpUrl: process.env.SMTP_URL,
-    });
+    this.email = new EmailClient(emailConfigFromEnv());
   }
 
   /**
