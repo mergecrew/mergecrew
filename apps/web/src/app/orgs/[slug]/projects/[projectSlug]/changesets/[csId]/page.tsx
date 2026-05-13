@@ -124,11 +124,61 @@ export default async function ChangesetDetail({
       <Card>
         <div className="grid grid-cols-2 gap-2 text-sm">
           <div><span className="text-zinc-500">Branch</span><br/><code>{cs.branch}</code></div>
-          <div><span className="text-zinc-500">PR</span><br/>{cs.prUrl ? <a className="text-accent" href={cs.prUrl}>#{cs.prNumber}</a> : '—'}</div>
+          <div>
+            <span className="text-zinc-500">PR</span>
+            <br />
+            {cs.prUrl ? (
+              <a className="text-accent" href={cs.prUrl}>
+                #{cs.prNumber}
+              </a>
+            ) : (
+              '—'
+            )}
+            <AgentReviewChip review={cs.agentReview} hasPr={!!cs.prNumber} />
+          </div>
           <div><span className="text-zinc-500">Risk</span><br/><Chip kind={(cs.riskChip ?? 'low') as any}>{cs.riskChip ?? 'low'}</Chip></div>
           <div><span className="text-zinc-500">Cost</span><br/>${Number(cs.estimatedUsd ?? 0).toFixed(2)}</div>
         </div>
       </Card>
     </main>
+  );
+}
+
+/**
+ * Agent-review state chip on the changeset detail page (#421, V2.al).
+ * Three states the page surfaces:
+ *   - approve + flipped → "agent approved · ready for human review"
+ *   - request_changes  → "agent: requested changes"
+ *   - PR open, no review yet → "awaiting agent review"
+ * No chip when there's no PR (the page already shows a "—" placeholder).
+ */
+function AgentReviewChip({
+  review,
+  hasPr,
+}: {
+  review: { verdict: 'approve' | 'request_changes'; flippedToReady: boolean; at: string | null } | null;
+  hasPr: boolean;
+}) {
+  if (!hasPr) return null;
+  if (!review) {
+    return (
+      <div className="mt-1">
+        <Chip kind="neutral">awaiting agent review</Chip>
+      </div>
+    );
+  }
+  if (review.verdict === 'approve') {
+    return (
+      <div className="mt-1">
+        <Chip kind="low">
+          {review.flippedToReady ? 'agent approved · ready for human review' : 'agent approved'}
+        </Chip>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-1">
+      <Chip kind="medium">agent: requested changes</Chip>
+    </div>
   );
 }

@@ -39,7 +39,34 @@ export class ChangesetService {
       tx.changeset.findFirst({ where: { id: csId, organizationId: t.organizationId } }),
     );
     if (!r) throw new NotFoundError();
-    return r;
+    // Agent-review state (#421, V2.al). Computed from the latest
+    // CHANGESET_REVIEW_POSTED event the runner emitted for this
+    // changeset (#420). Folded into the detail response so the
+    // changeset page renders a chip without a second request.
+    // Three states the page cares about:
+    //   pending          — PR open as draft, reviewer hasn't run yet
+    //   request_changes  — reviewer requested changes (still draft)
+    //   approve          — reviewer approved (PR flipped to ready-for-review)
+    // Absent for changesets without a PR or runs that don't use a Reviewer agent.
+    const latestReview = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.timelineEvent.findFirst({
+        where: { changesetId: csId, type: 'CHANGESET_REVIEW_POSTED' },
+        orderBy: { occurredAt: 'desc' },
+        select: { payload: true, occurredAt: true },
+      }),
+    );
+    const reviewPayload = latestReview?.payload as
+      | { verdict?: 'approve' | 'request_changes'; flippedToReady?: boolean }
+      | null
+      | undefined;
+    const agentReview = reviewPayload?.verdict
+      ? {
+          verdict: reviewPayload.verdict,
+          flippedToReady: !!reviewPayload.flippedToReady,
+          at: latestReview?.occurredAt ?? null,
+        }
+      : null;
+    return { ...r, agentReview };
   }
 
   async digestFor(projectSlug: string, dateISO: string) {
