@@ -685,6 +685,78 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
       actor: { kind: 'agent', id: stepId, agentKind: agentDef.kind },
       payload: { reasoning, requestedChanges },
     });
+
+    // Post the reviewer agent's verdict as a native PR review (#420, V2.al)
+    // and, on approve, flip the draft to ready-for-review. Best-effort:
+    // a failure here is logged but never blocks run progression. We only
+    // act when there's a connected GitHub repo and the changeset has a
+    // PR — the dry-run / local-adapter / no-PR-yet paths all short-circuit
+    // here automatically.
+    if (vcs) {
+      try {
+        const repo = await withTenant(organizationId, (tx) =>
+          tx.connectedRepo.findUnique({ where: { projectId } }),
+        );
+        const cs = await withTenant(organizationId, (tx) =>
+          tx.changeset.findFirst({
+            where: { dailyRunId: runId, prNumber: { not: null } },
+            orderBy: { updatedAt: 'desc' },
+            select: { id: true, prNumber: true, prUrl: true },
+          }),
+        );
+        if (repo && cs?.prNumber) {
+          const repoRef = {
+            installationId: repo.installationId,
+            repoId: repo.repoId ?? undefined,
+            repoFullName: repo.repoFullName,
+            defaultBranch: repo.defaultBranch,
+          };
+          const reviewBody =
+            verdict === 'approve'
+              ? reasoning
+              : reasoning +
+                (requestedChanges.length > 0
+                  ? '\n\n**Requested changes:**\n' +
+                    requestedChanges.map((c) => `- ${c}`).join('\n')
+                  : '');
+          await vcs.postReview(repoRef, cs.prNumber, {
+            event: verdict === 'approve' ? 'approve' : 'request_changes',
+            body: reviewBody,
+          });
+          if (verdict === 'approve') {
+            await vcs.markReadyForReview(repoRef, cs.prNumber).catch((err: unknown) => {
+              // Already-ready PRs throw from the GraphQL mutation; that's
+              // not an error, just a no-op state. Log at info, not warn.
+              logger.info(
+                { err: (err as Error)?.message ?? err, prNumber: cs.prNumber },
+                'review: markReadyForReview returned non-fatal error (PR may already be ready)',
+              );
+            });
+          }
+          await eventlog.emit({
+            organizationId,
+            projectId,
+            dailyRunId: runId,
+            workflowRunId,
+            agentStepId: stepId,
+            changesetId: cs.id,
+            type: 'CHANGESET_REVIEW_POSTED',
+            actor: { kind: 'agent', id: stepId, agentKind: agentDef.kind },
+            payload: {
+              prNumber: cs.prNumber,
+              prUrl: cs.prUrl,
+              verdict,
+              flippedToReady: verdict === 'approve',
+            },
+          });
+        }
+      } catch (err: unknown) {
+        logger.warn(
+          { err: (err as Error)?.message ?? err, runId },
+          'review: failed to post reviewer verdict to PR; agent loop continues',
+        );
+      }
+    }
   }
 
   // Planner agents (#332) persist their final markdown plan on
@@ -728,6 +800,14 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   // later promote the changeset to do the actual push. The dry-run flag
   // on each changeset is enough timeline signal — no extra event emit.
   if (!dryRun && vcs && outcome.kind !== 'failed' && outcome.kind !== 'budget_exhausted') {
+    // When the lifecycle includes a Reviewer agent (#420, V2.al), the
+    // runner opens the PR as draft and only flips to ready-for-review
+    // after the reviewer agent approves. Detected by scanning the
+    // lifecycle's agents map for any AgentDefinition with kind ===
+    // 'Reviewer' — works for both stock and operator-defined lifecycles.
+    const hasReviewerInLifecycle = Object.values(cfg.agents ?? {}).some(
+      (a) => (a as AgentDefinition).kind === REVIEWER_AGENT_KIND,
+    );
     await openPendingChangesetPrs({
       organizationId,
       projectId,
@@ -737,6 +817,7 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
       workspacePath,
       eventlog,
       logger,
+      hasReviewerInLifecycle,
     });
   }
 
@@ -925,8 +1006,14 @@ async function openPendingChangesetPrs(opts: {
   workspacePath: string;
   eventlog: Eventlog;
   logger: Logger;
+  /**
+   * True when the run's lifecycle defines a Reviewer agent (#420, V2.al).
+   * When set, the PR is opened as a draft regardless of test status; the
+   * runner flips it to ready-for-review after the reviewer agent approves.
+   */
+  hasReviewerInLifecycle?: boolean;
 }): Promise<void> {
-  const { organizationId, projectId, runId, workflowRunId, vcs, workspacePath, eventlog, logger } = opts;
+  const { organizationId, projectId, runId, workflowRunId, vcs, workspacePath, eventlog, logger, hasReviewerInLifecycle } = opts;
 
   const repo = await withTenant(organizationId, (tx) =>
     tx.connectedRepo.findUnique({ where: { projectId } }),
@@ -1010,7 +1097,12 @@ async function openPendingChangesetPrs(opts: {
         base: repo.defaultBranch,
         title: cs.title,
         body,
-        draft: cs.status === 'tests_failed',
+        // Draft when tests failed (original behavior) OR when the
+        // lifecycle has a Reviewer agent (#420, V2.al). In the latter
+        // case, the runner flips the PR to ready-for-review after the
+        // reviewer approves; a human sees an honest "agent reviewed,
+        // approved" signal instead of a non-reviewed PR sitting open.
+        draft: cs.status === 'tests_failed' || !!hasReviewerInLifecycle,
       });
       // #193: compute a risk chip from PR file stats + test summary so
       // reviewers see at a glance how much attention the change needs.
