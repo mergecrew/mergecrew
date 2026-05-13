@@ -12,6 +12,26 @@ const COOKIE_OPTS = {
 };
 
 /**
+ * Resolve the public origin to redirect to. Behind a reverse proxy,
+ * `req.url` reflects the internal container hostname (e.g.
+ * `https://121048555ff3:3000`), which would leak into the redirect
+ * Location and break the magic-link click-through. Preference order:
+ *   1. WEB_BASE_URL env var (explicit, set in compose / prod env).
+ *   2. X-Forwarded-Host + X-Forwarded-Proto headers (most proxies set
+ *      these; safe fallback when WEB_BASE_URL isn't configured).
+ *   3. req.url's own origin (local dev — no proxy in front).
+ */
+function publicOrigin(req: NextRequest): string {
+  if (process.env.WEB_BASE_URL) return process.env.WEB_BASE_URL;
+  const fwdHost = req.headers.get('x-forwarded-host');
+  if (fwdHost) {
+    const fwdProto = req.headers.get('x-forwarded-proto') ?? 'https';
+    return `${fwdProto}://${fwdHost}`;
+  }
+  return new URL(req.url).origin;
+}
+
+/**
  * Magic-link callback (#1). The email contains a link to
  * /api/auth/magic-link?token=…&email=…. We POST to the API's verify
  * endpoint, which consumes the one-time token and returns a fresh
@@ -26,7 +46,7 @@ export async function GET(req: NextRequest) {
   const u = new URL(req.url);
   const token = u.searchParams.get('token');
   const email = u.searchParams.get('email');
-  const origin = u.origin;
+  const origin = publicOrigin(req);
 
   if (!token || !email) {
     return NextResponse.redirect(new URL('/login?error=missing_token', origin));
