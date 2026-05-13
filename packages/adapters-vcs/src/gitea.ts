@@ -169,6 +169,24 @@ export class GiteaProvider implements VcsProvider {
     });
   }
 
+  async postReview(_repo: ConnectedRepoRef, prNumber: number): Promise<void> {
+    // Gitea has /repos/{owner}/{repo}/pulls/{index}/reviews but the
+    // shape diverges from GitHub's; #419 ships the GitHub path only.
+    // Best-effort warning; the runner never blocks on this call.
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[gitea] postReview(pr=${prNumber}) is not implemented; reviewer agent verdict will not be posted to Gitea.`,
+    );
+  }
+
+  async markReadyForReview(_repo: ConnectedRepoRef, prNumber: number): Promise<void> {
+    // Gitea PRs don't have a draft state to flip; treat as a no-op.
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[gitea] markReadyForReview(pr=${prNumber}) is a no-op; Gitea PRs are never drafts.`,
+    );
+  }
+
   async mergePullRequest(
     repo: ConnectedRepoRef,
     prNumber: number,

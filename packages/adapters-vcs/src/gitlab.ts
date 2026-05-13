@@ -172,6 +172,25 @@ export class GitLabProvider implements VcsProvider {
     });
   }
 
+  async postReview(_repo: ConnectedRepoRef, prNumber: number): Promise<void> {
+    // GitLab approval API is reviewer-scoped (requires reviewer config
+    // on the project) and lacks a 1:1 mapping to GitHub's review event
+    // types; #419 ships the GitHub path only.
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[gitlab] postReview(mr=${prNumber}) is not implemented; reviewer agent verdict will not be posted to GitLab.`,
+    );
+  }
+
+  async markReadyForReview(_repo: ConnectedRepoRef, prNumber: number): Promise<void> {
+    // GitLab MRs use the `WIP: ` / `Draft: ` title prefix to indicate
+    // draft state; flipping that is title-edit, not implemented yet.
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[gitlab] markReadyForReview(mr=${prNumber}) is a no-op; remove the Draft: prefix manually.`,
+    );
+  }
+
   async mergePullRequest(
     repo: ConnectedRepoRef,
     prNumber: number,

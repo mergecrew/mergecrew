@@ -51,6 +51,26 @@ export interface DiffHunk {
   lines: DiffLine[];
 }
 
+/** Optional inline review comment (#419, V2.al). */
+export interface InlineReviewComment {
+  /** Repository-relative path. */
+  path: string;
+  /** 1-indexed line number in the diff's post-image. */
+  line: number;
+  /** Comment body, plain text or markdown. */
+  body: string;
+}
+
+/** Arguments for VcsProvider.postReview (#419, V2.al). */
+export interface PostReviewOpts {
+  /** Review event verdict. Maps to GitHub's APPROVE / REQUEST_CHANGES / COMMENT. */
+  event: 'approve' | 'request_changes' | 'comment';
+  /** Review body, plain text or markdown. */
+  body: string;
+  /** Optional inline comments. Empty/unset is fine. */
+  comments?: InlineReviewComment[];
+}
+
 export interface PullRequestFile {
   path: string;
   /** Source path when the file was renamed; null otherwise. */
@@ -84,6 +104,25 @@ export interface VcsProvider {
 
   openPullRequest(repo: ConnectedRepoRef, opts: PullRequestOpts): Promise<PullRequest>;
   commentOnPullRequest(repo: ConnectedRepoRef, prNumber: number, body: string): Promise<void>;
+  /**
+   * Post a structured PR review (#419, V2.al). Used by the runner to
+   * surface the reviewer agent's verdict natively in GitHub so human
+   * reviewers see it in the PR's Reviews tab rather than only in the
+   * mergecrew UI. Adapters that don't support PR reviews (Gitea,
+   * GitLab today) log a warning and resolve. The runner treats the
+   * call as best-effort and never blocks the run on a failure here.
+   */
+  postReview(
+    repo: ConnectedRepoRef,
+    prNumber: number,
+    opts: PostReviewOpts,
+  ): Promise<void>;
+  /**
+   * Flip a draft PR to ready-for-review (#419, V2.al). Adapters that
+   * don't support this (Gitea, GitLab today) log a warning. Called by
+   * the runner only after the reviewer agent verdict is 'approve'.
+   */
+  markReadyForReview(repo: ConnectedRepoRef, prNumber: number): Promise<void>;
   mergePullRequest(repo: ConnectedRepoRef, prNumber: number, opts: MergeOpts): Promise<MergeResult>;
   revertPullRequest(repo: ConnectedRepoRef, prNumber: number): Promise<{ revertPrNumber: number }>;
   closePullRequest(repo: ConnectedRepoRef, prNumber: number): Promise<void>;

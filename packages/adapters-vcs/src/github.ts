@@ -9,6 +9,7 @@ import type {
   FileChangeStatus,
   MergeOpts,
   MergeResult,
+  PostReviewOpts,
   PullRequest,
   PullRequestFile,
   PullRequestOpts,
@@ -150,6 +151,66 @@ export class GitHubProvider implements VcsProvider {
     const kit = await this.kit(repo.installationId);
     const { owner, name } = parseRepo(repo.repoFullName);
     await kit.issues.createComment({ owner, repo: name, issue_number: prNumber, body });
+  }
+
+  async postReview(
+    repo: ConnectedRepoRef,
+    prNumber: number,
+    opts: PostReviewOpts,
+  ): Promise<void> {
+    const kit = await this.kit(repo.installationId);
+    const { owner, name } = parseRepo(repo.repoFullName);
+    // GitHub's review API takes uppercase events; map our union to it.
+    const event =
+      opts.event === 'approve'
+        ? 'APPROVE'
+        : opts.event === 'request_changes'
+          ? 'REQUEST_CHANGES'
+          : 'COMMENT';
+    await kit.pulls.createReview({
+      owner,
+      repo: name,
+      pull_number: prNumber,
+      event,
+      body: opts.body,
+      // Inline comments shape: { path, line, side: 'RIGHT', body }. We
+      // emit only post-image (RIGHT) comments — the reviewer agent
+      // points at the proposed code, not the pre-image. `comments` is
+      // intentionally omitted when empty so we don't trip GitHub's
+      // "comments must be a non-empty array if provided" validation.
+      ...(opts.comments && opts.comments.length > 0
+        ? {
+            comments: opts.comments.map((c) => ({
+              path: c.path,
+              line: c.line,
+              side: 'RIGHT' as const,
+              body: c.body,
+            })),
+          }
+        : {}),
+    });
+  }
+
+  async markReadyForReview(repo: ConnectedRepoRef, prNumber: number): Promise<void> {
+    const kit = await this.kit(repo.installationId);
+    const { owner, name } = parseRepo(repo.repoFullName);
+    // Need the PR's node_id for the GraphQL mutation. REST PR object
+    // exposes it on `data.node_id`.
+    const pr = await kit.pulls.get({ owner, repo: name, pull_number: prNumber });
+    const nodeId = pr.data.node_id;
+    if (!nodeId) {
+      // Shouldn't happen on any current GH response, but bail loudly
+      // rather than send an undefined into GraphQL.
+      throw new Error(`GitHub PR #${prNumber} missing node_id`);
+    }
+    await kit.graphql<{ markPullRequestReadyForReview: { pullRequest: { isDraft: boolean } } }>(
+      `mutation MarkReady($id: ID!) {
+        markPullRequestReadyForReview(input: { pullRequestId: $id }) {
+          pullRequest { isDraft }
+        }
+      }`,
+      { id: nodeId },
+    );
   }
 
   async mergePullRequest(

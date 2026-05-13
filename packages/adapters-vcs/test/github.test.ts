@@ -25,6 +25,7 @@ const kitMock = {
     list: vi.fn(),
     get: vi.fn(),
     listFiles: vi.fn(),
+    createReview: vi.fn(),
   },
   issues: {
     createComment: vi.fn(),
@@ -37,6 +38,7 @@ const kitMock = {
     const r = await method(opts);
     return r.data;
   }),
+  graphql: vi.fn(),
 };
 
 vi.mock('@octokit/auth-app', () => ({
@@ -134,6 +136,75 @@ describe('GitHubProvider — conformance (PR operations)', () => {
     expect(kitMock.issues.createComment).toHaveBeenCalledWith(
       expect.objectContaining({ issue_number: 42, body: 'a comment' }),
     );
+  });
+
+  it('postReview maps approve → APPROVE and forwards the body', async () => {
+    kitMock.pulls.createReview.mockResolvedValueOnce({ data: { id: 99 } });
+    await provider.postReview(repo, 42, { event: 'approve', body: 'looks good' });
+    expect(kitMock.pulls.createReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pull_number: 42,
+        event: 'APPROVE',
+        body: 'looks good',
+      }),
+    );
+    // No comments → comments key must NOT be present (GitHub rejects [] arrays).
+    const call = kitMock.pulls.createReview.mock.calls[0]![0] as Record<string, unknown>;
+    expect('comments' in call).toBe(false);
+  });
+
+  it('postReview maps request_changes → REQUEST_CHANGES and forwards inline comments', async () => {
+    kitMock.pulls.createReview.mockResolvedValueOnce({ data: { id: 100 } });
+    await provider.postReview(repo, 42, {
+      event: 'request_changes',
+      body: 'see inline',
+      comments: [
+        { path: 'src/index.ts', line: 12, body: 'off-by-one' },
+        { path: 'src/util.ts', line: 7, body: 'unused import' },
+      ],
+    });
+    expect(kitMock.pulls.createReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pull_number: 42,
+        event: 'REQUEST_CHANGES',
+        body: 'see inline',
+        comments: [
+          { path: 'src/index.ts', line: 12, side: 'RIGHT', body: 'off-by-one' },
+          { path: 'src/util.ts', line: 7, side: 'RIGHT', body: 'unused import' },
+        ],
+      }),
+    );
+  });
+
+  it('postReview maps comment → COMMENT', async () => {
+    kitMock.pulls.createReview.mockResolvedValueOnce({ data: { id: 101 } });
+    await provider.postReview(repo, 42, { event: 'comment', body: 'fyi' });
+    expect(kitMock.pulls.createReview).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'COMMENT', body: 'fyi' }),
+    );
+  });
+
+  it('markReadyForReview fetches the PR node_id and fires the GraphQL mutation', async () => {
+    kitMock.pulls.get.mockResolvedValueOnce({
+      data: { number: 42, node_id: 'PR_kwDOFakeNode' },
+    });
+    kitMock.graphql.mockResolvedValueOnce({
+      markPullRequestReadyForReview: { pullRequest: { isDraft: false } },
+    });
+    await provider.markReadyForReview(repo, 42);
+    expect(kitMock.pulls.get).toHaveBeenCalledWith(
+      expect.objectContaining({ pull_number: 42 }),
+    );
+    expect(kitMock.graphql).toHaveBeenCalledWith(
+      expect.stringContaining('markPullRequestReadyForReview'),
+      expect.objectContaining({ id: 'PR_kwDOFakeNode' }),
+    );
+  });
+
+  it('markReadyForReview throws when GitHub omits node_id (defensive)', async () => {
+    kitMock.pulls.get.mockResolvedValueOnce({ data: { number: 42 } });
+    await expect(provider.markReadyForReview(repo, 42)).rejects.toThrow(/node_id/);
+    expect(kitMock.graphql).not.toHaveBeenCalled();
   });
 
   it('closePullRequest sends a state=closed update', async () => {
