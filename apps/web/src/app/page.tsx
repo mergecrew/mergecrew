@@ -2,6 +2,9 @@ import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/session';
 import { api } from '@/lib/api';
 import { LinkButton } from '@/components/ui';
+import { PreOrgNav } from '@/components/pre-org-nav';
+import { CreateOrgForm } from '@/components/create-org-form';
+import { createOrgAction } from './orgs/new/actions';
 
 export default async function RootPage() {
   const session = await getSession();
@@ -18,13 +21,51 @@ export default async function RootPage() {
 
   if (!firstSlug) {
     return (
-      <main className="mx-auto max-w-2xl p-12">
-        <h1 className="text-2xl font-semibold">Welcome to Mergecrew</h1>
-        <p className="mt-2 text-zinc-500">Create your first organization to begin.</p>
-        <div className="mt-6">
-          <LinkButton href="/orgs/new" variant="primary">Create organization</LinkButton>
-        </div>
-      </main>
+      <div className="min-h-screen bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+        <PreOrgNav />
+        <main className="mx-auto max-w-3xl px-6 py-16">
+          <h1 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
+            You&apos;re in. Let&apos;s set up your first org.
+          </h1>
+          <p className="mt-3 text-zinc-600 dark:text-zinc-400">
+            An organization is your workspace in Mergecrew — it holds your projects,
+            scheduled lifecycles, LLM provider keys, and budgets. Every org is isolated
+            at the database level (Postgres row-level security), so you can safely run
+            multiple unrelated codebases under one account.
+          </p>
+          <div className="mt-10 rounded-lg border bg-[rgb(var(--card))] p-6 shadow-sm">
+            <CreateOrgForm action={createOrgAction} />
+          </div>
+          <section className="mt-10 rounded-lg border border-sky-200 bg-sky-50/50 p-5 dark:border-sky-700/40 dark:bg-sky-950/30">
+            <h2 className="font-medium">What you get next</h2>
+            <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-zinc-700 dark:text-zinc-200">
+              <li>
+                A seeded <code className="font-mono text-xs">acme</code> demo project with a completed multi-agent run and a sample changeset.
+              </li>
+              <li>
+                A one-click <strong>Try a sample run</strong> button on your Today page.
+              </li>
+              <li>
+                An onboarding wizard for LLM provider → repo → deploy target → lifecycle template.
+              </li>
+              <li>
+                Four stock lifecycle templates (<code className="font-mono text-xs">generic-careful</code>, <code className="font-mono text-xs">nextjs-vercel</code>, <code className="font-mono text-xs">python-render</code>, <code className="font-mono text-xs">go-fly</code>).
+              </li>
+            </ul>
+            <a
+              href="https://github.com/mergecrew/mergecrew/blob/main/docs/00-quickstart.md"
+              target="_blank"
+              rel="noreferrer"
+              className="mt-3 inline-block text-sm font-medium text-sky-700 underline hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-100"
+            >
+              5-minute quickstart →
+            </a>
+          </section>
+          <p className="mt-6 text-xs text-zinc-500">
+            Running locally with <code className="font-mono">docker compose up</code>? Demo mode routes every agent step through a deterministic stub — no LLM keys needed to see the full loop end-to-end.
+          </p>
+        </main>
+      </div>
     );
   }
 
