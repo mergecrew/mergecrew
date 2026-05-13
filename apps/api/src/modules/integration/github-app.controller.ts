@@ -36,7 +36,7 @@ export class GitHubAppController {
     const u = this.tenant.user();
     if (!u) throw new UnauthorizedException();
     if (!org) throw new UnauthorizedException('missing org');
-    const slug = process.env.GITHUB_APP_SLUG ?? 'mergecrew-app';
+    const slug = process.env.GITHUB_APP_SLUG ?? 'mergecrew';
     const state = signState({
       userId: u.userId,
       orgSlug: org,

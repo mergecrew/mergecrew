@@ -115,7 +115,7 @@ export default async function LoginPage({
           action={async () => {
             'use server';
             await clearSignedOutCookie();
-            await signIn('github');
+            await signIn('github', { redirectTo: '/' });
           }}
         >
           <Button variant="secondary" className="w-full">Continue with GitHub</Button>
@@ -124,7 +124,7 @@ export default async function LoginPage({
           action={async () => {
             'use server';
             await clearSignedOutCookie();
-            await signIn('google');
+            await signIn('google', { redirectTo: '/' });
           }}
         >
           <Button variant="secondary" className="w-full">Continue with Google</Button>
