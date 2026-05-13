@@ -1,39 +1,22 @@
-import { redirect } from 'next/navigation';
-import { api } from '@/lib/api';
-import { requireSession } from '@/lib/session';
-import { Card, Button } from '@/components/ui';
+import { PreOrgNav } from '@/components/pre-org-nav';
+import { CreateOrgForm } from '@/components/create-org-form';
+import { createOrgAction } from './actions';
 
-async function createAction(formData: FormData) {
-  'use server';
-  const name = String(formData.get('name') ?? '').trim();
-  const slug = String(formData.get('slug') ?? '').trim();
-  if (!name || !slug) return;
-  const session = await requireSession();
-  await api(`/v1/orgs`, {
-    method: 'POST',
-    body: JSON.stringify({ name, slug }),
-    session,
-  });
-  redirect(`/orgs/${slug}`);
-}
+export const dynamic = 'force-dynamic';
 
 export default function NewOrgPage() {
   return (
-    <main className="mx-auto max-w-md p-12 space-y-4">
-      <h1 className="text-xl font-semibold">Create an organization</h1>
-      <Card>
-        <form action={createAction} className="space-y-3">
-          <label className="block text-sm">
-            <span className="text-zinc-500">Org name</span>
-            <input name="name" required className="mt-1 block w-full rounded border px-3 py-2 bg-transparent" />
-          </label>
-          <label className="block text-sm">
-            <span className="text-zinc-500">Slug</span>
-            <input name="slug" required className="mt-1 block w-full rounded border px-3 py-2 bg-transparent font-mono" />
-          </label>
-          <div className="flex justify-end"><Button variant="primary">Create</Button></div>
-        </form>
-      </Card>
-    </main>
+    <div className="min-h-screen bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+      <PreOrgNav />
+      <main className="mx-auto max-w-xl px-6 py-16">
+        <h1 className="text-2xl font-semibold tracking-tight">Create an organization</h1>
+        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+          Each org is isolated — its own projects, LLM keys, budgets, and Postgres RLS scope.
+        </p>
+        <div className="mt-8 rounded-lg border bg-[rgb(var(--card))] p-6 shadow-sm">
+          <CreateOrgForm action={createOrgAction} />
+        </div>
+      </main>
+    </div>
   );
 }
