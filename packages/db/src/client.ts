@@ -3,10 +3,13 @@ import { Prisma, PrismaClient } from '@prisma/client';
 export type Tx = Prisma.TransactionClient;
 
 let _prisma: PrismaClient | null = null;
+let _systemPrisma: PrismaClient | null = null;
 
 /**
- * Returns the singleton PrismaClient. Use `withTenant()` for any tenant-scoped
- * query so that RLS sees a populated `app.org_id`.
+ * Returns the singleton PrismaClient for tenant-scoped queries. Use
+ * `withTenant()` for any tenant query so RLS sees a populated
+ * `app.org_id`. Connects via `DATABASE_URL` (the no-bypass `mergecrew_app`
+ * role in the canonical setup).
  */
 export function getPrisma(): PrismaClient {
   if (_prisma) return _prisma;
@@ -35,12 +38,34 @@ export async function withTenant<T>(
 }
 
 /**
+ * Returns a privileged PrismaClient for cross-tenant system queries —
+ * org creation, the auth middleware's org-by-slug lookup, listing all
+ * orgs a user belongs to, etc.
+ *
+ * Connects via `DATABASE_SYSTEM_URL` if set, otherwise `DATABASE_MIGRATE_URL`,
+ * otherwise falls back to `DATABASE_URL`. The canonical setup points
+ * those at the `mergecrew_migrator` role (`BYPASSRLS` per
+ * `infra/sql/init/00-roles.sql`); the fallback to the app role only
+ * works when that role is a superuser (e.g. local dev with
+ * `POSTGRES_USER=mergecrew`).
+ */
+export function getSystemPrisma(): PrismaClient {
+  if (_systemPrisma) return _systemPrisma;
+  const systemUrl = process.env.DATABASE_SYSTEM_URL ?? process.env.DATABASE_MIGRATE_URL;
+  _systemPrisma = systemUrl
+    ? new PrismaClient({
+        datasources: { db: { url: systemUrl } },
+        log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
+      })
+    : getPrisma();
+  return _systemPrisma;
+}
+
+/**
  * Run a callback bypassing RLS — for cross-tenant system jobs only.
- * The runtime asserts the caller is the migrator role; otherwise
- * the underlying connection still has RLS enforced and rows will
- * be invisible.
+ * Uses the privileged client returned by `getSystemPrisma()`, which
+ * connects with a `BYPASSRLS` role in the canonical setup.
  */
 export async function withSystem<T>(fn: (tx: PrismaClient) => Promise<T>): Promise<T> {
-  const prisma = getPrisma();
-  return fn(prisma);
+  return fn(getSystemPrisma());
 }
