@@ -21,6 +21,7 @@ import {
 // branch on three string literals.
 const REVIEWER_KIND = 'Reviewer';
 const CODER_KIND = 'Coder';
+import { emailEnabledFromEnv } from '@mergecrew/adapters-comms';
 import { syncLifecycleFromRepo } from './lifecycle-sync.js';
 import { dispatchSlackDigest } from './digest-slack.js';
 import { dispatchEmailDigest } from './digest-email.js';
@@ -1060,9 +1061,10 @@ export class Orchestrator {
       this.deps.logger.info({ projectId }, 'digest.dispatch: SLACK_BOT_TOKEN not set; skipping slack');
     }
 
-    // Email opt-in: SMTP_URL configured in any env, or DIGEST_EMAIL_ENABLED=1
-    // (the latter routes to the dev-mode console-logger inside EmailClient).
-    if (process.env.SMTP_URL || process.env.DIGEST_EMAIL_ENABLED === '1') {
+    // Email opt-in: SMTP_URL or RESEND_API_KEY configured in any env, or
+    // DIGEST_EMAIL_ENABLED=1 (the latter routes to the dev-mode console-
+    // logger inside EmailClient).
+    if (emailEnabledFromEnv() || process.env.DIGEST_EMAIL_ENABLED === '1') {
       await this.digestEmail.add(
         'digest.email',
         { organizationId, projectId, eod },
@@ -1070,7 +1072,10 @@ export class Orchestrator {
       );
       channels.push('email');
     } else {
-      this.deps.logger.info({ projectId }, 'digest.dispatch: email not enabled; skipping');
+      this.deps.logger.info(
+        { projectId },
+        'digest.dispatch: neither SMTP_URL nor RESEND_API_KEY set; skipping email',
+      );
     }
 
     await this.deps.eventlog.emit({

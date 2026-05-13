@@ -3,6 +3,8 @@ import { withTenant } from '@mergecrew/db';
 import {
   EmailClient,
   buildDigestEmail,
+  emailConfigFromEnv,
+  emailEnabledFromEnv,
   type DigestChangeset,
 } from '@mergecrew/adapters-comms';
 import { collectDigestAnomalies } from './digest-anomalies.js';
@@ -17,14 +19,15 @@ export async function dispatchEmailDigest(args: {
 }): Promise<void> {
   const { organizationId, projectId, eod, logger } = args;
 
-  const smtpUrl = process.env.SMTP_URL;
-  const from = process.env.MERGECREW_EMAIL_FROM ?? 'noreply@mergecrew.dev';
   const webBaseUrl = process.env.WEB_BASE_URL ?? 'http://localhost:3000';
-  if (!smtpUrl && process.env.NODE_ENV === 'production') {
-    logger.warn({ projectId }, 'digest.email: SMTP_URL not set in prod; skipping');
+  if (!emailEnabledFromEnv() && process.env.NODE_ENV === 'production') {
+    logger.warn(
+      { projectId },
+      'digest.email: neither SMTP_URL nor RESEND_API_KEY set in prod; skipping',
+    );
     return;
   }
-  const email = new EmailClient({ from, smtpUrl });
+  const email = new EmailClient(emailConfigFromEnv());
 
   const project = await withTenant(organizationId, (tx) =>
     tx.project.findUnique({
