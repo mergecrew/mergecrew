@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { api } from '@/lib/api';
+import { apiOr404 } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { hasRole } from '@/lib/role';
 import { Card, Chip } from '@/components/ui';
@@ -63,7 +63,7 @@ export default async function ChangesetDetail({
 }) {
   const { slug, projectSlug, csId } = await params;
   const session = await requireSession();
-  const cs = await api<any>(`/v1/orgs/${slug}/projects/${projectSlug}/changesets/${csId}`, { session });
+  const cs = await apiOr404<any>(`/v1/orgs/${slug}/projects/${projectSlug}/changesets/${csId}`, { session });
   const isAdmin = await hasRole(slug, session, 'admin');
   const canRollback = isAdmin && cs.status === 'promoted' && cs.prNumber && !cs.revertPrNumber;
   return (

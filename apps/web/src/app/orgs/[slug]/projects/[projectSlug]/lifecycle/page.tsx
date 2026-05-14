@@ -1,4 +1,4 @@
-import { api } from '@/lib/api';
+import { api, apiOr404 } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { hasRole } from '@/lib/role';
 import { Card } from '@/components/ui';
@@ -26,7 +26,7 @@ export default async function LifecyclePage({
   const { slug, projectSlug } = await params;
   const session = await requireSession();
   const [lc, catalog, canEdit, layout, stockTemplates] = await Promise.all([
-    api<{ version: number; sourceYaml: string; parsed: ParsedConfig }>(
+    apiOr404<{ version: number; sourceYaml: string; parsed: ParsedConfig }>(
       `/v1/orgs/${slug}/projects/${projectSlug}/lifecycle`,
       { session },
     ),

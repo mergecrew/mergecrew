@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { api } from '@/lib/api';
+import { api, apiOr404 } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { Card, Chip } from '@/components/ui';
 import { DiffView, type DiffFile, type CommentRecord } from './diff-view';
@@ -30,7 +30,7 @@ export default async function ChangesetDiffPage({
   const session = await requireSession();
 
   const [cs, diff, comments] = await Promise.all([
-    api<Changeset>(`/v1/orgs/${slug}/projects/${projectSlug}/changesets/${csId}`, { session }),
+    apiOr404<Changeset>(`/v1/orgs/${slug}/projects/${projectSlug}/changesets/${csId}`, { session }),
     api<DiffPayload>(`/v1/orgs/${slug}/projects/${projectSlug}/changesets/${csId}/diff`, {
       session,
     }).catch((e: any) => ({ error: String(e?.message ?? e) }) as { error: string }),

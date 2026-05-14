@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { api } from '@/lib/api';
+import { apiOr404 } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { Card, Chip } from '@/components/ui';
 
@@ -10,7 +10,7 @@ export default async function ChangesetsPage({
 }) {
   const { slug, projectSlug } = await params;
   const session = await requireSession();
-  const list = await api<{ items: any[] }>(
+  const list = await apiOr404<{ items: any[] }>(
     `/v1/orgs/${slug}/projects/${projectSlug}/changesets`,
     { session },
   );

@@ -201,4 +201,20 @@ if ! echo "$lc" | grep -q "Start from a stock template"; then
 fi
 echo "[quickstart-smoke] ✓ project Lifecycle page renders the stock template picker"
 
+# Missing-project handling (#435). Project- and lifecycle-pages historically
+# 500'd when the slug didn't resolve because the API's NotFoundError bubbled
+# up unhandled. Assert that hitting a non-existent slug now returns 404 from
+# Next so a stale link surfaces as a real 404 rather than a server error.
+nonexistent="does-not-exist-$(date +%s)"
+for path in \
+  "/orgs/${ORG_SLUG}/projects/${nonexistent}" \
+  "/orgs/${ORG_SLUG}/projects/${nonexistent}/lifecycle"; do
+  status=$(curl -s -o /dev/null -w '%{http_code}' "${WEB_URL}${path}")
+  if [ "$status" != "404" ]; then
+    echo "::error::expected 404 for ${path}, got ${status}"
+    exit 1
+  fi
+done
+echo "[quickstart-smoke] ✓ missing-project pages return 404, not 500"
+
 echo "[quickstart-smoke] All checks passed."

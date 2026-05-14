@@ -1,4 +1,4 @@
-import { api } from '@/lib/api';
+import { api, apiOr404 } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { hasRole } from '@/lib/role';
 import { Card } from '@/components/ui';
@@ -80,7 +80,7 @@ export default async function RunPage({
   const sp = (await searchParams) ?? {};
   const replayMode = sp.replayMode === '1' || sp.replayMode === 'true';
   const session = await requireSession();
-  const detail = await api<RunDetail>(
+  const detail = await apiOr404<RunDetail>(
     `/v1/orgs/${slug}/projects/${projectSlug}/runs/${runId}/full`,
     { session },
   );

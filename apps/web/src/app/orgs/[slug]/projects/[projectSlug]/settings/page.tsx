@@ -1,5 +1,5 @@
 import { revalidatePath } from 'next/cache';
-import { api } from '@/lib/api';
+import { api, apiOr404 } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { hasRole } from '@/lib/role';
 import { Card } from '@/components/ui';
@@ -29,7 +29,7 @@ export default async function ProjectSettings({
   const installedInstallationId =
     sp.from === 'github_install' && sp.installation_id ? sp.installation_id : null;
   const session = await requireSession();
-  const project = await api<{
+  const project = await apiOr404<{
     name: string;
     slug: string;
     description: string | null;

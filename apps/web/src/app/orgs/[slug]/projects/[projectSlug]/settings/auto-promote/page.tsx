@@ -1,5 +1,5 @@
 import { revalidatePath } from 'next/cache';
-import { api } from '@/lib/api';
+import { api, apiOr404 } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { hasRole } from '@/lib/role';
 import { Card } from '@/components/ui';
@@ -22,7 +22,7 @@ export default async function AutoPromotePage({
   const { slug, projectSlug } = await params;
   const session = await requireSession();
   const [{ rules }, canEdit] = await Promise.all([
-    api<{ rules: AutoPromoteRule[] }>(
+    apiOr404<{ rules: AutoPromoteRule[] }>(
       `/v1/orgs/${slug}/projects/${projectSlug}/auto-promote`,
       { session },
     ),

@@ -1,4 +1,4 @@
-import { api } from '@/lib/api';
+import { api, apiOr404 } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { Card } from '@/components/ui';
 
@@ -33,7 +33,7 @@ export default async function AgentsPage({
   const { slug, projectSlug } = await params;
   const session = await requireSession();
   const [lc, catalog] = await Promise.all([
-    api<{ parsed: { agents?: Record<string, AgentRow> } }>(
+    apiOr404<{ parsed: { agents?: Record<string, AgentRow> } }>(
       `/v1/orgs/${slug}/projects/${projectSlug}/lifecycle`,
       { session },
     ),

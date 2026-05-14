@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { api } from '@/lib/api';
+import { api, apiOr404 } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { Card, LinkButton, StatusDot, Chip } from '@/components/ui';
 import { OnboardingChecklist } from '@/components/onboarding-checklist';
@@ -55,7 +55,7 @@ export default async function ProjectOverview({
   const session = await requireSession();
 
   const [project, runsRes, changesetsRes, approvalsRes, schedule] = await Promise.all([
-    api<Project>(`/v1/orgs/${slug}/projects/${projectSlug}`, { session }),
+    apiOr404<Project>(`/v1/orgs/${slug}/projects/${projectSlug}`, { session }),
     safe(() =>
       api<{ items: Run[] }>(
         `/v1/orgs/${slug}/projects/${projectSlug}/runs?limit=5`,
