@@ -136,7 +136,7 @@ if [ -z "$wiz" ]; then
   exit 1
 fi
 # Page header copy is a stable, page-only marker.
-if ! echo "$wiz" | grep -q "Set up your org"; then
+if ! echo "$wiz" | grep -q "Set up your project"; then
   echo "::error::wizard page didn't render its header"
   exit 1
 fi
