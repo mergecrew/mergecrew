@@ -66,7 +66,7 @@ export function OrgSetupCard({
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">Welcome to mergecrew</span>
             <span className="rounded-full bg-sky-200/70 px-2 py-0.5 text-xs font-medium text-sky-900 dark:bg-sky-800/60 dark:text-sky-100">
-              {doneSteps} of {totalSteps} done
+              {`${doneSteps} of ${totalSteps} done`}
             </span>
           </div>
           <p className="text-sm text-zinc-600 dark:text-zinc-300">
