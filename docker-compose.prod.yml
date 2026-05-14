@@ -22,7 +22,7 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.api
-    image: mergecrew/api:latest
+    image: ghcr.io/mergecrew/api:${MERGECREW_TAG:-latest}
     profiles: [migrate]
     env_file: .env
     extra_hosts:
@@ -47,7 +47,7 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.api
-    image: mergecrew/api:latest
+    image: ghcr.io/mergecrew/api:${MERGECREW_TAG:-latest}
     container_name: mergecrew-api
     restart: unless-stopped
     env_file: .env
@@ -68,7 +68,7 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.orchestrator
-    image: mergecrew/orchestrator:latest
+    image: ghcr.io/mergecrew/orchestrator:${MERGECREW_TAG:-latest}
     container_name: mergecrew-orchestrator
     restart: unless-stopped
     env_file: .env
@@ -87,7 +87,7 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.runner
-    image: mergecrew/runner:latest
+    image: ghcr.io/mergecrew/runner:${MERGECREW_TAG:-latest}
     container_name: mergecrew-runner
     restart: unless-stopped
     env_file: .env
@@ -106,7 +106,7 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.worker-cron
-    image: mergecrew/worker-cron:latest
+    image: ghcr.io/mergecrew/worker-cron:${MERGECREW_TAG:-latest}
     container_name: mergecrew-worker-cron
     restart: unless-stopped
     env_file: .env
@@ -125,7 +125,7 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.web
-    image: mergecrew/web:latest
+    image: ghcr.io/mergecrew/web:${MERGECREW_TAG:-latest}
     container_name: mergecrew-web
     restart: unless-stopped
     env_file: .env
