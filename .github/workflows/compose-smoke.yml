@@ -81,7 +81,7 @@ jobs:
         env:
           MERGECREW_API_URL: http://localhost:4000
           MERGECREW_ORG_SLUG: demo
-          MERGECREW_PROJECT_SLUG: acme
+          MERGECREW_PROJECT_SLUG: demo-saas
           MERGECREW_RUN_TIMEOUT_MS: '90000'
         run: |
           export MERGECREW_API_KEY="$MERGECREW_E2E_LOCAL_API_KEY"
@@ -90,7 +90,7 @@ jobs:
         env:
           MERGECREW_API_URL: http://localhost:4000
           MERGECREW_ORG_SLUG: demo
-          MERGECREW_PROJECT_SLUG: acme
+          MERGECREW_PROJECT_SLUG: demo-saas
         run: |
           export MERGECREW_API_KEY="$MERGECREW_E2E_LOCAL_API_KEY"
           bash scripts/quickstart-demo-run-smoke.sh

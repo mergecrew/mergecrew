@@ -14,7 +14,7 @@ cd "$REPO_ROOT"
 
 COMPOSE_FILE="docker-compose.full.yml"
 ORG_SLUG="demo"
-PROJECT_SLUG="acme"
+PROJECT_SLUG="demo-saas"
 API_URL="http://localhost:4000"
 WAIT_TIMEOUT="${E2E_WAIT_TIMEOUT_SEC:-120}"
 
