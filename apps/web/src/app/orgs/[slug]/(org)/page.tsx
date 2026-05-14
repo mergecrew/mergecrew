@@ -3,8 +3,7 @@ import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { Card, StatusDot, LinkButton, Chip } from '@/components/ui';
 import { FirstRunEmptyState } from '@/components/first-run-empty-state';
-import { WelcomeCard } from '@/components/welcome-card';
-import { OnboardingBanner } from '@/components/onboarding-banner';
+import { OrgSetupCard } from '@/components/org-setup-card';
 import { relativeTime, runStatusToDot } from '@/lib/format';
 
 type Project = {
@@ -130,13 +129,12 @@ export default async function OrgHomePage({
         <span className="text-sm text-zinc-500">{new Date().toDateString()}</span>
       </header>
 
-      <WelcomeCard orgSlug={slug} hasDemoProject={projects.some((p) => p.slug === 'demo-saas')} />
-
       {onboardingRes && !onboardingRes.complete && (
-        <OnboardingBanner
+        <OrgSetupCard
           orgSlug={slug}
           totalSteps={onboardingRes.steps.length}
           pendingSteps={onboardingRes.steps.filter((s) => s.status === 'pending').length}
+          demoProjectSlug={projects.find((p) => p.demo)?.slug ?? null}
         />
       )}
 
