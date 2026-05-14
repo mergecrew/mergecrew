@@ -31,7 +31,7 @@ console.log(data?.items);
 
 // Kick a manual run.
 await mc.POST('/v1/orgs/{slug}/projects/{projectSlug}/runs', {
-  params: { path: { slug: 'demo', projectSlug: 'acme' } },
+  params: { path: { slug: 'demo', projectSlug: 'demo-saas' } },
 });
 ```
 

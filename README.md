@@ -8,7 +8,7 @@
 
 Mergecrew is the open-source platform for running an **agentic software development lifecycle** — multi-agent product teams that operate on a daily cadence against your real repo, deploy automatically to your dev environment, and require an explicit human approval before anything ships to prod.
 
-> **Try it in 5 minutes:** `docker compose -f docker-compose.full.yml up`, open `http://localhost:3000`, click **Try a sample run** on the welcome card. The full walkthrough lives in [docs/00-quickstart.md](docs/00-quickstart.md).
+> **Try it in 5 minutes:** `docker compose -f docker-compose.full.yml up`, open `http://localhost:3000`. You land directly in the seeded `demo-saas` project — a guided coachmark tour walks you through the completed sample run, then drops you in the wizard when you click **Set up your own project →**. Full walkthrough: [docs/00-quickstart.md](docs/00-quickstart.md).
 
 ### What you get on first boot
 
@@ -170,7 +170,7 @@ pnpm db:seed
 The seed creates:
 - Organization `demo` (slug)
 - User `demo@mergecrew.local` with role `owner`
-- Project `acme` with a default lifecycle (`mergecrew.yaml`) and ~8 agents
+- Project `demo-saas` with a default lifecycle (`mergecrew.yaml`) and ~8 agents — flagged `demo=true` (read-only outside `MERGECREW_DEMO_MODE`)
 
 > The `pnpm db:*` and `pnpm dev` scripts auto-load `.env` via `dotenv-cli`. If you invoke `prisma` directly outside pnpm, prefix with `pnpm exec dotenv -e .env -- prisma …` so the connection URLs are visible.
 
@@ -234,10 +234,10 @@ curl -sS -X POST http://localhost:4000/v1/orgs/demo/llm/profiles \
   -d "{\"name\":\"local\",\"preferenceOrder\":[\"$PID/qwen3:0.6b\"],\"capabilityRouting\":{}}"
 
 # 3. Trigger a daily run
-curl -sS -X POST http://localhost:4000/v1/orgs/demo/projects/acme/runs -H "$H" -d '{}'
+curl -sS -X POST http://localhost:4000/v1/orgs/demo/projects/demo-saas/runs -H "$H" -d '{}'
 ```
 
-The run takes ~50 seconds on Ollama qwen3:0.6b. Watch it progress at <http://localhost:3000/orgs/demo/projects/acme/timeline>.
+The run takes ~50 seconds on Ollama qwen3:0.6b. Watch it progress at <http://localhost:3000/orgs/demo/projects/demo-saas/timeline>.
 
 To inspect run state directly:
 
