@@ -2,7 +2,7 @@ import { revalidatePath } from 'next/cache';
 import { api, apiOr404 } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { hasRole } from '@/lib/role';
-import { Card } from '@/components/ui';
+import { Card, LinkButton } from '@/components/ui';
 import { GeneralForm } from './general-form';
 import { RepoForm } from './repo-form';
 import { TrackerForm } from './tracker-form';
@@ -34,6 +34,7 @@ export default async function ProjectSettings({
     slug: string;
     description: string | null;
     archivedAt: string | null;
+    demo: boolean;
     dryRun: boolean;
     maxFilesChanged: number;
     maxLinesChanged: number;
@@ -119,6 +120,25 @@ export default async function ProjectSettings({
     } catch {
       // Swallow — RepoForm degrades to free-text inputs.
     }
+  }
+
+  if (project.demo) {
+    return (
+      <main className="mx-auto max-w-3xl space-y-6 p-6">
+        <h1 className="text-xl font-semibold">Settings</h1>
+        <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-700/40 dark:bg-amber-950/30">
+          <div className="space-y-3">
+            <div className="font-medium">This is a read-only demo project</div>
+            <p className="text-sm text-zinc-600 dark:text-zinc-300">
+              Demo settings can&apos;t be edited. Set up your own project to wire a repo, deploy target, schedule, and the rest.
+            </p>
+            <LinkButton href={`/orgs/${slug}/onboarding`} variant="primary">
+              Set up your own project →
+            </LinkButton>
+          </div>
+        </Card>
+      </main>
+    );
   }
 
   return (

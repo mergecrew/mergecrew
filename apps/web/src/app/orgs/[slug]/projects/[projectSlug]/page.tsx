@@ -11,6 +11,7 @@ type Project = {
   slug: string;
   name: string;
   description?: string | null;
+  demo?: boolean;
   connectedRepo?: { repoFullName: string; defaultBranch: string } | null;
   deployTargets?: Array<{ kind: 'dev' | 'staging' | 'prod' }>;
 };
@@ -88,27 +89,49 @@ export default async function ProjectOverview({
   const hasDevTarget = (project.deployTargets ?? []).some((d) => d.kind === 'dev');
   const hasCompletedRun = runs.some((r) => r.status === 'done');
   const isPaused = !hasRepo || !hasDevTarget;
+  const isDemo = Boolean(project.demo);
 
   return (
     <main className="mx-auto max-w-5xl space-y-8 p-6">
-      <OnboardingChecklist
-        orgSlug={slug}
-        projectSlug={projectSlug}
-        hasRepo={hasRepo}
-        hasDevTarget={hasDevTarget}
-        // Project creation seeds a v1 lifecycle and the GET endpoint
-        // lazy-creates one too, so once the project exists this is
-        // effectively always true (#252 closes the silent-skip path
-        // for the theoretical "manually-deleted row" case).
-        hasLifecycle={true}
-        hasCompletedRun={hasCompletedRun}
-        lastSkippedAt={schedule?.lastSkippedAt ?? null}
-      />
+      {isDemo && (
+        <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-700/40 dark:bg-amber-950/30">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="font-medium">This is a read-only demo project</div>
+              <p className="text-sm text-zinc-600 dark:text-zinc-300">
+                Explore the seeded run, agent steps, and changeset. Set up your own project to trigger real runs.
+              </p>
+            </div>
+            <LinkButton href={`/orgs/${slug}/onboarding`} variant="primary">
+              Set up your own project →
+            </LinkButton>
+          </div>
+        </Card>
+      )}
+
+      {!isDemo && (
+        <OnboardingChecklist
+          orgSlug={slug}
+          projectSlug={projectSlug}
+          hasRepo={hasRepo}
+          hasDevTarget={hasDevTarget}
+          // Project creation seeds a v1 lifecycle and the GET endpoint
+          // lazy-creates one too, so once the project exists this is
+          // effectively always true (#252 closes the silent-skip path
+          // for the theoretical "manually-deleted row" case).
+          hasLifecycle={true}
+          hasCompletedRun={hasCompletedRun}
+          lastSkippedAt={schedule?.lastSkippedAt ?? null}
+        />
+      )}
 
 
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold">{project.name}</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-semibold">{project.name}</h1>
+            {isDemo && <Chip kind="medium">DEMO</Chip>}
+          </div>
           {project.description && (
             <p className="mt-1.5 max-w-2xl text-sm text-zinc-600 dark:text-zinc-400">
               {project.description}
@@ -125,16 +148,18 @@ export default async function ProjectOverview({
           <LinkButton href={`/orgs/${slug}/projects/${projectSlug}/digest`}>
             Today's digest
           </LinkButton>
-          <RunNowForm
-            orgSlug={slug}
-            projectSlug={projectSlug}
-            disabled={isPaused}
-            disabledReason={
-              !hasRepo
-                ? 'Connect a GitHub repo to enable runs'
-                : 'Add a dev deploy target to enable runs'
-            }
-          />
+          {!isDemo && (
+            <RunNowForm
+              orgSlug={slug}
+              projectSlug={projectSlug}
+              disabled={isPaused}
+              disabledReason={
+                !hasRepo
+                  ? 'Connect a GitHub repo to enable runs'
+                  : 'Add a dev deploy target to enable runs'
+              }
+            />
+          )}
         </div>
       </header>
 

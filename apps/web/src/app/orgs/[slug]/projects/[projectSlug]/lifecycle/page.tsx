@@ -25,11 +25,12 @@ export default async function LifecyclePage({
 }) {
   const { slug, projectSlug } = await params;
   const session = await requireSession();
-  const [lc, catalog, canEdit, layout, stockTemplates] = await Promise.all([
+  const [lc, project, catalog, canEdit, layout, stockTemplates] = await Promise.all([
     apiOr404<{ version: number; sourceYaml: string; parsed: ParsedConfig }>(
       `/v1/orgs/${slug}/projects/${projectSlug}/lifecycle`,
       { session },
     ),
+    apiOr404<{ demo?: boolean }>(`/v1/orgs/${slug}/projects/${projectSlug}`, { session }),
     api<{ items: SkillRow[] }>('/v1/skills', { session }),
     hasRole(slug, session, 'admin'),
     // V2.1 phase 2 (#195): persisted node positions, applied if present.
@@ -46,6 +47,7 @@ export default async function LifecyclePage({
 
   const scope: LifecycleScope = { kind: 'project', orgSlug: slug, projectSlug };
   const canEditOrOperator = await hasRole(slug, session, 'operator');
+  const isDemo = Boolean(project.demo);
 
   return (
     <main className="mx-auto max-w-4xl space-y-4 p-6">
@@ -66,7 +68,13 @@ export default async function LifecyclePage({
               Pre-built Planner / Coder / Reviewer setups tuned for common stacks. Applying a template replaces this project&apos;s lifecycle — the previous version is kept in the versions list.
             </p>
           </div>
-          <StockTemplatePicker scope={scope} templates={stockTemplates.items} />
+          {isDemo ? (
+            <p className="text-sm text-zinc-500">
+              Read-only on the demo project. Set up your own project to apply a template.
+            </p>
+          ) : (
+            <StockTemplatePicker scope={scope} templates={stockTemplates.items} />
+          )}
         </Card>
       )}
       <Card>
@@ -75,10 +83,10 @@ export default async function LifecyclePage({
           parsed={{ ...lc.parsed, version: lc.version }}
           sourceYaml={lc.sourceYaml ?? ''}
           catalog={catalog.items}
-          showApplyTemplate
-          readOnly={!canEdit}
+          showApplyTemplate={!isDemo}
+          readOnly={!canEdit || isDemo}
           graphLayout={layout.positions}
-          graphLayoutEditable={canEditOrOperator}
+          graphLayoutEditable={canEditOrOperator && !isDemo}
         />
       </Card>
     </main>

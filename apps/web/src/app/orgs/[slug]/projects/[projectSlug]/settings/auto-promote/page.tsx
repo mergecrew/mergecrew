@@ -21,13 +21,15 @@ export default async function AutoPromotePage({
 }) {
   const { slug, projectSlug } = await params;
   const session = await requireSession();
-  const [{ rules }, canEdit] = await Promise.all([
+  const [{ rules }, canEdit, project] = await Promise.all([
     apiOr404<{ rules: AutoPromoteRule[] }>(
       `/v1/orgs/${slug}/projects/${projectSlug}/auto-promote`,
       { session },
     ),
     hasRole(slug, session, 'operator'),
+    apiOr404<{ demo?: boolean }>(`/v1/orgs/${slug}/projects/${projectSlug}`, { session }),
   ]);
+  const isDemo = Boolean(project.demo);
 
   return (
     <main className="mx-auto max-w-3xl space-y-4 p-6">
@@ -42,7 +44,7 @@ export default async function AutoPromotePage({
       <Card>
         <AutoPromoteEditor
           initialRules={rules}
-          canEdit={canEdit}
+          canEdit={canEdit && !isDemo}
           onSave={async (next) => {
             'use server';
             try {
