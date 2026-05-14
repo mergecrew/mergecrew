@@ -66,27 +66,23 @@ export function WelcomeCard({
           <p className="text-sm text-zinc-600 dark:text-zinc-300">
             mergecrew runs an agentic development lifecycle against your repo on a daily cadence. Each run dispatches a planner → coder → reviewer chain and proposes a changeset for human approval.
           </p>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-zinc-700 dark:text-zinc-200">
-            <li>
-              <Link className="underline hover:text-sky-700 dark:hover:text-sky-300" href={`/orgs/${orgSlug}/projects/acme`}>
-                Open the seeded demo project
-              </Link>{' '}
-              to see a completed multi-agent run, its three agent steps, and the resulting changeset.
-            </li>
-            <li>
-              <Link className="underline hover:text-sky-700 dark:hover:text-sky-300" href={`/orgs/${orgSlug}/projects`}>
-                Projects
-              </Link>{' '}
-              is where you wire your own repo + deploy target.
-            </li>
-            <li>
-              The{' '}
-              <Link className="underline hover:text-sky-700 dark:hover:text-sky-300" href={`/orgs/${orgSlug}/projects/acme/lifecycle`}>
-                Lifecycle
-              </Link>{' '}
-              page edits the YAML that defines agents + workflows for a project.
-            </li>
-          </ul>
+          {hasDemoProject && (
+            <ul className="list-disc space-y-1 pl-5 text-sm text-zinc-700 dark:text-zinc-200">
+              <li>
+                <Link className="underline hover:text-sky-700 dark:hover:text-sky-300" href={`/orgs/${orgSlug}/projects/acme`}>
+                  Open the seeded demo project
+                </Link>{' '}
+                to see a completed multi-agent run, its three agent steps, and the resulting changeset.
+              </li>
+              <li>
+                The{' '}
+                <Link className="underline hover:text-sky-700 dark:hover:text-sky-300" href={`/orgs/${orgSlug}/projects/acme/lifecycle`}>
+                  Lifecycle
+                </Link>{' '}
+                page edits the YAML that defines agents + workflows for a project.
+              </li>
+            </ul>
+          )}
           {hasDemoProject && (
             <form
               action={(fd) => startTransition(() => triggerRunAction(fd))}
@@ -106,16 +102,6 @@ export function WelcomeCard({
               </span>
             </form>
           )}
-          <div className="text-sm">
-            <a
-              className="font-medium text-sky-700 underline hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-100"
-              href="https://github.com/mergecrew/mergecrew/blob/main/docs/00-quickstart.md"
-              target="_blank"
-              rel="noreferrer"
-            >
-              5-minute quickstart →
-            </a>
-          </div>
         </div>
         <button
           type="button"

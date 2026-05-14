@@ -52,14 +52,6 @@ export default async function RootPage() {
                 Four stock lifecycle templates (<code className="font-mono text-xs">generic-careful</code>, <code className="font-mono text-xs">nextjs-vercel</code>, <code className="font-mono text-xs">python-render</code>, <code className="font-mono text-xs">go-fly</code>).
               </li>
             </ul>
-            <a
-              href="https://github.com/mergecrew/mergecrew/blob/main/docs/00-quickstart.md"
-              target="_blank"
-              rel="noreferrer"
-              className="mt-3 inline-block text-sm font-medium text-sky-700 underline hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-100"
-            >
-              5-minute quickstart →
-            </a>
           </section>
           <p className="mt-6 text-xs text-zinc-500">
             Running locally with <code className="font-mono">docker compose up</code>? Demo mode routes every agent step through a deterministic stub — no LLM keys needed to see the full loop end-to-end.
