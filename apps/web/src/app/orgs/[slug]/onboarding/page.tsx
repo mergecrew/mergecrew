@@ -72,18 +72,24 @@ export default async function OnboardingPage({
 }) {
   const { slug } = await params;
   const session = await requireSession();
-  const state = await api<OnboardingState>(`/v1/orgs/${slug}/onboarding`, { session });
+  const [state, projects] = await Promise.all([
+    api<OnboardingState>(`/v1/orgs/${slug}/onboarding`, { session }),
+    api<{ items: Array<{ slug: string; demo: boolean }> }>(`/v1/orgs/${slug}/projects`, {
+      session,
+    }).catch(() => ({ items: [] as Array<{ slug: string; demo: boolean }> })),
+  ]);
 
+  const demoProject = projects.items.find((p) => p.demo) ?? null;
   const activeIndex = state.steps.findIndex((s) => s.status === 'pending');
 
   return (
     <main className="mx-auto max-w-3xl space-y-6 p-6">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Set up your org</h1>
+      <header className="space-y-2">
+        <h1 className="text-2xl font-semibold">Set up your project</h1>
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Four steps from a fresh install to your first real agent run. The seeded demo project (
-          <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">acme</code>) is already wired
-          for demo mode — these steps cover your own project.
+          mergecrew runs a planner → coder → reviewer chain on your repo each day and proposes
+          changesets for approval. Five steps connect an LLM, a repo, and a dev deploy target so
+          the agents have somewhere to run.
         </p>
       </header>
 
@@ -173,6 +179,17 @@ export default async function OnboardingPage({
           );
         })}
       </ol>
+
+      {demoProject && !state.complete && (
+        <div className="text-center text-sm">
+          <Link
+            href={`/orgs/${slug}/projects/${demoProject.slug}`}
+            className="text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
+          >
+            Or skip for now — explore the demo project →
+          </Link>
+        </div>
+      )}
     </main>
   );
 }
