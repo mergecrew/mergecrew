@@ -32,7 +32,14 @@ env:
 jobs:
   build-and-push:
     if: ${{ vars.VM_DEPLOY_ENABLED == 'true' || github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-latest
+    # Defaults assume the target VM is AWS Graviton (linux/arm64) and use
+    # GitHub's ARM-native runner so there's no QEMU overhead. Adopters on
+    # amd64 hosts can override via repo variables:
+    #   VM_BUILD_RUNNER   = ubuntu-latest               (or any runs-on label)
+    #   VM_BUILD_PLATFORM = linux/amd64                 (single arch)
+    #                     | linux/amd64,linux/arm64    (multi-arch; needs QEMU,
+    #                                                   which is set up below)
+    runs-on: ${{ vars.VM_BUILD_RUNNER || 'ubuntu-24.04-arm' }}
     strategy:
       fail-fast: false
       matrix:
@@ -51,6 +58,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Only needed when building for a platform other than the runner's
+      # native arch (e.g. amd64 runner producing an arm64 image, or any
+      # multi-arch build). No-op when platforms == runner arch.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -60,6 +73,7 @@ jobs:
           context: .
           file: infra/docker/Dockerfile.${{ matrix.service }}
           push: true
+          platforms: ${{ vars.VM_BUILD_PLATFORM || 'linux/arm64' }}
           tags: |
             ${{ env.IMAGE_NAMESPACE }}/${{ matrix.service }}:${{ steps.tag.outputs.image_tag }}
             ${{ env.IMAGE_NAMESPACE }}/${{ matrix.service }}:latest
