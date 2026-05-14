@@ -40,7 +40,7 @@ export default async function RootPage() {
             <h2 className="font-medium">What you get next</h2>
             <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-zinc-700 dark:text-zinc-200">
               <li>
-                A seeded <code className="font-mono text-xs">acme</code> demo project with a completed multi-agent run and a sample changeset.
+                A seeded <code className="font-mono text-xs">demo-saas</code> demo project with a completed multi-agent run and a sample changeset.
               </li>
               <li>
                 A one-click <strong>Try a sample run</strong> button on your Today page.

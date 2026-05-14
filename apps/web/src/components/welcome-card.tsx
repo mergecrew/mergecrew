@@ -6,7 +6,7 @@ import { Card } from './ui';
 import { triggerRunAction } from './runs-actions';
 
 const STORAGE_KEY = 'mergecrew:welcome-dismissed';
-const DEMO_PROJECT_SLUG = 'acme';
+const DEMO_PROJECT_SLUG = 'demo-saas';
 
 /**
  * First-visit welcome card on the Today page (#363, V2.af).
@@ -24,10 +24,10 @@ export function WelcomeCard({
 }: {
   orgSlug: string;
   /**
-   * True when the seeded demo project (\`acme\`) is reachable in this
-   * org — gates the "Try a sample run" CTA so fresh stacks without
-   * the demo seed (rare, but possible if MERGECREW_DEMO_MODE was off
-   * at seed time) don't render a button that points nowhere.
+   * True when the seeded demo project (\`demo-saas\`) is reachable in
+   * this org. Gates the demo bullets + "Try a sample run" CTA so fresh
+   * orgs without a seeded demo (self-hosters who set
+   * \`MERGECREW_SEED_DEMO_PROJECT=0\`) don't render dead links.
    */
   hasDemoProject?: boolean;
 }) {
@@ -69,14 +69,14 @@ export function WelcomeCard({
           {hasDemoProject && (
             <ul className="list-disc space-y-1 pl-5 text-sm text-zinc-700 dark:text-zinc-200">
               <li>
-                <Link className="underline hover:text-sky-700 dark:hover:text-sky-300" href={`/orgs/${orgSlug}/projects/acme`}>
+                <Link className="underline hover:text-sky-700 dark:hover:text-sky-300" href={`/orgs/${orgSlug}/projects/demo-saas`}>
                   Open the seeded demo project
                 </Link>{' '}
                 to see a completed multi-agent run, its three agent steps, and the resulting changeset.
               </li>
               <li>
                 The{' '}
-                <Link className="underline hover:text-sky-700 dark:hover:text-sky-300" href={`/orgs/${orgSlug}/projects/acme/lifecycle`}>
+                <Link className="underline hover:text-sky-700 dark:hover:text-sky-300" href={`/orgs/${orgSlug}/projects/demo-saas/lifecycle`}>
                   Lifecycle
                 </Link>{' '}
                 page edits the YAML that defines agents + workflows for a project.

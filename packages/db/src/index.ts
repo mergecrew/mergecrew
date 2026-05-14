@@ -1,4 +1,10 @@
 export * from './client.js';
+export {
+  seedDemoProject,
+  DEMO_PROJECT_SLUG,
+  DEMO_PROJECT_NAME,
+  type SeedDemoProjectOptions,
+} from './demo-project-seed.js';
 export { Prisma } from '@prisma/client';
 export type {
   User,

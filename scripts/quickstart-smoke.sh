@@ -18,7 +18,7 @@ set -euo pipefail
 
 WEB_URL="${WEB_URL:-http://localhost:3000}"
 ORG_SLUG="${ORG_SLUG:-demo}"
-PROJECT_SLUG="${PROJECT_SLUG:-acme}"
+PROJECT_SLUG="${PROJECT_SLUG:-demo-saas}"
 
 echo "[quickstart-smoke] Waiting for web on ${WEB_URL}/healthz…"
 deadline=$(( $(date +%s) + 120 ))

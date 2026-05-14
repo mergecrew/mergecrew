@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { NotFoundError, ValidationError } from '@mergecrew/domain';
+import { seedDemoProject } from '@mergecrew/db';
 import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
 import { TelemetryService } from '../../common/telemetry.service.js';
@@ -17,6 +18,8 @@ function startOfUtcMonth(d: Date): Date {
 
 @Injectable()
 export class OrgService {
+  private readonly logger = new Logger(OrgService.name);
+
   constructor(
     private prisma: PrismaService,
     private tenant: TenantContextService,
@@ -52,6 +55,21 @@ export class OrgService {
     await this.prisma.withSystem((tx) =>
       tx.membership.create({ data: { organizationId: org.id, userId, role: 'owner' } }),
     );
+    // Seed the per-org read-only `demo-saas` project (#437) so the FTE
+    // has something to land in (#440) and the coachmark tour (#442) has
+    // anchors to attach to. Self-hosters who want a clean install set
+    // `MERGECREW_SEED_DEMO_PROJECT=0`. Failure is swallowed — the org
+    // create should not fail if the seed throws (the operator can
+    // always recreate from the wizard).
+    if (process.env.MERGECREW_SEED_DEMO_PROJECT !== '0') {
+      try {
+        await this.prisma.withSystem((tx) => seedDemoProject(tx, org.id));
+      } catch (err) {
+        this.logger.warn(
+          `failed to seed demo-saas for org ${org.slug}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
     // No-op unless this org later opts in to telemetry (#253). The
     // emit is fire-and-forget so a misconfigured transport can't
     // affect the create return path.
@@ -381,12 +399,12 @@ export class OrgService {
   /**
    * Onboarding checklist (#382, V2.ah). Computes the next-action state
    * for the org by inspecting existing DB rows — no separate progress
-   * tracker that could drift from reality. The seeded demo project
-   * (slug='acme') is filtered out so its pre-wired demo-mode rows
-   * don't mark per-project steps complete.
+   * tracker that could drift from reality. Demo projects (`demo=true`,
+   * #437) are filtered out so the seeded read-only `demo-saas` project
+   * doesn't mark per-project steps complete.
    *
    * Steps:
-   *   - llm_provider:    any non-stub LlmProvider on the org
+   *   - llm_provider:    any LlmProvider on the org
    *   - first_project:   any non-demo Project on the org
    *   - connected_repo:  the first non-demo project has a ConnectedRepo
    *   - deploy_target:   that same project has a dev DeployTarget
@@ -408,12 +426,12 @@ export class OrgService {
     const t = this.tenant.require();
     const data = await this.prisma.withTenant(t.organizationId, async (tx) => {
       const llm = await tx.llmProvider.count({ where: { organizationId: t.organizationId } });
-      // Order projects by createdAt asc, then pick the first non-demo
-      // (slug !== 'acme'). The demo project ships fully wired under
-      // MERGECREW_DEMO_MODE, so leaving it in would mark every step
-      // complete and hide the wizard for new installs.
+      // Order projects by createdAt asc, then pick the first non-demo.
+      // The seeded demo (#437) ships either pre-wired (MERGECREW_DEMO_MODE)
+      // or read-only (per-org createOrg seed); leaving it in would mark
+      // steps complete and hide the wizard.
       const projects = await tx.project.findMany({
-        where: { organizationId: t.organizationId, deletedAt: null, slug: { not: 'acme' } },
+        where: { organizationId: t.organizationId, deletedAt: null, demo: false },
         orderBy: { createdAt: 'asc' },
         select: {
           id: true,

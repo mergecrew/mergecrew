@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Demo-run smoke (#375, V2.ag). Runs AFTER the existing e2e-loop step
-# in compose-smoke — that step already triggers a run on demo/acme and
+# in compose-smoke — that step already triggers a run on demo/demo-saas and
 # polls it to completion under MERGECREW_AGENT_STUB=1 /
 # MERGECREW_DEMO_MODE=1. This script asserts the V2.ag-specific
 # artifact: the stub Coder synthesized a new Changeset row (#373), and
@@ -11,13 +11,13 @@
 #   MERGECREW_API_URL        (default http://localhost:4000)
 #   MERGECREW_API_KEY        required (operator-role bearer)
 #   MERGECREW_ORG_SLUG       (default demo)
-#   MERGECREW_PROJECT_SLUG   (default acme)
+#   MERGECREW_PROJECT_SLUG   (default demo-saas)
 #
 set -euo pipefail
 
 API_URL="${MERGECREW_API_URL:-http://localhost:4000}"
 ORG_SLUG="${MERGECREW_ORG_SLUG:-demo}"
-PROJECT_SLUG="${MERGECREW_PROJECT_SLUG:-acme}"
+PROJECT_SLUG="${MERGECREW_PROJECT_SLUG:-demo-saas}"
 API_KEY="${MERGECREW_API_KEY:?MERGECREW_API_KEY required}"
 
 base="${API_URL}/v1/orgs/${ORG_SLUG}/projects/${PROJECT_SLUG}"

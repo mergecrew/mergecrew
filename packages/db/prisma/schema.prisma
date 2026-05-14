@@ -227,6 +227,13 @@ model Project {
   /// the Graph schema in @mergecrew/domain on every write. Null
   /// otherwise. Operator-editable from project settings.
   graphYaml          String? @map("graph_yaml") @db.Text
+  /// Demo flag (#437). When true, this project is a read-only sample
+  /// seeded for FTE walkthroughs — its runs, changesets, and timeline
+  /// are illustrative. The API rejects mutations on demo projects (see
+  /// `assertNotDemo` in the project module) so the read-only invariant
+  /// holds even if the UI surfaces an action button. Seeded per-org on
+  /// createOrg when `MERGECREW_SEED_DEMO_PROJECT=1` (default on).
+  demo               Boolean @default(false)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
