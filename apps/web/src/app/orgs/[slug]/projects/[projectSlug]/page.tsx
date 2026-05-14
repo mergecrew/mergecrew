@@ -4,6 +4,7 @@ import { api, apiOr404 } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { Card, LinkButton, StatusDot, Chip } from '@/components/ui';
 import { OnboardingChecklist } from '@/components/onboarding-checklist';
+import { DemoProjectTour } from '@/components/demo-project-tour';
 import { relativeTime, runStatusToDot } from '@/lib/format';
 
 type Project = {
@@ -93,8 +94,12 @@ export default async function ProjectOverview({
 
   return (
     <main className="mx-auto max-w-5xl space-y-8 p-6">
+      {isDemo && <DemoProjectTour orgSlug={slug} />}
       {isDemo && (
-        <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-700/40 dark:bg-amber-950/30">
+        <Card
+          className="border-amber-200 bg-amber-50/50 dark:border-amber-700/40 dark:bg-amber-950/30"
+          data-tour="setup-cta"
+        >
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="font-medium">This is a read-only demo project</div>
@@ -102,9 +107,17 @@ export default async function ProjectOverview({
                 Explore the seeded run, agent steps, and changeset. Set up your own project to trigger real runs.
               </p>
             </div>
-            <LinkButton href={`/orgs/${slug}/onboarding`} variant="primary">
-              Set up your own project →
-            </LinkButton>
+            <div className="flex flex-wrap items-center gap-3">
+              <Link
+                href={`/orgs/${slug}/projects/${projectSlug}?tour=replay`}
+                className="text-sm text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
+              >
+                Replay tour
+              </Link>
+              <LinkButton href={`/orgs/${slug}/onboarding`} variant="primary">
+                Set up your own project →
+              </LinkButton>
+            </div>
           </div>
         </Card>
       )}
@@ -126,7 +139,7 @@ export default async function ProjectOverview({
       )}
 
 
-      <header className="flex flex-wrap items-start justify-between gap-3">
+      <header className="flex flex-wrap items-start justify-between gap-3" data-tour="project-header">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-semibold">{project.name}</h1>
@@ -164,7 +177,7 @@ export default async function ProjectOverview({
       </header>
 
       <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
-        <Card>
+        <Card data-tour="latest-run">
           <div className="text-xs uppercase tracking-wide text-zinc-500">Latest run</div>
           {latestRun ? (
             <div className="mt-2 flex items-center gap-2">
@@ -183,7 +196,7 @@ export default async function ProjectOverview({
             <div className="mt-2 text-sm text-zinc-500">No runs yet</div>
           )}
         </Card>
-        <Card>
+        <Card data-tour="approvals">
           <div className="text-xs uppercase tracking-wide text-zinc-500">Pending approvals</div>
           <div className="mt-2 flex items-center gap-2">
             <span className="text-2xl font-semibold">{approvals.length}</span>
@@ -197,7 +210,7 @@ export default async function ProjectOverview({
             )}
           </div>
         </Card>
-        <Card>
+        <Card data-tour="changesets">
           <div className="text-xs uppercase tracking-wide text-zinc-500">Open changesets</div>
           <div className="mt-2 flex items-center gap-2">
             <span className="text-2xl font-semibold">
@@ -319,6 +332,7 @@ export default async function ProjectOverview({
             href={`/orgs/${slug}/projects/${projectSlug}/lifecycle`}
             title="Lifecycle"
             sub="Workflow graph"
+            dataTour="manage-lifecycle"
           />
           <NavTile
             href={`/orgs/${slug}/projects/${projectSlug}/agents`}
@@ -341,9 +355,19 @@ export default async function ProjectOverview({
   );
 }
 
-function NavTile({ href, title, sub }: { href: string; title: string; sub: string }) {
+function NavTile({
+  href,
+  title,
+  sub,
+  dataTour,
+}: {
+  href: string;
+  title: string;
+  sub: string;
+  dataTour?: string;
+}) {
   return (
-    <Link href={href}>
+    <Link href={href} data-tour={dataTour}>
       <Card className="h-full transition-colors hover:border-accent">
         <div className="font-medium">{title}</div>
         <div className="text-sm text-zinc-500">{sub}</div>
