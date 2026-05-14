@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { api } from '@/lib/api';
+import { apiOr404 } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { Card, LinkButton } from '@/components/ui';
 
@@ -15,7 +15,7 @@ export default async function TimelinePage({
 }) {
   const { slug, projectSlug } = await params;
   const session = await requireSession();
-  const runs = await api<{ items: { id: string }[] }>(
+  const runs = await apiOr404<{ items: { id: string }[] }>(
     `/v1/orgs/${slug}/projects/${projectSlug}/runs?limit=1`,
     { session },
   );

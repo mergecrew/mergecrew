@@ -1,4 +1,4 @@
-import { api } from '@/lib/api';
+import { api, apiOr404 } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { Card, Chip, Button } from '@/components/ui';
 
@@ -9,7 +9,7 @@ export default async function DigestPage({
 }) {
   const { slug, projectSlug, date } = await params;
   const session = await requireSession();
-  const digest = await api<{ items: any[]; date: string; totalCost: number }>(
+  const digest = await apiOr404<{ items: any[]; date: string; totalCost: number }>(
     `/v1/orgs/${slug}/projects/${projectSlug}/digest/${date}`,
     { session },
   );
