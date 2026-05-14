@@ -41,26 +41,25 @@ if [ -z "$home" ]; then
   exit 1
 fi
 
-# Welcome card was wired in #363. The static text "Welcome to
-# mergecrew" is the only thing the smoke needs to grep for — if the
-# component renders, that string is in the HTML.
+# Merged OrgSetupCard (#441) replaces the old WelcomeCard +
+# OnboardingBanner pair. "Welcome to mergecrew" + the wizard CTA are
+# the stable copy — present whenever onboarding has pending steps,
+# which is always true for a fresh compose stack.
 if ! echo "$home" | grep -q "Welcome to mergecrew"; then
-  echo "::error::welcome card not present in /orgs/${ORG_SLUG}"
+  echo "::error::org setup card not present in /orgs/${ORG_SLUG}"
   echo "--- first 4 KB of body ---"
   echo "$home" | head -c 4096
   exit 1
 fi
-echo "[quickstart-smoke] ✓ welcome card present"
+echo "[quickstart-smoke] ✓ org setup card present"
 
-# Try-a-sample-run CTA (#406, V2.aj) — primary button on the welcome
-# card when the demo project is reachable. Greps on the visible copy.
-if ! echo "$home" | grep -q "Try a sample run"; then
-  echo "::error::welcome card missing the 'Try a sample run' CTA"
+if ! echo "$home" | grep -q "Continue setup"; then
+  echo "::error::org setup card missing the 'Continue setup' CTA"
   echo "--- first 8 KB of body ---"
   echo "$home" | head -c 8192
   exit 1
 fi
-echo "[quickstart-smoke] ✓ welcome card exposes the sample-run CTA"
+echo "[quickstart-smoke] ✓ org setup card exposes the wizard CTA"
 
 # End-to-end check (#407, #408, V2.aj): the runNow endpoint pre-creates
 # a DailyRun and returns its id; that id must resolve to a real
@@ -117,17 +116,15 @@ if ! echo "$cs" | grep -q "/healthz"; then
 fi
 echo "[quickstart-smoke] ✓ seeded sample changeset visible"
 
-# Onboarding banner (#384) on Today + wizard page renders (#383, #385).
-# Fresh stack has no operator-defined LLM provider, project, repo, or
-# deploy target, so at least one onboarding step must be pending and
-# the banner copy must be in the SSR'd /orgs/{slug} body.
-if ! echo "$home" | grep -q "Finish setting up your org"; then
-  echo "::error::onboarding banner not present on /orgs/${ORG_SLUG}"
+# Progress chip on the merged OrgSetupCard (#441). Fresh stack has
+# every step pending, so "of 5 done" is a stable substring.
+if ! echo "$home" | grep -q "of 5 done"; then
+  echo "::error::org setup card progress chip not present on /orgs/${ORG_SLUG}"
   echo "--- first 8 KB of body ---"
   echo "$home" | head -c 8192
   exit 1
 fi
-echo "[quickstart-smoke] ✓ onboarding banner present on Today"
+echo "[quickstart-smoke] ✓ org setup card shows progress"
 
 echo "[quickstart-smoke] GET ${WEB_URL}/orgs/${ORG_SLUG}/onboarding"
 wiz=$(curl -sf "${WEB_URL}/orgs/${ORG_SLUG}/onboarding" || true)
