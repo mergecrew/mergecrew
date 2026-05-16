@@ -32,6 +32,27 @@ export class TenantMiddleware implements NestMiddleware {
     if (!userId && typeof cookieUid === 'string') userId = cookieUid;
     if (!userId) throw new UnauthorizedException();
 
+    // Validate the JWT/header sub still references a real user. Without
+    // this check, a JWT minted before a `docker compose down -v` (signed
+    // with the same dev-secret but naming a now-deleted user) would fall
+    // through to a downstream Prisma P2003 — e.g. memberships_user_id_fkey
+    // on org create — surfacing as an unhandled 500 instead of a 401.
+    // Wrap in try/catch so a malformed-uuid JWT also normalizes to 401.
+    let userExists: { id: string } | null = null;
+    try {
+      userExists = await this.prisma.withSystem((tx) =>
+        tx.user.findUnique({ where: { id: userId }, select: { id: true } }),
+      );
+    } catch {
+      userExists = null;
+    }
+    if (!userExists) {
+      throw new UnauthorizedException({
+        code: 'STALE_SESSION',
+        message: 'session user no longer exists — sign in again',
+      });
+    }
+
     const m = req.path.match(/^\/v1\/orgs\/([^/]+)/);
     if (!m) {
       stampUserContextOnRequest(req, { userId });
