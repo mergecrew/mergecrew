@@ -29,6 +29,20 @@
         ]
       }
     },
+    "/v1/auth/whoami": {
+      "get": {
+        "operationId": "AuthController_whoami",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
     "/v1/orgs": {
       "get": {
         "operationId": "OrgController_list",
