@@ -5,6 +5,8 @@ import { requireSession } from '@/lib/session';
 import { Card, LinkButton, StatusDot, Chip } from '@/components/ui';
 import { OnboardingChecklist } from '@/components/onboarding-checklist';
 import { DemoProjectTour } from '@/components/demo-project-tour';
+import { PromoteDigest, type DigestChangeset } from '@/components/promote-digest';
+import type { PromoteRunSnapshot } from './settings/settings-actions';
 import { relativeTime, runStatusToDot } from '@/lib/format';
 
 type Project = {
@@ -60,7 +62,7 @@ export default async function ProjectOverview({
   const { slug, projectSlug } = await params;
   const session = await requireSession();
 
-  const [project, runsRes, changesetsRes, approvalsRes, schedule, orgOnboardingRes] =
+  const [project, runsRes, changesetsRes, approvalsRes, schedule, orgOnboardingRes, digestRes] =
     await Promise.all([
       apiOr404<Project>(`/v1/orgs/${slug}/projects/${projectSlug}`, { session }),
       safe(() =>
@@ -91,12 +93,24 @@ export default async function ProjectOverview({
       safe(() =>
         api<{ complete: boolean }>(`/v1/orgs/${slug}/onboarding`, { session }),
       ),
+      // Promote digest (#472). Bundles the ready-to-promote changesets,
+      // latest PromoteRun (for conflict surface), and the strategy kind
+      // (so the deferred-state branch can short-circuit).
+      safe(() =>
+        api<{
+          changesets: DigestChangeset[];
+          latestRun: PromoteRunSnapshot | null;
+          strategy: { kind: string } | null;
+        }>(`/v1/orgs/${slug}/projects/${projectSlug}/promote-digest`, { session }),
+      ),
     ]);
 
   const runs = runsRes?.items ?? [];
   const changesets = changesetsRes?.items ?? [];
   const approvals = approvalsRes?.items ?? [];
   const latestRun = runs[0];
+  const digest = digestRes;
+  const promotionConfigured = (digest?.strategy?.kind ?? 'deferred') !== 'deferred';
 
   const hasRepo = Boolean(project.connectedRepo);
   const hasDevTarget = (project.deployTargets ?? []).some((d) => d.kind === 'dev');
@@ -191,6 +205,39 @@ export default async function ProjectOverview({
           )}
         </div>
       </header>
+
+      {!isDemo && promotionConfigured && digest && (
+        <PromoteDigest
+          orgSlug={slug}
+          projectSlug={projectSlug}
+          changesets={digest.changesets}
+          latestRun={digest.latestRun}
+          basePrBranch={
+            project.connectedRepo?.basePrBranch?.trim() ||
+            project.connectedRepo?.defaultBranch ||
+            null
+          }
+        />
+      )}
+
+      {!isDemo && !promotionConfigured && (
+        <Card className="border-zinc-200 dark:border-zinc-700">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-0.5">
+              <div className="text-sm font-medium">Promotion not configured</div>
+              <p className="text-xs text-zinc-500">
+                Pick how dev graduates to prod in settings before the daily promote ritual lights up.
+              </p>
+            </div>
+            <LinkButton
+              href={`/orgs/${slug}/projects/${projectSlug}/settings`}
+              variant="secondary"
+            >
+              Configure promotion →
+            </LinkButton>
+          </div>
+        </Card>
+      )}
 
       <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <Card data-tour="latest-run">

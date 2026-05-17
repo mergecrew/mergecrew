@@ -45,6 +45,84 @@ export class PromoteService {
     private tenant: TenantContextService,
   ) {}
 
+  /**
+   * Bundle the promote digest UI needs in one round-trip: the
+   * promotable changesets, the latest PromoteRun (for conflict
+   * surface), and the project's strategy (for the deferred-state
+   * branch). Filter is strict: a row is promotable iff it has a
+   * merged PR (`prNumber` set), hasn't shipped (`lastPromoteRunId is
+   * null`), and hasn't been dropped (`droppedAt is null`). Status
+   * `dev_deployed` is the only state the cherry-pick engine can
+   * actually use — earlier states (`proposed`, `pr_open`, …) don't
+   * have a merge commit yet.
+   */
+  async digest(projectSlug: string): Promise<{
+    changesets: Array<{
+      id: string;
+      title: string;
+      whyParagraph: string | null;
+      prNumber: number | null;
+      prUrl: string | null;
+      branch: string;
+      riskChip: string | null;
+      updatedAt: string;
+    }>;
+    latestRun: PromoteRun | null;
+    strategy: { kind: string } | null;
+  }> {
+    const t = this.tenant.require();
+    const project = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.project.findFirst({
+        where: { slug: projectSlug, organizationId: t.organizationId, deletedAt: null },
+        select: { id: true, promotionStrategy: { select: { kind: true } } },
+      }),
+    );
+    if (!project) throw new NotFoundError();
+
+    const [rows, latestRun] = await this.prisma.withTenant(t.organizationId, async (tx) => {
+      const rs = await tx.changeset.findMany({
+        where: {
+          projectId: project.id,
+          status: 'dev_deployed',
+          lastPromoteRunId: null,
+          droppedAt: null,
+          prNumber: { not: null },
+        },
+        orderBy: { updatedAt: 'asc' },
+        select: {
+          id: true,
+          title: true,
+          whyParagraph: true,
+          prNumber: true,
+          prUrl: true,
+          branch: true,
+          riskChip: true,
+          updatedAt: true,
+        },
+      });
+      const run = await tx.promoteRun.findFirst({
+        where: { projectId: project.id },
+        orderBy: { createdAt: 'desc' },
+      });
+      return [rs, run] as const;
+    });
+
+    return {
+      changesets: rows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        whyParagraph: r.whyParagraph,
+        prNumber: r.prNumber,
+        prUrl: r.prUrl,
+        branch: r.branch,
+        riskChip: r.riskChip,
+        updatedAt: r.updatedAt.toISOString(),
+      })),
+      latestRun,
+      strategy: project.promotionStrategy ? { kind: project.promotionStrategy.kind } : null,
+    };
+  }
+
   async listRuns(projectSlug: string, limit = 20): Promise<PromoteRun[]> {
     const t = this.tenant.require();
     const project = await this.prisma.withTenant(t.organizationId, (tx) =>
