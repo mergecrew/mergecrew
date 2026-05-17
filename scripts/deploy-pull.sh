@@ -26,7 +26,7 @@ $COMPOSE --profile migrate run --rm migrate
 echo "==> Starting services"
 $COMPOSE up -d
 
-echo "==> Pruning dangling images"
-docker image prune -f >/dev/null
+echo "==> Pruning unused images"
+docker image prune -a -f >/dev/null
 
 $COMPOSE ps
