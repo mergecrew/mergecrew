@@ -14,6 +14,7 @@ export type {
   Project,
   ConnectedRepo,
   DeployTarget,
+  PromotionStrategy,
   Lifecycle,
   GatePolicy,
   DailyRun,

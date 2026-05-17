@@ -241,6 +241,7 @@ model Project {
   organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   connectedRepo     ConnectedRepo?
   deployTargets     DeployTarget[]
+  promotionStrategy PromotionStrategy?
   trackerTarget     TrackerTarget?
   errorTarget       ErrorTarget?
   secrets           ProjectSecret[]
@@ -287,6 +288,51 @@ enum DeployTargetKind {
   prod
 
   @@map("deploy_target_kind")
+}
+
+enum PromotionStrategyKind {
+  /// Release branch + auto-deploy. mergecrew pushes the cherry-picked
+  /// release branch; the user's existing CI fires on push.
+  auto_deploy
+  /// Release branch + manual workflow. mergecrew pushes; user clicks a
+  /// `workflow_dispatch` in GitHub (or mergecrew kicks it off if the
+  /// App has the Actions:write scope).
+  manual_workflow
+  /// Tag-driven. mergecrew tags the release branch HEAD with an
+  /// interpolated pattern; user's CI fires on tag.
+  tag_driven
+  /// Configure later. Wizard completes; project page surfaces a chip
+  /// where the Promote button would be, linking back to settings.
+  deferred
+
+  @@map("promotion_strategy_kind")
+}
+
+/// V1 promotion strategy per project (#470). Captures *how* the
+/// human-approved subset of dev changesets graduates to prod after the
+/// cherry-pick engine (#471) builds a release ref. Nullable fields are
+/// per-kind: `releaseBranch` for auto_deploy / manual_workflow,
+/// `workflow*` for manual_workflow, `tagPattern` for tag_driven,
+/// `prodUrl` for everything but `deferred`. Stricter validation lives
+/// in the API service rather than the schema so the picker UX can be
+/// edited without a migration each time.
+model PromotionStrategy {
+  id               String                @id @default(uuid()) @db.Uuid
+  organizationId   String                @map("organization_id") @db.Uuid
+  projectId        String                @unique @map("project_id") @db.Uuid
+  kind             PromotionStrategyKind
+  releaseBranch    String?               @map("release_branch")
+  workflowFilename String?               @map("workflow_filename")
+  envInputKey      String?               @map("env_input_key")
+  envInputValue    String?               @map("env_input_value")
+  tagPattern       String?               @map("tag_pattern")
+  prodUrl          String?               @map("prod_url")
+  createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("promotion_strategies")
 }
 
 model DeployTarget {

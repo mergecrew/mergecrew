@@ -10,6 +10,10 @@ import { ErrorTargetForm } from './error-target-form';
 import { ScheduleForm } from './schedule-form';
 import { InceptionForm } from './inception-form';
 import { DeployTargetForm, type DeployTargetRow } from './deploy-target-form';
+import {
+  PromotionStrategyForm,
+  type PromotionStrategy,
+} from './promotion-strategy-form';
 import { SmokeTestForm } from './smoke-test-form';
 import { DryRunForm } from './dry-run-form';
 import { BlastRadiusForm } from './blast-radius-form';
@@ -77,6 +81,10 @@ export default async function ProjectSettings({
   // Recent rollbacks for the Guardrails section (#289). Best-effort —
   // a fetch failure leaves the widget empty rather than blocking the
   // whole settings page.
+  const promotionStrategy = await api<PromotionStrategy | null>(
+    `/v1/orgs/${slug}/projects/${projectSlug}/promotion-strategy`,
+    { session },
+  ).catch(() => null);
   const recentRollbacks = await api<{
     items: Array<{
       id: string;
@@ -207,6 +215,22 @@ export default async function ProjectSettings({
           slug={slug}
           projectSlug={projectSlug}
           initial={targets.items}
+        />
+      </Section>
+
+      <Section
+        title="Promotion strategy"
+        description="How the human-approved subset of dev changesets graduates to prod. mergecrew cherry-picks approved changes onto a release ref; this picker controls what triggers your CI's prod deploy from that ref."
+      >
+        <PromotionStrategyForm
+          slug={slug}
+          projectSlug={projectSlug}
+          orgSlug={slug}
+          initial={promotionStrategy}
+          defaultReleaseBranch={
+            project.connectedRepo?.basePrBranch?.trim() ||
+            project.connectedRepo?.defaultBranch
+          }
         />
       </Section>
 

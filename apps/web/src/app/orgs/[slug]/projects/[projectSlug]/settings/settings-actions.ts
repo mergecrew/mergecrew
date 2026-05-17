@@ -113,6 +113,37 @@ export async function deleteDeployTargetAction(
   revalidatePath(`/orgs/${slug}/onboarding`);
 }
 
+export type PromotionStrategyKind =
+  | 'auto_deploy'
+  | 'manual_workflow'
+  | 'tag_driven'
+  | 'deferred';
+
+export interface PromotionStrategyInput {
+  kind: PromotionStrategyKind;
+  releaseBranch?: string | null;
+  workflowFilename?: string | null;
+  envInputKey?: string | null;
+  envInputValue?: string | null;
+  tagPattern?: string | null;
+  prodUrl?: string | null;
+}
+
+export async function upsertPromotionStrategyAction(
+  slug: string,
+  projectSlug: string,
+  input: PromotionStrategyInput,
+) {
+  const session = await requireSession();
+  await api(`/v1/orgs/${slug}/projects/${projectSlug}/promotion-strategy`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+    session,
+  });
+  revalidatePath(`/orgs/${slug}/projects/${projectSlug}/settings`);
+  revalidatePath(`/orgs/${slug}/onboarding`);
+}
+
 /**
  * V1.1 onboarding smoke test (#7): opens a no-op draft PR, dispatches
  * the dev deploy workflow, awaits completion, returns the resulting URL.

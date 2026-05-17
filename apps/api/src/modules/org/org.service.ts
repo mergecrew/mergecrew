@@ -404,10 +404,13 @@ export class OrgService {
    * doesn't mark per-project steps complete.
    *
    * Steps:
-   *   - llm_provider:    any LlmProvider on the org
-   *   - first_project:   any non-demo Project on the org
-   *   - connected_repo:  the first non-demo project has a ConnectedRepo
-   *   - deploy_target:   that same project has a dev DeployTarget
+   *   - llm_provider:       any LlmProvider on the org
+   *   - first_project:      any non-demo Project on the org
+   *   - connected_repo:     the first non-demo project has a ConnectedRepo
+   *   - deploy_target:      that same project has a dev DeployTarget
+   *   - promotion_strategy: that same project has a PromotionStrategy
+   *                         row (kind = deferred counts as complete)
+   *   - lifecycle_template: that project has a lifecycle past v1
    */
   async onboarding(orgSlug: string): Promise<{
     steps: Array<{
@@ -416,6 +419,7 @@ export class OrgService {
         | 'first_project'
         | 'connected_repo'
         | 'deploy_target'
+        | 'promotion_strategy'
         | 'lifecycle_template';
       label: string;
       status: 'complete' | 'pending';
@@ -438,6 +442,7 @@ export class OrgService {
           slug: true,
           connectedRepo: { select: { id: true } },
           deployTargets: { select: { kind: true }, where: { kind: 'dev' } },
+          promotionStrategy: { select: { kind: true } },
         },
         take: 1,
       });
@@ -478,6 +483,19 @@ export class OrgService {
         label: 'Add a dev deploy target',
         status:
           data.project && data.project.deployTargets.length > 0
+            ? ('complete' as const)
+            : ('pending' as const),
+        actionUrl: projectPath ? `${projectPath}/settings` : `/orgs/${orgSlug}/projects/new`,
+      },
+      {
+        key: 'promotion_strategy' as const,
+        label: 'Set the prod promotion strategy',
+        // Row existence is enough — `deferred` counts as complete so the
+        // wizard can advance (#470). The promote digest (#472) reads the
+        // kind to decide whether to render the Promote button or a
+        // "Promotion not configured" chip.
+        status:
+          data.project && data.project.promotionStrategy
             ? ('complete' as const)
             : ('pending' as const),
         actionUrl: projectPath ? `${projectPath}/settings` : `/orgs/${orgSlug}/projects/new`,
