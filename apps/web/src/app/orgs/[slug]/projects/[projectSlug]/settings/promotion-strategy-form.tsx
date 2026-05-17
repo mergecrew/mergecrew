@@ -49,6 +49,13 @@ const PRESETS: Array<{
     anchor: 'pattern-pc--tag-driven',
   },
   {
+    kind: 'single_env',
+    title: 'Single environment (no separate prod yet)',
+    blurb:
+      "When dev IS prod — pre-launch / pre-revenue projects with one environment. mergecrew runs no git on promote; the digest just lets you review what shipped or drop a bad change.",
+    anchor: 'pattern-pe--single-environment',
+  },
+  {
     kind: 'deferred',
     title: "I'll configure this later",
     blurb:
@@ -119,6 +126,7 @@ export function PromotionStrategyForm({
       payload.tagPattern = tagPattern.trim();
       payload.prodUrl = prodUrl.trim();
     }
+    // single_env + deferred submit `{kind}` only — no fields to carry.
     startTransition(async () => {
       try {
         await upsertPromotionStrategyAction(slug, projectSlug, payload);
@@ -236,6 +244,15 @@ export function PromotionStrategyForm({
             placeholder={prodUrlPlaceholder}
           />
         </div>
+      )}
+
+      {kind === 'single_env' && (
+        <p className="rounded border border-dashed p-3 text-xs text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
+          Nothing to fill out. The daily digest will surface what merged with a
+          single <span className="font-medium">Mark reviewed</span> action — no
+          release branch, no cherry-pick, no prod URL needed. Drop still opens a
+          revert PR on your base branch.
+        </p>
       )}
 
       {kind === 'deferred' && (

@@ -8,6 +8,7 @@ export type PromotionStrategyKind =
   | 'auto_deploy'
   | 'manual_workflow'
   | 'tag_driven'
+  | 'single_env'
   | 'deferred';
 
 export interface PromotionStrategyInput {
@@ -24,6 +25,7 @@ const VALID_KINDS = new Set<PromotionStrategyKind>([
   'auto_deploy',
   'manual_workflow',
   'tag_driven',
+  'single_env',
   'deferred',
 ]);
 
@@ -77,9 +79,12 @@ export class PromotionStrategyService {
     // Default releaseBranch to the connected repo's effective base
     // branch (#469) when the picker leaves it blank. Trunk-based teams
     // get `main`; branch-per-env teams get their `basePrBranch`.
+    // Skipped for kinds that don't carry a release branch: tag_driven
+    // synthesizes a tag, deferred and single_env have nothing to push.
     if (
       normalized.kind !== 'tag_driven' &&
       normalized.kind !== 'deferred' &&
+      normalized.kind !== 'single_env' &&
       !normalized.releaseBranch &&
       project.connectedRepo
     ) {
@@ -128,7 +133,8 @@ export class PromotionStrategyService {
   }
 
   private validateForKind(s: PromotionStrategyInput): void {
-    if (s.kind === 'deferred') return;
+    // deferred and single_env carry no required fields by design.
+    if (s.kind === 'deferred' || s.kind === 'single_env') return;
     if (s.kind === 'auto_deploy') {
       if (!s.prodUrl) throw new ValidationError('auto_deploy requires prodUrl');
     }

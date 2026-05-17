@@ -361,6 +361,7 @@ What triggers your prod deploy today?
 ├─ A push to my release branch fires CI    ─►  Pattern PA (auto_deploy, the wizard default)
 ├─ A manual workflow_dispatch in GitHub    ─►  Pattern PB (manual_workflow)
 ├─ A git tag (v1.2.3 / 2026-05-17.1)       ─►  Pattern PC (tag_driven)
+├─ I don't have a prod yet (one env)       ─►  Pattern PE (single_env)
 └─ I'll figure this out later              ─►  Pattern PD (deferred)
 ```
 
@@ -447,6 +448,34 @@ The pattern supports `${YYYY-MM-DD}` (UTC date at promote time) and `${shortSha}
 **What your CI does.** Fires on tag push. The agent reads the tag at deploy time and ships whatever commit it points at.
 
 **Required GitHub App scopes.** Contents:write (push tags), Pull requests:write.
+
+### Pattern PE — Single environment
+
+**Shape.** Your project has one environment. Pre-launch, pre-revenue, or any "merged to main = live" setup where the cost of constructing a separate prod hasn't paid for itself yet. The wizard's other patterns assume two distinct destinations and ask for a Prod URL you can't honestly fill in.
+
+You still want the daily ritual: review what the agents shipped overnight, drop the ones that shouldn't have landed. But there's no graduation to perform — what's on dev IS what's live.
+
+**PromotionStrategy config.**
+
+```jsonc
+{ "kind": "single_env" }
+```
+
+No fields. No release branch, no workflow filename, no tag pattern, no prod URL.
+
+**What mergecrew does on promote.** Nothing on the git side. The Promote button is relabeled **"Mark reviewed"**. Clicking it:
+
+1. Creates a `PromoteRun` with `status='completed'`, `releaseRef=null`.
+2. Stamps `lastPromoteRunId` on the approved changesets so they leave the digest.
+3. Writes an audit-log entry per accepted changeset (`changeset.accepted` action).
+
+**What your CI does.** Whatever it already did on merge to your base branch. mergecrew didn't touch it.
+
+**Drop.** Works exactly the same as every other pattern — opens a revert PR on your base branch via the GitHub App, marks the changeset hidden from future digests.
+
+**Required GitHub App scopes.** Same as everywhere else — Contents:write + Pull requests:write for the drop path. Actions / Workflows scopes are unnecessary since mergecrew doesn't dispatch anything for this kind.
+
+**Graduating later.** When you split envs, switch the strategy in **Settings → Promotion strategy** to one of PA / PB / PC. The accumulated digest history is preserved; only the *next* Promote starts using the new shape.
 
 ### Pattern PD — Deferred
 

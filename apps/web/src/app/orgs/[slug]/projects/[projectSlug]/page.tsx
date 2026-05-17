@@ -212,6 +212,7 @@ export default async function ProjectOverview({
           projectSlug={projectSlug}
           changesets={digest.changesets}
           latestRun={digest.latestRun}
+          strategyKind={digest.strategy?.kind ?? null}
           basePrBranch={
             project.connectedRepo?.basePrBranch?.trim() ||
             project.connectedRepo?.defaultBranch ||

@@ -117,6 +117,7 @@ export type PromotionStrategyKind =
   | 'auto_deploy'
   | 'manual_workflow'
   | 'tag_driven'
+  | 'single_env'
   | 'deferred';
 
 export interface PromotionStrategyInput {
