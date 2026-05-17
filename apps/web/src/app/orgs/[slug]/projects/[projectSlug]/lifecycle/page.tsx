@@ -26,7 +26,7 @@ export default async function LifecyclePage({
   const { slug, projectSlug } = await params;
   const session = await requireSession();
   const [lc, project, catalog, canEdit, layout, stockTemplates] = await Promise.all([
-    apiOr404<{ version: number; sourceYaml: string; parsed: ParsedConfig }>(
+    apiOr404<{ version: number; sourceYaml: string; parsed: ParsedConfig; name: string | null }>(
       `/v1/orgs/${slug}/projects/${projectSlug}/lifecycle`,
       { session },
     ),
@@ -60,34 +60,50 @@ export default async function LifecyclePage({
       </header>
       {canEdit && stockTemplates.items.length > 0 && (
         <Card>
-          <div className="mb-3">
-            <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
-              Start from a stock template
-            </h2>
-            <p className="mt-1 text-xs text-zinc-500">
-              Pre-built Planner / Coder / Reviewer setups tuned for common stacks. Applying a template replaces this project&apos;s lifecycle — the previous version is kept in the versions list.
-            </p>
+          <div className="mb-3 flex items-baseline justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
+                Template
+              </h2>
+              <p className="mt-1 text-xs text-zinc-500">
+                Pre-built Planner / Coder / Reviewer setups tuned for common stacks. Applying a
+                template replaces this project&apos;s lifecycle YAML — the previous version stays
+                in the versions list. Use <span className="font-medium">Apply &amp; customize</span> to
+                jump into the YAML editor after applying.
+              </p>
+            </div>
+            {lc.name && (
+              <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                Active: <span className="font-mono">{lc.name}</span>
+              </span>
+            )}
           </div>
           {isDemo ? (
             <p className="text-sm text-zinc-500">
               Read-only on the demo project. Set up your own project to apply a template.
             </p>
           ) : (
-            <StockTemplatePicker scope={scope} templates={stockTemplates.items} />
+            <StockTemplatePicker
+              scope={scope}
+              templates={stockTemplates.items}
+              activeTemplateId={lc.name}
+            />
           )}
         </Card>
       )}
       <Card>
-        <LifecycleEditor
-          scope={scope}
-          parsed={{ ...lc.parsed, version: lc.version }}
-          sourceYaml={lc.sourceYaml ?? ''}
-          catalog={catalog.items}
-          showApplyTemplate={!isDemo}
-          readOnly={!canEdit || isDemo}
-          graphLayout={layout.positions}
-          graphLayoutEditable={canEditOrOperator && !isDemo}
-        />
+        <div id="lifecycle-yaml-editor">
+          <LifecycleEditor
+            scope={scope}
+            parsed={{ ...lc.parsed, version: lc.version }}
+            sourceYaml={lc.sourceYaml ?? ''}
+            catalog={catalog.items}
+            showApplyTemplate={!isDemo}
+            readOnly={!canEdit || isDemo}
+            graphLayout={layout.positions}
+            graphLayoutEditable={canEditOrOperator && !isDemo}
+          />
+        </div>
       </Card>
     </main>
   );

@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   AutoPromoteRule,
   NotFoundError,
   ValidationError,
+  findStockLifecycleTemplate,
   parseAndValidateGraphYaml,
   type AutoPromoteRule as AutoPromoteRuleType,
 } from '@mergecrew/domain';
@@ -37,8 +38,12 @@ function isPlausibleCron(s: string): boolean {
   return parts.length === 5 || parts.length === 6;
 }
 
+const DEFAULT_STOCK_TEMPLATE_ID = 'generic-careful';
+
 @Injectable()
 export class ProjectService {
+  private readonly logger = new Logger(ProjectService.name);
+
   constructor(
     private prisma: PrismaService,
     private tenant: TenantContextService,
@@ -70,7 +75,9 @@ export class ProjectService {
     );
 
     // Seed an initial Lifecycle. If the org has a default template, use it;
-    // otherwise fall back to the built-in default config.
+    // otherwise fall back to the built-in default config. v1 always carries
+    // the `default-bootstrap` name (#480) so the audit chain reads cleanly
+    // when the operator later applies a stock template or hand-edits.
     const orgTemplate = await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.orgLifecycleTemplate.findFirst({
         where: { organizationId: t.organizationId, name: 'default' },
@@ -86,9 +93,41 @@ export class ProjectService {
           version: 1,
           sourceYaml,
           parsed,
+          name: 'default-bootstrap',
         },
       }),
     );
+
+    // Auto-apply the default stock template as v2 (#480). Removes the
+    // wizard's old "pick a template" friction — every new project
+    // starts in a known-good multi-agent state. Only fires when the
+    // org doesn't have its own `default` template (that one's
+    // already the right choice). Best-effort: if the stock template
+    // catalogue can't be resolved, we skip and leave v1 in place.
+    if (!orgTemplate) {
+      const stock = findStockLifecycleTemplate(DEFAULT_STOCK_TEMPLATE_ID);
+      if (stock) {
+        try {
+          await this.prisma.withTenant(t.organizationId, (tx) =>
+            tx.lifecycle.create({
+              data: {
+                organizationId: t.organizationId,
+                projectId: project.id,
+                version: 2,
+                sourceYaml: stock.sourceYaml,
+                parsed: stock.parsed as any,
+                name: stock.id,
+              },
+            }),
+          );
+        } catch (err) {
+          this.logger.warn(
+            { projectId: project.id, templateId: stock.id, err: (err as Error).message },
+            'create: default lifecycle template auto-apply failed; v1 bootstrap left in place',
+          );
+        }
+      }
+    }
 
     // Default schedule.
     await this.prisma.withTenant(t.organizationId, (tx) =>
