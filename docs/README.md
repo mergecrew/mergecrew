@@ -38,6 +38,7 @@ Documentation for contributors and operators of [Mergecrew](https://github.com/m
 5. [Deploy-target cookbook](03-infrastructure/06-deploy-targets-cookbook.md)
 6. [Anonymous usage telemetry](03-infrastructure/07-telemetry.md)
 7. [Single-VM deploy via GHCR](03-infrastructure/19-vm-deploy.md)
+8. [GitHub App setup](03-infrastructure/20-github-app-setup.md)
 
 ### 4 — Roadmap
 - [Vision-tier roadmap](04-roadmap.md). Tactical milestones live in [GitHub Issues](https://github.com/mergecrew/mergecrew/issues) and the [project board](https://github.com/orgs/mergecrew/projects).

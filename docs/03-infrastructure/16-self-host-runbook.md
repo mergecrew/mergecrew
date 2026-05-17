@@ -140,6 +140,8 @@ Each entry is symptom → likely cause → recovery → source of truth. If a sy
 
 **Likely cause.** Your GitHub App is installed on the target repo but doesn't have the permissions mergecrew needs.
 
+> First time setting up the App? Walk through [GitHub App setup](20-github-app-setup.md) — the Setup URL, webhook, and permissions are documented end-to-end there. If after install the user gets stuck on `github.com/.../settings/installations/<id>`, the App is missing its Setup URL.
+
 **Required permissions** (set under your GitHub App settings → Permissions → Repository permissions):
 
 | Permission | Access level |
