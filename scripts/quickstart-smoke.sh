@@ -152,16 +152,6 @@ if ! echo "$wiz" | grep -q "Add an LLM provider"; then
 fi
 echo "[quickstart-smoke] ✓ onboarding wizard renders the stepper"
 
-# Lifecycle template step (#395, V2.ai) — added as Step 5 alongside
-# the existing four. Fresh stack has no non-demo project, so the
-# action URL falls back to /projects/new, but the row + label must
-# render so operators see the eventual lifecycle step from day one.
-if ! echo "$wiz" | grep -q "Pick a lifecycle template"; then
-  echo "::error::wizard didn't render the lifecycle_template step"
-  exit 1
-fi
-echo "[quickstart-smoke] ✓ onboarding wizard exposes the lifecycle template step"
-
 # Stock lifecycle templates catalog (#393, V2.ai). Public endpoint, no
 # auth needed — the picker UI fetches it via SSR and via the wizard.
 # Asserts all four expected ids are present so a rename / accidental

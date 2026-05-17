@@ -12,15 +12,12 @@ import {
   PromotionStrategyForm,
   type PromotionStrategy,
 } from '../projects/[projectSlug]/settings/promotion-strategy-form';
-import { StockTemplatePicker, type StockTemplateSummary } from '@/components/lifecycle/stock-template-picker';
-
 type StepKey =
   | 'llm_provider'
   | 'first_project'
   | 'connected_repo'
   | 'deploy_target'
-  | 'promotion_strategy'
-  | 'lifecycle_template';
+  | 'promotion_strategy';
 
 interface OnboardingStep {
   key: StepKey;
@@ -47,8 +44,6 @@ const STEP_HELP: Record<StepKey, string> = {
     "Where merged PRs land. Most teams already have CI/CD wired up — paste the URL it deploys to and we're done. Need a different adapter (Vercel, Netlify, GitHub Actions dispatch, …)? Switch in project settings later.",
   promotion_strategy:
     "How does dev graduate to prod? Pick the shape that matches your existing pipeline. The cookbook has a worked example for each — link beside every option.",
-  lifecycle_template:
-    'Pick a stock Planner/Coder/Reviewer setup tuned for your stack (Next.js, Python, Go, or generic). One click installs it as your project lifecycle.',
 };
 
 interface ProjectListItem {
@@ -158,7 +153,7 @@ export default async function OnboardingPage({
   // installation-repos endpoint only when we have an installation id
   // (either from the GitHub round-trip query or from a saved connected
   // repo).
-  const [projectDetail, deployTargetsRes, stockTemplatesRes, promotionStrategy] = projectSlug
+  const [projectDetail, deployTargetsRes, promotionStrategy] = projectSlug
     ? await Promise.all([
         safe(() =>
           api<ProjectDetail>(`/v1/orgs/${slug}/projects/${projectSlug}`, { session }),
@@ -170,22 +165,16 @@ export default async function OnboardingPage({
           ),
         ),
         safe(() =>
-          api<{ items: StockTemplateSummary[] }>(`/v1/lifecycle-templates/stock`, {
-            session,
-          }),
-        ),
-        safe(() =>
           api<PromotionStrategy | null>(
             `/v1/orgs/${slug}/projects/${projectSlug}/promotion-strategy`,
             { session },
           ),
         ),
       ])
-    : [null, null, null, null];
+    : [null, null, null];
 
   const connectedRepo = projectDetail?.connectedRepo ?? null;
   const deployTargets = deployTargetsRes?.items ?? [];
-  const stockTemplates = stockTemplatesRes?.items ?? [];
 
   const lookupInstallationId =
     installedInstallationId ?? connectedRepo?.installationId ?? null;
@@ -294,16 +283,6 @@ export default async function OnboardingPage({
                       connectedRepo?.basePrBranch?.trim() ||
                       connectedRepo?.defaultBranch
                     }
-                  />
-                ) : (
-                  <BlockedBecauseNoProject />
-                );
-                break;
-              case 'lifecycle_template':
-                body = projectSlug ? (
-                  <StockTemplatePicker
-                    scope={{ kind: 'project', orgSlug: slug, projectSlug }}
-                    templates={stockTemplates}
                   />
                 ) : (
                   <BlockedBecauseNoProject />
