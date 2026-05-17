@@ -110,8 +110,31 @@ export function PromotionStrategyForm({
   const branchPlaceholder = defaultReleaseBranch || 'main';
   const prodUrlPlaceholder = `https://${orgSlug}.com`;
 
-  const onSave = () => {
+  // Belt-and-suspenders alongside the per-input `required` attributes:
+  // catches anyone who reaches `onSave` by other means (programmatic
+  // form submit, future Save-on-Enter wiring) so we never POST a
+  // payload the server is guaranteed to 400 on (#479).
+  const missingForKind = (): string | null => {
+    if (kind === 'auto_deploy' && !prodUrl.trim()) return 'Prod URL is required.';
+    if (kind === 'manual_workflow') {
+      if (!workflowFilename.trim()) return 'Workflow filename is required.';
+      if (!prodUrl.trim()) return 'Prod URL is required.';
+    }
+    if (kind === 'tag_driven') {
+      if (!tagPattern.trim()) return 'Tag pattern is required.';
+      if (!prodUrl.trim()) return 'Prod URL is required.';
+    }
+    return null;
+  };
+
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
     setError(null);
+    const missing = missingForKind();
+    if (missing) {
+      setError(missing);
+      return;
+    }
     const payload: PromotionStrategyInput = { kind };
     if (kind === 'auto_deploy') {
       payload.releaseBranch = releaseBranch.trim() || null;
@@ -130,14 +153,14 @@ export function PromotionStrategyForm({
     startTransition(async () => {
       try {
         await upsertPromotionStrategyAction(slug, projectSlug, payload);
-      } catch (e: any) {
-        setError(String(e?.message ?? e));
+      } catch (err: any) {
+        setError(String(err?.message ?? err));
       }
     });
   };
 
   return (
-    <div className="space-y-4">
+    <form className="space-y-4" onSubmit={onSubmit} noValidate={false}>
       <fieldset className="space-y-2">
         <legend className="sr-only">Promotion strategy</legend>
         {PRESETS.map((p) => (
@@ -187,6 +210,8 @@ export function PromotionStrategyForm({
             onChange={setProdUrl}
             placeholder={prodUrlPlaceholder}
             hint="Where the prod build is reachable after your CI deploys it."
+            required
+            type="url"
           />
         </div>
       )}
@@ -205,6 +230,7 @@ export function PromotionStrategyForm({
             onChange={setWorkflowFilename}
             placeholder="deploy-prod.yml"
             hint="A file in .github/workflows/."
+            required
           />
           <Field
             label="Env input key"
@@ -224,6 +250,8 @@ export function PromotionStrategyForm({
             value={prodUrl}
             onChange={setProdUrl}
             placeholder={prodUrlPlaceholder}
+            required
+            type="url"
           />
         </div>
       )}
@@ -236,12 +264,15 @@ export function PromotionStrategyForm({
             onChange={setTagPattern}
             placeholder="v${YYYY-MM-DD}-${shortSha}"
             hint="Interpolated at tag time. Supports ${YYYY-MM-DD}, ${shortSha}."
+            required
           />
           <Field
             label="Prod URL"
             value={prodUrl}
             onChange={setProdUrl}
             placeholder={prodUrlPlaceholder}
+            required
+            type="url"
           />
         </div>
       )}
@@ -264,7 +295,7 @@ export function PromotionStrategyForm({
       )}
 
       <div className="flex items-center gap-2">
-        <Button variant="primary" onClick={onSave} disabled={pending}>
+        <Button variant="primary" type="submit" disabled={pending}>
           {pending ? 'Saving…' : initial ? 'Update strategy' : 'Save strategy'}
         </Button>
         {initial && (
@@ -279,7 +310,7 @@ export function PromotionStrategyForm({
           {error}
         </div>
       )}
-    </div>
+    </form>
   );
 }
 
@@ -289,20 +320,29 @@ function Field({
   onChange,
   placeholder,
   hint,
+  required,
+  type = 'text',
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   hint?: string;
+  required?: boolean;
+  type?: 'text' | 'url';
 }) {
   return (
     <label className="text-sm">
-      <span className="block text-zinc-600 dark:text-zinc-400">{label}</span>
+      <span className="block text-zinc-600 dark:text-zinc-400">
+        {label}
+        {required && <span className="ml-0.5 text-rose-600 dark:text-rose-400">*</span>}
+      </span>
       <input
         className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
         value={value}
         placeholder={placeholder}
+        required={required}
+        type={type}
         onChange={(e) => onChange(e.target.value)}
       />
       {hint && <span className="block text-xs text-zinc-500">{hint}</span>}
