@@ -57,6 +57,7 @@ interface ProjectDetail {
     defaultBranch: string;
     installationId: string;
     repoId: string;
+    basePrBranch: string | null;
   } | null;
 }
 
@@ -260,7 +261,10 @@ export default async function OnboardingPage({
                     initial={deployTargets}
                     kinds={['dev']}
                     installFrom="wizard"
-                    baseBranch={connectedRepo?.defaultBranch}
+                    baseBranch={
+                      connectedRepo?.basePrBranch?.trim() ||
+                      connectedRepo?.defaultBranch
+                    }
                   />
                 ) : (
                   <BlockedBecauseNoProject />

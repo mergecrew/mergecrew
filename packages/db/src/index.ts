@@ -1,4 +1,5 @@
 export * from './client.js';
+export { effectiveBaseBranch } from './connected-repo.js';
 export {
   seedDemoProject,
   DEMO_PROJECT_SLUG,

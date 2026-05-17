@@ -48,6 +48,7 @@ export default async function ProjectSettings({
       defaultBranch: string;
       installationId: string;
       repoId: string;
+      basePrBranch: string | null;
     } | null;
   }>(`/v1/orgs/${slug}/projects/${projectSlug}`, { session });
 

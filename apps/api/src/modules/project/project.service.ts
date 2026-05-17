@@ -240,10 +240,14 @@ export class ProjectService {
     repoId: string;
     repoFullName: string;
     defaultBranch: string;
+    basePrBranch?: string | null;
   }) {
     if (!/^[^/\s]+\/[^/\s]+$/.test(input.repoFullName)) {
       throw new ValidationError('repoFullName must be "owner/repo"');
     }
+    // Normalize: empty / whitespace-only collapses to null so the read
+    // path can coalesce to defaultBranch without a trailing-space gotcha (#469).
+    const basePrBranch = input.basePrBranch?.trim() ? input.basePrBranch.trim() : null;
     const project = await this.detail(slug);
     const result = await this.prisma.withTenant(project.organizationId, (tx) =>
       tx.connectedRepo.upsert({
@@ -253,6 +257,7 @@ export class ProjectService {
           repoId: input.repoId,
           repoFullName: input.repoFullName,
           defaultBranch: input.defaultBranch,
+          basePrBranch,
         },
         create: {
           organizationId: project.organizationId,
@@ -262,6 +267,7 @@ export class ProjectService {
           repoId: input.repoId,
           repoFullName: input.repoFullName,
           defaultBranch: input.defaultBranch,
+          basePrBranch,
         },
       }),
     );

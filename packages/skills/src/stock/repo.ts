@@ -214,7 +214,7 @@ const repoOpenPr: AnySkill = {
     await ctx.adapters.vcs.push(ctx.workspacePath, branch);
     const pr = await ctx.adapters.vcs.openPullRequest(connectedRepo, {
       head: branch,
-      base: input.base ?? connectedRepo.defaultBranch,
+      base: input.base ?? connectedRepo.basePrBranch ?? connectedRepo.defaultBranch,
       title: input.title,
       body: input.body,
     });
@@ -275,7 +275,12 @@ export const repoSkills: AnySkill[] = [
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 function readWorkspaceMeta(ctx: any): {
-  connectedRepo: { installationId: string; repoFullName: string; defaultBranch: string };
+  connectedRepo: {
+    installationId: string;
+    repoFullName: string;
+    defaultBranch: string;
+    basePrBranch?: string | null;
+  };
   branch: string;
 } {
   const cfg = ctx.config?.repoMeta as

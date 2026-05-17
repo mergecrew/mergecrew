@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { NotFoundError, GateRequiredError, ValidationError, type DecisionKind } from '@mergecrew/domain';
 import { GitHubProvider, type PullRequestFile } from '@mergecrew/adapters-vcs';
+import { effectiveBaseBranch } from '@mergecrew/db';
 import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
 import { QueueService } from '../../common/queue.service.js';
@@ -182,7 +183,7 @@ export class ChangesetService {
       {
         installationId: repo.installationId,
         repoFullName: repo.repoFullName,
-        defaultBranch: repo.defaultBranch,
+        defaultBranch: effectiveBaseBranch(repo),
       },
       cs.prNumber,
     );
@@ -242,7 +243,7 @@ export class ChangesetService {
       installationId: repo.installationId,
       repoId: repo.repoId ?? undefined,
       repoFullName: repo.repoFullName,
-      defaultBranch: repo.defaultBranch,
+      defaultBranch: effectiveBaseBranch(repo),
     };
 
     // Pre-flight: enumerate files in the original PR so the response

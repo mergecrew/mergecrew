@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { GitHubProvider } from '@mergecrew/adapters-vcs';
 import { GitHubActionsProvider } from '@mergecrew/adapters-deploy';
+import { effectiveBaseBranch } from '@mergecrew/db';
 import { ValidationError } from '@mergecrew/domain';
 import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
@@ -85,18 +86,19 @@ export class SmokeTestService {
     const startedAt = Date.now();
     const workspace = await mkdtemp(path.join(tmpdir(), 'mergecrew-smoke-'));
 
+    const baseBranch = effectiveBaseBranch(repo);
     try {
       await vcs.cloneIntoWorkspace(
         {
           installationId: repo.installationId,
           repoId: repo.repoId ?? undefined,
           repoFullName: repo.repoFullName,
-          defaultBranch: repo.defaultBranch,
+          defaultBranch: baseBranch,
         },
-        repo.defaultBranch,
+        baseBranch,
         workspace,
       );
-      await vcs.createBranch(workspace, branch, repo.defaultBranch);
+      await vcs.createBranch(workspace, branch, baseBranch);
       await writeFile(
         path.join(workspace, '.mergecrew-smoke'),
         `mergecrew smoke ${correlationId} at ${new Date().toISOString()}\n`,
@@ -112,11 +114,11 @@ export class SmokeTestService {
           installationId: repo.installationId,
           repoId: repo.repoId ?? undefined,
           repoFullName: repo.repoFullName,
-          defaultBranch: repo.defaultBranch,
+          defaultBranch: baseBranch,
         },
         {
           head: branch,
-          base: repo.defaultBranch,
+          base: baseBranch,
           title: `[smoke] mergecrew onboarding ${correlationId}`,
           body: [
             '<!-- mergecrew onboarding smoke -->',

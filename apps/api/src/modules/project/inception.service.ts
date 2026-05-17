@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { GitHubProvider } from '@mergecrew/adapters-vcs';
+import { effectiveBaseBranch } from '@mergecrew/db';
 import { ValidationError } from '@mergecrew/domain';
 import { runInception, type InceptionResult } from '@mergecrew/inception';
 import { PrismaService } from '../../common/prisma.service.js';
@@ -54,14 +55,15 @@ export class InceptionService {
 
     const workspace = await mkdtemp(path.join(tmpdir(), 'mergecrew-inception-'));
     try {
+      const baseBranch = effectiveBaseBranch(repo);
       await vcs.cloneIntoWorkspace(
         {
           installationId: repo.installationId,
           repoId: repo.repoId ?? undefined,
           repoFullName: repo.repoFullName,
-          defaultBranch: repo.defaultBranch,
+          defaultBranch: baseBranch,
         },
-        repo.defaultBranch,
+        baseBranch,
         workspace,
       );
       return await runInception(workspace);
