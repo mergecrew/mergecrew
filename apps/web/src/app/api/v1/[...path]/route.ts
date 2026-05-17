@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { JWT_OVERRIDE_COOKIE } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -44,6 +45,18 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   req.headers.forEach((value, key) => {
     if (!HOP_BY_HOP.has(key.toLowerCase())) headers.set(key, value);
   });
+
+  // The API authenticates via `Authorization: Bearer <jwt>` only — it
+  // doesn't read cookies. Browser-initiated calls (EventSource for
+  // `/timeline/stream`, client-component fetches) only send cookies, so
+  // we translate the `mergecrew_jwt` cookie into a Bearer header before
+  // forwarding. Don't overwrite an explicit Authorization header — API
+  // keys (`mc_live_…`) and server-side `requireSession()` flows set it
+  // directly and must pass through unchanged.
+  if (!headers.has('authorization')) {
+    const jwt = req.cookies.get(JWT_OVERRIDE_COOKIE)?.value;
+    if (jwt) headers.set('authorization', `Bearer ${jwt}`);
+  }
 
   const init: RequestInit = {
     method: req.method,
