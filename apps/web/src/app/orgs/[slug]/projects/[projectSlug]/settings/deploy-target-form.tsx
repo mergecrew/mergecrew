@@ -36,17 +36,31 @@ const DEFAULT_KINDS: Kind[] = ['dev', 'staging', 'prod'];
  * `kinds` defaults to all three kinds; the inline onboarding wizard
  * passes `kinds={['dev']}` to render only the dev row, since that's the
  * only target the wizard step covers (#455).
+ *
+ * `installFrom='wizard'` (#467) collapses the row to just the URL field
+ * for the `external-ci` adapter — the wizard assumes the user already
+ * has their own CI/CD wired up and just needs mergecrew to know where
+ * the preview is published. Setting page keeps the full picker.
  */
 export function DeployTargetForm({
   slug,
   projectSlug,
   initial,
   kinds = DEFAULT_KINDS,
+  installFrom = 'settings',
+  baseBranch,
 }: {
   slug: string;
   projectSlug: string;
   initial: DeployTargetRow[];
   kinds?: Kind[];
+  installFrom?: 'wizard' | 'settings';
+  /**
+   * The base branch from the connected repo (#467). In wizard mode we
+   * render it as a read-only confirmation so the user sees which branch
+   * their CI/CD will be deploying after merge.
+   */
+  baseBranch?: string;
 }) {
   return (
     <div className="space-y-4">
@@ -57,6 +71,8 @@ export function DeployTargetForm({
           projectSlug={projectSlug}
           kind={kind}
           existing={initial.find((t) => t.kind === kind)}
+          installFrom={installFrom}
+          baseBranch={baseBranch}
         />
       ))}
     </div>
@@ -68,15 +84,21 @@ function KindRow({
   projectSlug,
   kind,
   existing,
+  installFrom,
+  baseBranch,
 }: {
   slug: string;
   projectSlug: string;
   kind: Kind;
   existing?: DeployTargetRow;
+  installFrom: 'wizard' | 'settings';
+  baseBranch?: string;
 }) {
+  const isWizard = installFrom === 'wizard';
+  const defaultAdapter: AdapterId = isWizard ? 'external-ci' : 'github-actions';
   const [editing, setEditing] = useState(!existing);
   const [adapterId, setAdapterId] = useState<AdapterId>(
-    isKnownAdapter(existing?.adapterId) ? (existing!.adapterId as AdapterId) : 'github-actions',
+    isKnownAdapter(existing?.adapterId) ? (existing!.adapterId as AdapterId) : defaultAdapter,
   );
   const [config, setConfig] = useState<Record<string, unknown>>(
     existing?.config ?? defaultConfigFor(adapterId),
@@ -134,26 +156,59 @@ function KindRow({
 
       {editing && (
         <div className="mt-3 space-y-3">
-          <label className="block text-sm">
-            <span className="text-zinc-600 dark:text-zinc-400">Adapter</span>
-            <select
-              className="mt-1 w-full rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700"
-              value={adapterId}
-              onChange={(e) => {
-                const next = e.target.value as AdapterId;
-                setAdapterId(next);
-                setConfig(defaultConfigFor(next));
-              }}
-            >
-              {ADAPTERS.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          {isWizard && baseBranch && (
+            <div className="rounded bg-zinc-50 p-2 text-xs dark:bg-zinc-900">
+              <span className="text-zinc-500">Mergecrew opens PRs against</span>{' '}
+              <span className="font-mono">{baseBranch}</span>
+              <span className="text-zinc-500">. After merge, your CI/CD deploys to the URL below.</span>
+            </div>
+          )}
+
+          {!isWizard && (
+            <label className="block text-sm">
+              <span className="text-zinc-600 dark:text-zinc-400">Adapter</span>
+              <select
+                className="mt-1 w-full rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700"
+                value={adapterId}
+                onChange={(e) => {
+                  const next = e.target.value as AdapterId;
+                  setAdapterId(next);
+                  setConfig(defaultConfigFor(next));
+                }}
+              >
+                {ADAPTERS.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <DeployTargetFormFor adapterId={adapterId} config={config} onChange={setConfig} />
+
+          {isWizard && (
+            <p className="text-xs text-zinc-500">
+              Already running a custom deploy pipeline (Vercel, Netlify, Render, Fly, AWS,
+              direct GitHub Actions)? You can switch adapter later in{' '}
+              <a
+                className="underline"
+                href={`/orgs/${slug}/projects/${projectSlug}/settings`}
+              >
+                project settings
+              </a>
+              . See the{' '}
+              <a
+                className="underline"
+                href="https://github.com/mergecrew/mergecrew/blob/main/docs/03-infrastructure/06-deploy-targets-cookbook.md"
+                target="_blank"
+                rel="noreferrer"
+              >
+                deploy-targets cookbook
+              </a>{' '}
+              for which adapter fits each setup.
+            </p>
+          )}
 
           <div className="flex gap-2">
             <Button variant="primary" onClick={onSave} disabled={pending}>

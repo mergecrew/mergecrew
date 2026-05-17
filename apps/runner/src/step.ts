@@ -39,6 +39,7 @@ import { stockSkills, buildHttpSkill, SkillExecutor, type SkillExecutionContext 
 import { GitHubProvider, type VcsProvider } from '@mergecrew/adapters-vcs';
 import {
   AwsDirectProvider,
+  ExternalCiProvider,
   GitHubActionsProvider,
   VercelProvider,
   NetlifyProvider,
@@ -226,7 +227,11 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     tx.deployTarget.findFirst({ where: { projectId, kind: 'dev' } }),
   );
   let deploy: DeployProvider | undefined;
-  if (dt?.adapterId === 'github-actions' && process.env.GITHUB_APP_ID && process.env.GITHUB_APP_PRIVATE_KEY) {
+  if (dt?.adapterId === 'external-ci') {
+    // No vendor token / API call — adapter is a passthrough that returns
+    // the configured URL. Always selectable; needs no env (#467).
+    deploy = new ExternalCiProvider();
+  } else if (dt?.adapterId === 'github-actions' && process.env.GITHUB_APP_ID && process.env.GITHUB_APP_PRIVATE_KEY) {
     deploy = new GitHubActionsProvider({
       appId: process.env.GITHUB_APP_ID,
       privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
