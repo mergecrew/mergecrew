@@ -6,6 +6,7 @@ import {
   PromotionStrategyService,
   type PromotionStrategyInput,
 } from './promotion-strategy.service.js';
+import { PromoteService } from './promote.service.js';
 import { RequireRole, RoleGuard } from '../../common/role.guard.js';
 
 @Controller('v1/orgs/:slug/projects')
@@ -16,6 +17,7 @@ export class ProjectController {
     private inception: InceptionService,
     private smokeTest: SmokeTestService,
     private promotionStrategies: PromotionStrategyService,
+    private promote: PromoteService,
   ) {}
 
   @Get()
@@ -224,6 +226,20 @@ export class ProjectController {
     @Body() body: PromotionStrategyInput,
   ) {
     return this.promotionStrategies.upsert(projectSlug, body);
+  }
+
+  @Post(':projectSlug/promote')
+  @RequireRole('operator')
+  async runPromote(
+    @Param('projectSlug') projectSlug: string,
+    @Body() body: { approvedChangesetIds: string[] },
+  ) {
+    return this.promote.promote(projectSlug, body?.approvedChangesetIds ?? []);
+  }
+
+  @Get(':projectSlug/promote-runs')
+  async listPromoteRuns(@Param('projectSlug') projectSlug: string) {
+    return { items: await this.promote.listRuns(projectSlug) };
   }
 
   @Post(':projectSlug/inception')

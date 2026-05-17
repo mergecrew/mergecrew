@@ -6,9 +6,11 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type {
   ConnectedRepoRef,
+  DispatchWorkflowOpts,
   FileChangeStatus,
   MergeOpts,
   MergeResult,
+  MergedPullRequest,
   PostReviewOpts,
   PullRequest,
   PullRequestFile,
@@ -354,6 +356,51 @@ export class GitHubProvider implements VcsProvider {
       defaultBranch: r.default_branch ?? 'main',
       private: !!r.private,
     }));
+  }
+
+  // ─── promote engine helpers (#471) ──────────────────────────────────────
+
+  async getMergedPullRequest(
+    repo: ConnectedRepoRef,
+    prNumber: number,
+  ): Promise<MergedPullRequest> {
+    const kit = await this.kit(repo.installationId);
+    const { owner, name } = parseRepo(repo.repoFullName);
+    const pr = await kit.pulls.get({ owner, repo: name, pull_number: prNumber });
+    const mergeSha = pr.data.merge_commit_sha;
+    let isMergeCommit = false;
+    if (mergeSha) {
+      // Squash- and rebase-merges produce single-parent commits; true
+      // merges have 2+ parents. Cherry-pick of the former is plain;
+      // the latter needs `-m 1` to pick the first-parent diff.
+      const commit = await kit.repos.getCommit({ owner, repo: name, ref: mergeSha });
+      isMergeCommit = (commit.data.parents?.length ?? 1) >= 2;
+    }
+    return {
+      number: pr.data.number,
+      title: pr.data.title,
+      body: pr.data.body ?? null,
+      url: pr.data.html_url,
+      mergeCommitSha: mergeSha,
+      mergedAt: pr.data.merged_at,
+      isMergeCommit,
+      headBranch: pr.data.head.ref,
+    };
+  }
+
+  async dispatchWorkflow(
+    repo: ConnectedRepoRef,
+    opts: DispatchWorkflowOpts,
+  ): Promise<void> {
+    const kit = await this.kit(repo.installationId);
+    const { owner, name } = parseRepo(repo.repoFullName);
+    await kit.actions.createWorkflowDispatch({
+      owner,
+      repo: name,
+      workflow_id: opts.workflowFilename,
+      ref: opts.ref,
+      inputs: opts.inputs ?? {},
+    });
   }
 
   // ─── webhooks ───────────────────────────────────────────────────────────

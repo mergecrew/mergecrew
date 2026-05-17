@@ -4,9 +4,11 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type {
   ConnectedRepoRef,
+  DispatchWorkflowOpts,
   FileChangeStatus,
   MergeOpts,
   MergeResult,
+  MergedPullRequest,
   PullRequest,
   PullRequestFile,
   PullRequestOpts,
@@ -322,6 +324,25 @@ export class GitLabProvider implements VcsProvider {
         hunks: parseUnifiedPatch(c.diff ?? ''),
       };
     });
+  }
+
+  // ─── promote engine helpers (#471) ──────────────────────────────────────
+
+  async getMergedPullRequest(
+    _repo: ConnectedRepoRef,
+    _prNumber: number,
+  ): Promise<MergedPullRequest> {
+    // GitLab-side promote engine wiring lands when cherry-pick is
+    // generalized beyond GitHub. Throwing rather than no-op-ing keeps
+    // misconfigured projects from silently producing empty release refs.
+    throw new Error('getMergedPullRequest is not implemented for the GitLab adapter');
+  }
+
+  async dispatchWorkflow(
+    _repo: ConnectedRepoRef,
+    _opts: DispatchWorkflowOpts,
+  ): Promise<void> {
+    throw new Error('dispatchWorkflow is not supported by the GitLab adapter');
   }
 
   // ─── webhooks ───────────────────────────────────────────────────────────

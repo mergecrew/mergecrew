@@ -47,6 +47,20 @@ export class ChangesetController {
   }
 
   /**
+   * Drop a not-yet-promoted changeset (#471). Opens a revert PR on the
+   * connected repo's base PR branch and marks the changeset so the
+   * promote digest hides it permanently. Idempotent — a second call
+   * returns the existing revert PR. Operator-gated, not admin: the
+   * digest is operator-facing, and drops are recoverable (the user
+   * just doesn't merge the revert PR).
+   */
+  @Post('changesets/:csId/drop')
+  @RequireRole('operator')
+  async drop(@Param('csId') csId: string) {
+    return this.cs.drop(csId);
+  }
+
+  /**
    * Recent rollbacks for the project Guardrails settings card (#289).
    * Pulls the N most-recent one-click rollback changesets so operators
    * see the passive audit trail without opening the full log.

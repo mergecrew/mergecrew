@@ -242,6 +242,7 @@ model Project {
   connectedRepo     ConnectedRepo?
   deployTargets     DeployTarget[]
   promotionStrategy PromotionStrategy?
+  promoteRuns       PromoteRun[]
   trackerTarget     TrackerTarget?
   errorTarget       ErrorTarget?
   secrets           ProjectSecret[]
@@ -824,6 +825,16 @@ model Changeset {
   /// the active revert without re-querying the host.
   revertPrNumber  Int?             @map("revert_pr_number")
   revertPrUrl     String?          @map("revert_pr_url")
+  /// Which PromoteRun (#471) shipped this changeset to prod. Null
+  /// while pending / deferred / dropped.
+  lastPromoteRunId String?         @map("last_promote_run_id") @db.Uuid
+  /// When the user clicked Drop in the promote digest (#471). Once set,
+  /// the changeset is excluded from all subsequent promote digests.
+  droppedAt       DateTime?        @map("dropped_at") @db.Timestamptz(6)
+  /// URL of the revert PR mergecrew opened on basePrBranch when the
+  /// user dropped this changeset (#471). Idempotent: re-dropping
+  /// returns this same PR rather than opening a duplicate.
+  dropRevertPrUrl String?          @map("drop_revert_pr_url")
   createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -834,9 +845,50 @@ model Changeset {
   deploys        Deploy[]
   approvalRequests ApprovalRequest[]
   comments       ChangesetComment[]
+  lastPromoteRun PromoteRun?       @relation(fields: [lastPromoteRunId], references: [id])
 
   @@index([projectId, status, updatedAt(sort: Desc)])
   @@map("changesets")
+}
+
+enum PromoteRunStatus {
+  pending
+  conflict
+  completed
+  failed
+
+  @@map("promote_run_status")
+}
+
+/// One row per "build a release artifact" attempt (#471). The engine
+/// cherry-picks the human-approved subset of dev changesets onto a
+/// release branch, then triggers the user's CI per PromotionStrategy.
+/// `conflict` means the engine stopped on a cherry-pick conflict; the
+/// release branch is left on the remote for the human to resolve and
+/// the user can re-run with the same approved set after fixing it.
+model PromoteRun {
+  id                   String           @id @default(uuid()) @db.Uuid
+  organizationId       String           @map("organization_id") @db.Uuid
+  projectId            String           @map("project_id") @db.Uuid
+  status               PromoteRunStatus @default(pending)
+  /// Branch / tag name on the remote that the human-approved subset
+  /// landed on. Null until the cherry-pick at least produces a branch.
+  releaseRef           String?          @map("release_ref")
+  approvedChangesetIds Json             @map("approved_changeset_ids")
+  /// `{ changesetId, files: string[] }` when status = conflict, else
+  /// null. The UI re-uses this to surface a resolution affordance.
+  conflict             Json?
+  /// Error string when status = failed. Free-form so we can capture
+  /// push errors, dispatch failures, etc.
+  failureReason        String?          @map("failure_reason")
+  createdAt            DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  finishedAt           DateTime?        @map("finished_at") @db.Timestamptz(6)
+
+  project    Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  changesets Changeset[]
+
+  @@index([projectId, createdAt(sort: Desc)])
+  @@map("promote_runs")
 }
 
 model Deploy {

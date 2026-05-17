@@ -16,3 +16,4 @@ export * from './risk-score.js';
 export * from './graph-profile.js';
 export * from './stock-agents.js';
 export * from './lifecycle-templates.js';
+export * from './tag-pattern.js';
