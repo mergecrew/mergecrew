@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { JWT_OVERRIDE_COOKIE, SIGNED_OUT_COOKIE, USER_OVERRIDE_COOKIE } from '@/lib/session';
+import { publicOrigin } from '@/lib/public-origin';
 
 const API_BASE = process.env.API_BASE_URL ?? 'http://localhost:4000';
 
@@ -10,26 +11,6 @@ const COOKIE_OPTS = {
   // Mirror the API JWT TTL (signOptions.expiresIn = '14d' on AuthModule).
   maxAge: 60 * 60 * 24 * 14,
 };
-
-/**
- * Resolve the public origin to redirect to. Behind a reverse proxy,
- * `req.url` reflects the internal container hostname (e.g.
- * `https://121048555ff3:3000`), which would leak into the redirect
- * Location and break the magic-link click-through. Preference order:
- *   1. WEB_BASE_URL env var (explicit, set in compose / prod env).
- *   2. X-Forwarded-Host + X-Forwarded-Proto headers (most proxies set
- *      these; safe fallback when WEB_BASE_URL isn't configured).
- *   3. req.url's own origin (local dev — no proxy in front).
- */
-function publicOrigin(req: NextRequest): string {
-  if (process.env.WEB_BASE_URL) return process.env.WEB_BASE_URL;
-  const fwdHost = req.headers.get('x-forwarded-host');
-  if (fwdHost) {
-    const fwdProto = req.headers.get('x-forwarded-proto') ?? 'https';
-    return `${fwdProto}://${fwdHost}`;
-  }
-  return new URL(req.url).origin;
-}
 
 /**
  * Magic-link callback (#1). The email contains a link to

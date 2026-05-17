@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/session';
+import { publicOrigin } from '@/lib/public-origin';
 
 const API_BASE = process.env.API_BASE_URL ?? 'http://localhost:4000';
 
@@ -26,13 +27,17 @@ export async function GET(
   const { slug, projectSlug } = await ctx.params;
   const url = new URL(req.url);
   const from = url.searchParams.get('from') === 'wizard' ? 'wizard' : 'settings';
+  // `req.url` is the internal container origin behind a reverse proxy;
+  // use the public origin for any redirect that lands in the user's
+  // browser (#459, same fix as the magic-link route).
+  const origin = publicOrigin(req);
 
   const session = await getSession();
   if (!session) {
     // Bounce to /login; preserve a return target so the user lands
     // back on the wizard / settings page after authenticating.
     const back = encodeURIComponent(`/orgs/${slug}/projects/${projectSlug}/install-github?from=${from}`);
-    return NextResponse.redirect(new URL(`/login?next=${back}`, url.origin), { status: 302 });
+    return NextResponse.redirect(new URL(`/login?next=${back}`, origin), { status: 302 });
   }
 
   const apiUrl = `${API_BASE}/v1/integrations/github/install?org=${encodeURIComponent(slug)}&project=${encodeURIComponent(projectSlug)}&from=${from}`;
@@ -58,7 +63,7 @@ export async function GET(
   const fallbackPath =
     from === 'wizard' ? `/orgs/${slug}/onboarding` : `/orgs/${slug}/projects/${projectSlug}/settings`;
   return NextResponse.redirect(
-    new URL(`${fallbackPath}?github_install_error=upstream_${r.status}`, url.origin),
+    new URL(`${fallbackPath}?github_install_error=upstream_${r.status}`, origin),
     { status: 302 },
   );
 }

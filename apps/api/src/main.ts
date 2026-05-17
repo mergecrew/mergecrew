@@ -64,9 +64,14 @@ async function bootstrap() {
   app.use(async (req: Request, res: Response, next: NextFunction) => {
     // Routes requiring an authenticated user but not necessarily a tenant:
     // /v1/orgs/* (tenant) and /v1/me/* (user-scoped self-service like MFA).
+    // The GitHub App install entrypoint (#459) is the third — it isn't
+    // org-path-scoped (the org slug comes from the `org` query param),
+    // but it needs `this.tenant.user()` to mint the state HMAC. The
+    // matching callback path stays public so GitHub's redirect can land.
     const isOrgPath = /^\/v1\/orgs(\/|$)/.test(req.path);
     const isMePath = /^\/v1\/me(\/|$)/.test(req.path);
-    if (!isOrgPath && !isMePath) {
+    const isAuthedIntegrationPath = req.path === '/v1/integrations/github/install';
+    if (!isOrgPath && !isMePath && !isAuthedIntegrationPath) {
       next();
       return;
     }
