@@ -46,6 +46,21 @@ export class LifecycleController {
     return this.lifecycle.applyOrgTemplate(projectSlug, body?.name ?? 'default');
   }
 
+  /**
+   * Apply a stock lifecycle template by id (#480). Stamps the template
+   * id as the new version's name so the audit chain reads cleanly.
+   * Centralizes the prior "web fetches template then PUTs the YAML"
+   * round-trip in one server-side call.
+   */
+  @Post('apply-stock-template')
+  @RequireRole('admin')
+  async applyStockTemplate(
+    @Param('projectSlug') projectSlug: string,
+    @Body() body: { id: string },
+  ) {
+    return this.lifecycle.applyStockTemplate(projectSlug, body.id);
+  }
+
   // --- Agents ---
   @Put('agents/:ref')
   @RequireRole('admin')

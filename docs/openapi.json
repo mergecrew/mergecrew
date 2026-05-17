@@ -745,6 +745,20 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/projects/{projectSlug}/lifecycle/apply-stock-template": {
+      "post": {
+        "operationId": "LifecycleController_applyStockTemplate",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Lifecycle"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/projects/{projectSlug}/lifecycle/agents/{ref}": {
       "put": {
         "operationId": "LifecycleController_upsertAgent",

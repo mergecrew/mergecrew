@@ -14,6 +14,7 @@ import {
   NotFoundError,
   ValidationError,
   WorkflowDef,
+  findStockLifecycleTemplate,
 } from '@mergecrew/domain';
 import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
@@ -74,7 +75,20 @@ export class LifecycleService {
       }),
     );
     if (!tpl) throw new NotFoundError(`org template "${templateName}" not found`);
-    return this.writeNewVersion(projectSlug, tpl.parsed as any, tpl.sourceYaml);
+    return this.writeNewVersion(projectSlug, tpl.parsed as any, tpl.sourceYaml, templateName);
+  }
+
+  /**
+   * Apply a stock lifecycle template by id (#480). Stamps the template
+   * id as the new version's `name` so the audit chain reads cleanly:
+   * v1 `default-bootstrap` → v2 `generic-careful` → v3 hand-edited
+   * (null name). Centralizing this on the server replaces the prior
+   * "web fetches template then PUTs the YAML" round-trip.
+   */
+  async applyStockTemplate(projectSlug: string, templateId: string) {
+    const tpl = findStockLifecycleTemplate(templateId);
+    if (!tpl) throw new NotFoundError(`unknown stock lifecycle template: ${templateId}`);
+    return this.writeNewVersion(projectSlug, tpl.parsed as any, tpl.sourceYaml, tpl.id);
   }
 
   /** Replace an agent definition (insert if missing). */
@@ -231,6 +245,7 @@ export class LifecycleService {
     projectSlug: string,
     parsed: MergecrewConfig,
     sourceYaml?: string,
+    name?: string,
   ) {
     const t = this.tenant.require();
     const project = await this.prisma.withTenant(t.organizationId, (tx) =>
@@ -250,6 +265,7 @@ export class LifecycleService {
           version,
           sourceYaml: yaml,
           parsed: parsed as any,
+          name: name ?? null,
         },
       }),
     );
