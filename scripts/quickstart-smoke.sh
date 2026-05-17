@@ -192,7 +192,7 @@ if [ -z "$lc" ]; then
   echo "::error::lifecycle page returned no body"
   exit 1
 fi
-if ! echo "$lc" | grep -q "generic-careful"; then
+if ! echo "$lc" | grep -q "Pre-built Planner"; then
   echo "::error::lifecycle page didn't render the stock template picker"
   echo "--- first 4 KB of body ---"
   echo "$lc" | head -c 4096
