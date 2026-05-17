@@ -1,19 +1,24 @@
 import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
-import { Check, ChevronRight, Circle } from 'lucide-react';
-import clsx from 'clsx';
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { Card, LinkButton } from '@/components/ui';
 import { InlineLlmStep } from '@/components/onboarding-inline-llm';
+import { CreateProjectForm } from '@/components/onboarding/create-project-form';
+import { WizardRow, type WizardRowStatus } from '@/components/onboarding/wizard-row';
+import { RepoForm } from '../projects/[projectSlug]/settings/repo-form';
+import { DeployTargetForm, type DeployTargetRow } from '../projects/[projectSlug]/settings/deploy-target-form';
+import { StockTemplatePicker, type StockTemplateSummary } from '@/components/lifecycle/stock-template-picker';
+
+type StepKey =
+  | 'llm_provider'
+  | 'first_project'
+  | 'connected_repo'
+  | 'deploy_target'
+  | 'lifecycle_template';
 
 interface OnboardingStep {
-  key:
-    | 'llm_provider'
-    | 'first_project'
-    | 'connected_repo'
-    | 'deploy_target'
-    | 'lifecycle_template';
+  key: StepKey;
   label: string;
   status: 'complete' | 'pending';
   actionUrl: string;
@@ -26,7 +31,7 @@ interface OnboardingState {
 // Human-readable why-this-matters lines per step. Kept here rather than
 // on the API response because the copy is UI-shaped and changes
 // independently of the underlying state computation.
-const STEP_HELP: Record<OnboardingStep['key'], string> = {
+const STEP_HELP: Record<StepKey, string> = {
   llm_provider:
     'Pick a provider (Anthropic, OpenAI, AWS Bedrock, or Ollama) and paste an API key. Without one, agent steps fail with "no LLM profile configured".',
   first_project:
@@ -34,21 +39,55 @@ const STEP_HELP: Record<OnboardingStep['key'], string> = {
   connected_repo:
     'Mergecrew opens its PRs here. The bundled GitHub adapter handles app install + repo selection; pick "local" for a synthetic walkthrough.',
   deploy_target:
-    'The dev target is where the agent\'s changesets get deployed for human review before prod. Use `local-noop` if you just want to see the loop and skip real deploys.',
+    "The dev target is where the agent's changesets get deployed for human review before prod. Use `local-noop` if you just want to see the loop and skip real deploys.",
   lifecycle_template:
-    'Pick a stock Planner/Coder/Reviewer setup tuned for your stack (Next.js, Python, Go, or generic). One click installs it as your project lifecycle — you can still edit the YAML after.',
+    'Pick a stock Planner/Coder/Reviewer setup tuned for your stack (Next.js, Python, Go, or generic). One click installs it as your project lifecycle.',
 };
+
+interface ProjectListItem {
+  slug: string;
+  demo: boolean;
+}
+
+interface ProjectDetail {
+  slug: string;
+  demo: boolean;
+  connectedRepo: {
+    repoFullName: string;
+    defaultBranch: string;
+    installationId: string;
+    repoId: string;
+  } | null;
+}
+
+interface AvailableRepo {
+  repoId: string;
+  repoFullName: string;
+  defaultBranch: string;
+  private: boolean;
+}
+
+async function safe<T>(fn: () => Promise<T>): Promise<T | null> {
+  try {
+    return await fn();
+  } catch {
+    return null;
+  }
+}
 
 async function addLlmProviderAction(formData: FormData) {
   'use server';
   const slug = String(formData.get('slug') ?? '');
-  const kind = String(formData.get('kind') ?? '') as 'anthropic' | 'openai' | 'bedrock' | 'ollama';
+  const kind = String(formData.get('kind') ?? '') as
+    | 'anthropic'
+    | 'openai'
+    | 'bedrock'
+    | 'ollama';
   const apiKey = String(formData.get('apiKey') ?? '').trim();
   const endpoint = String(formData.get('endpoint') ?? '').trim();
   if (!slug || !kind) return;
   // Ollama is the only kind where the operator can skip the API key
-  // (the endpoint URL is the credential). Other kinds need a non-empty
-  // apiKey or the create will server-side-reject.
+  // (the endpoint URL is the credential).
   if (kind !== 'ollama' && !apiKey) return;
   const session = await requireSession();
   await api(`/v1/orgs/${slug}/llm/providers`, {
@@ -61,26 +100,99 @@ async function addLlmProviderAction(formData: FormData) {
     }),
     session,
   }).catch(() => undefined);
-  // Refresh the wizard page so the step flips from pending → complete.
+  revalidatePath(`/orgs/${slug}/onboarding`);
+}
+
+async function createFirstProjectAction(formData: FormData) {
+  'use server';
+  const slug = String(formData.get('orgSlug') ?? '');
+  const name = String(formData.get('name') ?? '').trim();
+  const projectSlug = String(formData.get('slug') ?? '').trim();
+  if (!slug || !name || !projectSlug) return;
+  const session = await requireSession();
+  await api(`/v1/orgs/${slug}/projects`, {
+    method: 'POST',
+    body: JSON.stringify({ name, slug: projectSlug }),
+    session,
+  }).catch(() => undefined);
+  // Stay on the wizard — next step expands inline after revalidation.
   revalidatePath(`/orgs/${slug}/onboarding`);
 }
 
 export default async function OnboardingPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { slug } = await params;
+  const sp = (await searchParams) ?? {};
+  const installedInstallationId =
+    sp.from === 'github_install' && typeof sp.installation_id === 'string'
+      ? sp.installation_id
+      : null;
   const session = await requireSession();
   const [state, projects] = await Promise.all([
     api<OnboardingState>(`/v1/orgs/${slug}/onboarding`, { session }),
-    api<{ items: Array<{ slug: string; demo: boolean }> }>(`/v1/orgs/${slug}/projects`, {
-      session,
-    }).catch(() => ({ items: [] as Array<{ slug: string; demo: boolean }> })),
+    api<{ items: ProjectListItem[] }>(`/v1/orgs/${slug}/projects`, { session }).catch(
+      () => ({ items: [] as ProjectListItem[] }),
+    ),
   ]);
 
   const demoProject = projects.items.find((p) => p.demo) ?? null;
+  const firstProject = projects.items.find((p) => !p.demo) ?? null;
+  const projectSlug = firstProject?.slug ?? null;
+
+  // Fan-out for the active project's downstream data. Done in parallel
+  // so the wizard renders without waterfall latency once a project
+  // exists. Stock templates are fetched whenever a project exists; the
+  // installation-repos endpoint only when we have an installation id
+  // (either from the GitHub round-trip query or from a saved connected
+  // repo).
+  const [projectDetail, deployTargetsRes, stockTemplatesRes] = projectSlug
+    ? await Promise.all([
+        safe(() =>
+          api<ProjectDetail>(`/v1/orgs/${slug}/projects/${projectSlug}`, { session }),
+        ),
+        safe(() =>
+          api<{ items: DeployTargetRow[] }>(
+            `/v1/orgs/${slug}/projects/${projectSlug}/deploy-targets`,
+            { session },
+          ),
+        ),
+        safe(() =>
+          api<{ items: StockTemplateSummary[] }>(`/v1/lifecycle-templates/stock`, {
+            session,
+          }),
+        ),
+      ])
+    : [null, null, null];
+
+  const connectedRepo = projectDetail?.connectedRepo ?? null;
+  const deployTargets = deployTargetsRes?.items ?? [];
+  const stockTemplates = stockTemplatesRes?.items ?? [];
+
+  const lookupInstallationId =
+    installedInstallationId ?? connectedRepo?.installationId ?? null;
+  let availableRepos: AvailableRepo[] = [];
+  if (projectSlug && lookupInstallationId) {
+    const r = await safe(() =>
+      api<{ items: AvailableRepo[] }>(
+        `/v1/orgs/${slug}/projects/${projectSlug}/installation-repos/${encodeURIComponent(lookupInstallationId)}`,
+        { session },
+      ),
+    );
+    availableRepos = r?.items ?? [];
+  }
+
   const activeIndex = state.steps.findIndex((s) => s.status === 'pending');
+  const rowStatus = (i: number): WizardRowStatus =>
+    i < activeIndex || activeIndex === -1
+      ? 'complete'
+      : i === activeIndex
+        ? 'active'
+        : 'locked';
 
   return (
     <main className="mx-auto max-w-3xl space-y-6 p-6">
@@ -95,87 +207,85 @@ export default async function OnboardingPage({
 
       {state.complete && (
         <Card className="border-emerald-200 bg-emerald-50/50 dark:border-emerald-700/40 dark:bg-emerald-950/30">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <div className="font-medium">You&apos;re all set</div>
               <p className="text-sm text-zinc-700 dark:text-zinc-200">
                 Trigger your first run from the project page — agents will plan, code, and review against the connected repo.
               </p>
             </div>
-            <LinkButton href={`/orgs/${slug}`}>Back to Today</LinkButton>
+            {projectSlug && (
+              <LinkButton href={`/orgs/${slug}/projects/${projectSlug}`} variant="primary">
+                Go to {projectSlug}
+              </LinkButton>
+            )}
           </div>
         </Card>
       )}
 
       <ol className="space-y-3">
         {state.steps.map((step, i) => {
-          const isComplete = step.status === 'complete';
-          const isActive = i === activeIndex;
-          // The LLM step is the only one with an inline form (#385) —
-          // the others (project / repo / deploy target) need richer
-          // settings UIs that already live on dedicated pages.
-          const inlineLlm = step.key === 'llm_provider' && isActive && !isComplete;
-          const stepBody = (
-            <div className="flex items-start gap-4">
-              <div className="mt-0.5 shrink-0">
-                {isComplete ? (
-                  <Check className="h-5 w-5 text-emerald-600 dark:text-emerald-400" aria-label="complete" />
-                ) : (
-                  <Circle
-                    className={clsx(
-                      'h-5 w-5',
-                      isActive
-                        ? 'text-sky-600 dark:text-sky-400'
-                        : 'text-zinc-400 dark:text-zinc-500',
-                    )}
-                    aria-label={isActive ? 'active' : 'pending'}
+          const status = rowStatus(i);
+          const description = status === 'active' ? STEP_HELP[step.key] : undefined;
+          let body: React.ReactNode = null;
+          if (status === 'active') {
+            switch (step.key) {
+              case 'llm_provider':
+                body = <InlineLlmStep orgSlug={slug} action={addLlmProviderAction} />;
+                break;
+              case 'first_project':
+                body = (
+                  <CreateProjectForm orgSlug={slug} action={createFirstProjectAction} />
+                );
+                break;
+              case 'connected_repo':
+                body = projectSlug ? (
+                  <RepoForm
+                    slug={slug}
+                    projectSlug={projectSlug}
+                    initial={connectedRepo}
+                    installedInstallationId={installedInstallationId}
+                    availableRepos={availableRepos}
+                    installFrom="wizard"
                   />
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <span
-                    className={clsx(
-                      'font-medium',
-                      isComplete && 'line-through decoration-zinc-300 dark:decoration-zinc-600',
-                    )}
-                  >
-                    Step {i + 1} · {step.label}
-                  </span>
-                  {!isComplete && !inlineLlm && (
-                    <ChevronRight className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden />
-                  )}
-                </div>
-                <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                  {STEP_HELP[step.key]}
-                </p>
-                {inlineLlm && (
-                  <div className="mt-3">
-                    <InlineLlmStep orgSlug={slug} action={addLlmProviderAction} />
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-          const wrapperClass = clsx(
-            'block rounded-lg border p-4 shadow-sm transition-colors',
-            isActive
-              ? 'border-sky-400 bg-sky-50/60 dark:border-sky-600 dark:bg-sky-950/30'
-              : 'border-zinc-200 bg-[rgb(var(--card))] dark:border-zinc-700',
-            isComplete && 'opacity-75',
-            !inlineLlm && !isComplete && 'hover:bg-sky-50 dark:hover:bg-sky-950/40',
-            !inlineLlm && isComplete && 'hover:border-zinc-300 dark:hover:border-zinc-600',
-          );
+                ) : (
+                  <BlockedBecauseNoProject />
+                );
+                break;
+              case 'deploy_target':
+                body = projectSlug ? (
+                  <DeployTargetForm
+                    slug={slug}
+                    projectSlug={projectSlug}
+                    initial={deployTargets}
+                    kinds={['dev']}
+                  />
+                ) : (
+                  <BlockedBecauseNoProject />
+                );
+                break;
+              case 'lifecycle_template':
+                body = projectSlug ? (
+                  <StockTemplatePicker
+                    scope={{ kind: 'project', orgSlug: slug, projectSlug }}
+                    templates={stockTemplates}
+                  />
+                ) : (
+                  <BlockedBecauseNoProject />
+                );
+                break;
+            }
+          }
           return (
-            <li key={step.key}>
-              {inlineLlm ? (
-                <div className={wrapperClass}>{stepBody}</div>
-              ) : (
-                <Link href={step.actionUrl} className={wrapperClass}>
-                  {stepBody}
-                </Link>
-              )}
-            </li>
+            <WizardRow
+              key={step.key}
+              index={i}
+              label={step.label}
+              status={status}
+              description={description}
+            >
+              {body}
+            </WizardRow>
           );
         })}
       </ol>
@@ -191,5 +301,13 @@ export default async function OnboardingPage({
         </div>
       )}
     </main>
+  );
+}
+
+function BlockedBecauseNoProject() {
+  return (
+    <p className="rounded border border-dashed p-3 text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
+      Finish the project-creation step first; this step targets the project you create.
+    </p>
   );
 }

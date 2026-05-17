@@ -1,7 +1,8 @@
 import { redirect } from 'next/navigation';
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
-import { Card, Button } from '@/components/ui';
+import { Card } from '@/components/ui';
+import { CreateProjectForm } from '@/components/onboarding/create-project-form';
 
 async function createAction(formData: FormData) {
   'use server';
@@ -24,20 +25,7 @@ export default async function NewProjectPage({ params }: { params: Promise<{ slu
     <main className="mx-auto max-w-xl p-6 space-y-6">
       <h1 className="text-xl font-semibold">Create a project</h1>
       <Card>
-        <form action={createAction} className="space-y-3">
-          <input type="hidden" name="orgSlug" value={slug} />
-          <label className="block text-sm">
-            <span className="text-zinc-500">Project name</span>
-            <input name="name" required className="mt-1 block w-full rounded border px-3 py-2 bg-transparent" />
-          </label>
-          <label className="block text-sm">
-            <span className="text-zinc-500">Slug</span>
-            <input name="slug" required className="mt-1 block w-full rounded border px-3 py-2 bg-transparent font-mono" />
-          </label>
-          <div className="flex justify-end">
-            <Button variant="primary">Create</Button>
-          </div>
-        </form>
+        <CreateProjectForm orgSlug={slug} action={createAction} submitLabel="Create" />
       </Card>
       <div className="space-y-2 text-sm text-zinc-500">
         <p>

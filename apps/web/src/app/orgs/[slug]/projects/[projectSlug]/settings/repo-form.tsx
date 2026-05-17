@@ -24,6 +24,7 @@ export function RepoForm({
   initial,
   installedInstallationId,
   availableRepos = [],
+  installFrom = 'settings',
 }: {
   slug: string;
   projectSlug: string;
@@ -41,6 +42,14 @@ export function RepoForm({
    * with a dropdown so the user doesn't have to retype names.
    */
   availableRepos?: AvailableRepo[];
+  /**
+   * #455: which surface kicked off the GitHub App install round-trip.
+   * The API callback uses this to decide where to land the user after
+   * GitHub redirects back — `wizard` keeps them on
+   * `/orgs/{slug}/onboarding`, `settings` (default) keeps the legacy
+   * settings-page behavior.
+   */
+  installFrom?: 'wizard' | 'settings';
 }) {
   const [repoFullName, setRepoFullName] = useState(initial?.repoFullName ?? '');
   const [defaultBranch, setDefaultBranch] = useState(initial?.defaultBranch ?? 'main');
@@ -92,7 +101,7 @@ export function RepoForm({
   };
 
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? '';
-  const installHref = `${apiBase}/v1/integrations/github/install?org=${encodeURIComponent(slug)}&project=${encodeURIComponent(projectSlug)}`;
+  const installHref = `${apiBase}/v1/integrations/github/install?org=${encodeURIComponent(slug)}&project=${encodeURIComponent(projectSlug)}&from=${installFrom}`;
 
   return (
     <div className="space-y-3">
