@@ -193,38 +193,44 @@ export function RepoForm({
             onChange={(e) => setDefaultBranch(e.target.value)}
           />
         </label>
-        <label className="text-sm">
-          <span className="block text-zinc-600 dark:text-zinc-400">
-            GitHub App installation ID{' '}
-            <span className="text-xs text-zinc-400">(optional in dev)</span>
-          </span>
-          <input
-            className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
-            placeholder="manual"
-            value={installationId}
-            onChange={(e) => setInstallationId(e.target.value)}
-          />
-        </label>
-        <label className="text-sm">
-          <span className="block text-zinc-600 dark:text-zinc-400">
-            Repo numeric ID{' '}
-            <span className="text-xs text-zinc-400">(optional in dev)</span>
-          </span>
-          <input
-            className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
-            placeholder="leave blank"
-            value={repoId}
-            onChange={(e) => setRepoId(e.target.value)}
-          />
-        </label>
+        {installFrom !== 'wizard' && (
+          <>
+            <label className="text-sm">
+              <span className="block text-zinc-600 dark:text-zinc-400">
+                GitHub App installation ID{' '}
+                <span className="text-xs text-zinc-400">(optional in dev)</span>
+              </span>
+              <input
+                className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+                placeholder="manual"
+                value={installationId}
+                onChange={(e) => setInstallationId(e.target.value)}
+              />
+            </label>
+            <label className="text-sm">
+              <span className="block text-zinc-600 dark:text-zinc-400">
+                Repo numeric ID{' '}
+                <span className="text-xs text-zinc-400">(optional in dev)</span>
+              </span>
+              <input
+                className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+                placeholder="leave blank"
+                value={repoId}
+                onChange={(e) => setRepoId(e.target.value)}
+              />
+            </label>
+          </>
+        )}
       </div>
 
-      <p className="text-xs text-zinc-500">
-        For real GitHub App-based access, set <code>GITHUB_APP_ID</code> and{' '}
-        <code>GITHUB_APP_PRIVATE_KEY</code> in your environment and provide the installation ID.
-        Without those, the connection is informational and the runner won't be able to push commits
-        — but skills like <code>repo.read_file</code> can still operate on a workspace clone.
-      </p>
+      {installFrom !== 'wizard' && (
+        <p className="text-xs text-zinc-500">
+          For real GitHub App-based access, set <code>GITHUB_APP_ID</code> and{' '}
+          <code>GITHUB_APP_PRIVATE_KEY</code> in your environment and provide the installation ID.
+          Without those, the connection is informational and the runner won't be able to push commits
+          — but skills like <code>repo.read_file</code> can still operate on a workspace clone.
+        </p>
+      )}
 
       <div className="flex flex-wrap gap-2">
         <Button onClick={onSave} disabled={pending} variant="primary">
