@@ -39,6 +39,12 @@ export async function connectRepoAction(
     defaultBranch: string;
     installationId: string;
     repoId: string;
+    /**
+     * Branch mergecrew opens new PRs against (#469). Null / empty
+     * coalesces server-side to `defaultBranch` so trunk-based teams
+     * keep the prior behavior without an explicit value.
+     */
+    basePrBranch?: string | null;
   },
 ) {
   const session = await requireSession();

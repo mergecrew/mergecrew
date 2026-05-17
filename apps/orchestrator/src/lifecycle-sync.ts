@@ -1,5 +1,5 @@
 import type { Logger } from 'pino';
-import { withTenant } from '@mergecrew/db';
+import { effectiveBaseBranch, withTenant } from '@mergecrew/db';
 import { parseMergecrewYaml, mergeWithDefault } from '@mergecrew/config-yaml';
 import { GitHubProvider } from '@mergecrew/adapters-vcs';
 
@@ -47,14 +47,15 @@ export async function syncLifecycleFromRepo(opts: {
 
   let yaml: string;
   try {
+    const baseBranch = effectiveBaseBranch(repo);
     const file = await vcs.getFileAt(
       {
         installationId: repo.installationId,
         repoId: repo.repoId ?? undefined,
         repoFullName: repo.repoFullName,
-        defaultBranch: repo.defaultBranch,
+        defaultBranch: baseBranch,
       },
-      repo.defaultBranch,
+      baseBranch,
       CONFIG_PATH,
     );
     yaml = Buffer.from(file.contentBase64, 'base64').toString('utf-8');

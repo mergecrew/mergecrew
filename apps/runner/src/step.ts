@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import type { Logger } from 'pino';
-import { withTenant } from '@mergecrew/db';
+import { effectiveBaseBranch, withTenant } from '@mergecrew/db';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import {
@@ -714,7 +714,7 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
             installationId: repo.installationId,
             repoId: repo.repoId ?? undefined,
             repoFullName: repo.repoFullName,
-            defaultBranch: repo.defaultBranch,
+            defaultBranch: effectiveBaseBranch(repo),
           };
           const reviewBody =
             verdict === 'approve'
@@ -1039,11 +1039,14 @@ async function openPendingChangesetPrs(opts: {
   );
   if (changesets.length === 0) return;
 
+  // For branch-per-env teams the integration branch differs from
+  // GitHub's reported default; effectiveBaseBranch() coalesces #469.
+  const baseBranch = effectiveBaseBranch(repo);
   const repoRef = {
     installationId: repo.installationId,
     repoId: repo.repoId ?? undefined,
     repoFullName: repo.repoFullName,
-    defaultBranch: repo.defaultBranch,
+    defaultBranch: baseBranch,
   };
 
   for (const cs of changesets) {
@@ -1051,7 +1054,7 @@ async function openPendingChangesetPrs(opts: {
       // Blast-radius gate (#285). Compare branch vs default-branch in
       // the local workspace before pushing; if any cap is exceeded,
       // mark the changeset blocked with the breakdown and skip push.
-      const stats = await getLocalBranchStats(workspacePath, cs.branch, repo.defaultBranch);
+      const stats = await getLocalBranchStats(workspacePath, cs.branch, baseBranch);
       const verdict = checkBlastRadius({ files: stats }, limits);
       if (!verdict.ok) {
         await withTenant(organizationId, (tx) =>
@@ -1099,7 +1102,7 @@ async function openPendingChangesetPrs(opts: {
       const body = buildPrBody(cs);
       const pr = await vcs.openPullRequest(repoRef, {
         head: cs.branch,
-        base: repo.defaultBranch,
+        base: baseBranch,
         title: cs.title,
         body,
         // Draft when tests failed (original behavior) OR when the

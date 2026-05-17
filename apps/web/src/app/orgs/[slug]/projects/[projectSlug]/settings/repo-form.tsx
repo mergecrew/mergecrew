@@ -9,6 +9,11 @@ interface ConnectedRepo {
   defaultBranch: string;
   installationId: string;
   repoId: string;
+  /**
+   * Branch mergecrew opens new PRs against (#469). NULL means
+   * "coalesce to defaultBranch" — trunk-based teams leave it blank.
+   */
+  basePrBranch: string | null;
 }
 
 interface AvailableRepo {
@@ -53,6 +58,7 @@ export function RepoForm({
 }) {
   const [repoFullName, setRepoFullName] = useState(initial?.repoFullName ?? '');
   const [defaultBranch, setDefaultBranch] = useState(initial?.defaultBranch ?? 'main');
+  const [basePrBranch, setBasePrBranch] = useState(initial?.basePrBranch ?? '');
   const [installationId, setInstallationId] = useState(
     installedInstallationId ?? initial?.installationId ?? '',
   );
@@ -67,6 +73,8 @@ export function RepoForm({
     setRepoFullName(r.repoFullName);
     setDefaultBranch(r.defaultBranch);
     setRepoId(r.repoId);
+    // basePrBranch stays as the user typed it; if blank, server coalesces
+    // to defaultBranch — same behavior as before #469 for trunk-based teams.
   };
 
   const onSave = () => {
@@ -82,6 +90,9 @@ export function RepoForm({
           defaultBranch: defaultBranch.trim() || 'main',
           installationId: installationId.trim() || 'manual',
           repoId: repoId.trim() || repoFullName.trim(),
+          // Empty string here collapses server-side to null and coalesces
+          // back to defaultBranch on read — trunk-based teams stay untouched.
+          basePrBranch: basePrBranch.trim() || null,
         });
       } catch (e: any) {
         setError(String(e?.message ?? e));
@@ -192,6 +203,26 @@ export function RepoForm({
             value={defaultBranch}
             onChange={(e) => setDefaultBranch(e.target.value)}
           />
+          <span className="block text-xs text-zinc-500">
+            What GitHub reports as the repo&apos;s default branch.
+          </span>
+        </label>
+        <label className="text-sm">
+          <span className="block text-zinc-600 dark:text-zinc-400">
+            Branch mergecrew opens PRs against{' '}
+            <span className="text-xs text-zinc-400">(defaults to default branch)</span>
+          </span>
+          <input
+            className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+            placeholder={defaultBranch || 'main'}
+            value={basePrBranch}
+            onChange={(e) => setBasePrBranch(e.target.value)}
+          />
+          <span className="block text-xs text-zinc-500">
+            For branch-per-env workflows (e.g. <code>developer</code> → dev,{' '}
+            <code>qa</code> → stage, <code>main</code> → prod), point this at your
+            integration branch. Leave blank for trunk-based projects.
+          </span>
         </label>
         {installFrom !== 'wizard' && (
           <>

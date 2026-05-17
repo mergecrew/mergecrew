@@ -13,7 +13,11 @@ type Project = {
   name: string;
   description?: string | null;
   demo?: boolean;
-  connectedRepo?: { repoFullName: string; defaultBranch: string } | null;
+  connectedRepo?: {
+    repoFullName: string;
+    defaultBranch: string;
+    basePrBranch?: string | null;
+  } | null;
   deployTargets?: Array<{ kind: 'dev' | 'staging' | 'prod' }>;
 };
 
@@ -162,7 +166,10 @@ export default async function ProjectOverview({
           {project.connectedRepo && (
             <p className="mt-2 font-mono text-xs text-zinc-500">
               {project.connectedRepo.repoFullName} ·{' '}
-              <span className="text-zinc-400">{project.connectedRepo.defaultBranch}</span>
+              <span className="text-zinc-400">
+                {project.connectedRepo.basePrBranch?.trim() ||
+                  project.connectedRepo.defaultBranch}
+              </span>
             </p>
           )}
         </div>

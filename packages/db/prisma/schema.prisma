@@ -269,6 +269,11 @@ model ConnectedRepo {
   repoId         String   @map("repo_id")
   repoFullName   String   @map("repo_full_name")
   defaultBranch  String   @map("default_branch")
+  /// Branch mergecrew opens new PRs against (#469). NULL coalesces to
+  /// `defaultBranch` so trunk-based teams keep the old behavior. Branch-
+  /// per-env shops (developer → dev, qa → stage, main → prod) point this
+  /// at their integration branch.
+  basePrBranch   String?  @map("base_pr_branch")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)

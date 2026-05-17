@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { applyGraphEdits, type GraphEdit } from '@mergecrew/config-yaml';
 import { GitHubProvider } from '@mergecrew/adapters-vcs';
+import { effectiveBaseBranch } from '@mergecrew/db';
 import { NotFoundError, ValidationError } from '@mergecrew/domain';
 import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
@@ -81,18 +82,19 @@ export class LifecyclePrService {
       appId: process.env.GITHUB_APP_ID,
       privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
     });
+    const baseBranch = effectiveBaseBranch(repo);
     const repoRef = {
       installationId: repo.installationId,
       repoId: repo.repoId ?? undefined,
       repoFullName: repo.repoFullName,
-      defaultBranch: repo.defaultBranch,
+      defaultBranch: baseBranch,
     };
 
     const branch = `mergecrew/lifecycle/${projectSlug}-${shortTimestamp()}`;
     const workspace = await mkdtemp(path.join(tmpdir(), 'mergecrew-lifecycle-pr-'));
 
     try {
-      await vcs.cloneIntoWorkspace(repoRef, repo.defaultBranch, workspace);
+      await vcs.cloneIntoWorkspace(repoRef, baseBranch, workspace);
 
       const yamlPath = path.join(workspace, 'mergecrew.yaml');
       let source: string;
@@ -116,7 +118,7 @@ export class LifecyclePrService {
         );
       }
 
-      await vcs.createBranch(workspace, branch, repo.defaultBranch);
+      await vcs.createBranch(workspace, branch, baseBranch);
       await writeFile(yamlPath, result.yaml, 'utf8');
 
       await vcs.commit(workspace, {
@@ -128,7 +130,7 @@ export class LifecyclePrService {
 
       const pr = await vcs.openPullRequest(repoRef, {
         head: branch,
-        base: repo.defaultBranch,
+        base: baseBranch,
         title: `chore(lifecycle): ${result.summary}`,
         body: buildPrBody({
           orgSlug,
@@ -175,14 +177,15 @@ export class LifecyclePrService {
       privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
     });
     try {
+      const baseBranch = effectiveBaseBranch(repo);
       const file = await vcs.getFileAt(
         {
           installationId: repo.installationId,
           repoId: repo.repoId ?? undefined,
           repoFullName: repo.repoFullName,
-          defaultBranch: repo.defaultBranch,
+          defaultBranch: baseBranch,
         },
-        repo.defaultBranch,
+        baseBranch,
         'mergecrew.yaml',
       );
       const source = Buffer.from(file.contentBase64, 'base64').toString('utf8');

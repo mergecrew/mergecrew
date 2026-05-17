@@ -59,6 +59,7 @@ export class ProjectController {
       repoId: string;
       repoFullName: string;
       defaultBranch: string;
+      basePrBranch?: string | null;
     },
   ) {
     return this.projects.connectRepo(projectSlug, body);
