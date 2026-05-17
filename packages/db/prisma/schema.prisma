@@ -302,6 +302,11 @@ enum PromotionStrategyKind {
   /// Tag-driven. mergecrew tags the release branch HEAD with an
   /// interpolated pattern; user's CI fires on tag.
   tag_driven
+  /// Single-environment / pre-launch (#478). Dev IS prod. mergecrew
+  /// runs no git operations on promote — the digest is purely a
+  /// review gate that stamps approved changesets so they leave the
+  /// inbox. Drop still opens a revert PR against basePrBranch.
+  single_env
   /// Configure later. Wizard completes; project page surfaces a chip
   /// where the Promote button would be, linking back to settings.
   deferred

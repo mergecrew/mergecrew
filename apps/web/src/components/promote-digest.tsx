@@ -31,6 +31,12 @@ export interface PromoteDigestProps {
    * missing the row just shows the branch + PR link.
    */
   basePrBranch?: string | null;
+  /**
+   * PromotionStrategy.kind (#478). Used to relabel the CTA and
+   * success copy when the strategy is `single_env` — promote runs
+   * no git there, so "Mark reviewed" matches the actual semantics.
+   */
+  strategyKind?: string | null;
 }
 
 /**
@@ -55,7 +61,11 @@ export function PromoteDigest({
   changesets,
   latestRun,
   basePrBranch,
+  strategyKind,
 }: PromoteDigestProps) {
+  const isSingleEnv = strategyKind === 'single_env';
+  const ctaLabel = isSingleEnv ? 'Mark reviewed' : 'Build release';
+  const ctaPending = isSingleEnv ? 'Marking…' : 'Building…';
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -138,11 +148,24 @@ export function PromoteDigest({
     <section className="space-y-3" data-testid="promote-digest">
       <div className="flex items-baseline justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold">Ready to promote</h2>
+          <h2 className="text-base font-semibold">
+            {isSingleEnv ? 'Ready to review' : 'Ready to promote'}
+          </h2>
           <p className="text-xs text-zinc-500">
-            Approved changesets get cherry-picked onto a release branch and shipped via your CI.
-            Deferred changes carry forward to the next cycle. Drop opens a revert PR on{' '}
-            <span className="font-mono">{basePrBranch ?? 'your base branch'}</span>.
+            {isSingleEnv ? (
+              <>
+                Approved changesets are marked reviewed and leave the digest — no
+                git operations, since this is a single-environment project.
+                Deferred changes reappear next cycle. Drop opens a revert PR on{' '}
+                <span className="font-mono">{basePrBranch ?? 'your base branch'}</span>.
+              </>
+            ) : (
+              <>
+                Approved changesets get cherry-picked onto a release branch and shipped via your CI.
+                Deferred changes carry forward to the next cycle. Drop opens a revert PR on{' '}
+                <span className="font-mono">{basePrBranch ?? 'your base branch'}</span>.
+              </>
+            )}
           </p>
         </div>
         <div className="text-xs text-zinc-500">
@@ -164,9 +187,18 @@ export function PromoteDigest({
       {runFlash?.status === 'completed' && (
         <Card className="border-emerald-200 bg-emerald-50/50 dark:border-emerald-700/40 dark:bg-emerald-950/30">
           <div className="text-sm">
-            <span className="font-medium">Release built.</span>{' '}
-            <span className="font-mono text-xs">{runFlash.releaseRef}</span> is on the remote.
-            Your CI takes over from here.
+            {isSingleEnv ? (
+              <>
+                <span className="font-medium">Marked reviewed.</span> Approved
+                changesets have left the digest.
+              </>
+            ) : (
+              <>
+                <span className="font-medium">Release built.</span>{' '}
+                <span className="font-mono text-xs">{runFlash.releaseRef}</span> is on the remote.
+                Your CI takes over from here.
+              </>
+            )}
           </div>
         </Card>
       )}
@@ -208,7 +240,7 @@ export function PromoteDigest({
           disabled={pending || approvedIds.length === 0}
           onClick={onBuildRelease}
         >
-          {pending ? 'Building…' : 'Build release'}
+          {pending ? ctaPending : ctaLabel}
         </Button>
       </div>
     </section>

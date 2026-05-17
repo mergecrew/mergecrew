@@ -172,7 +172,13 @@ export class PromoteService {
       );
     }
     if (!project.connectedRepo) {
-      throw new ValidationError('no_connected_repo: cannot build a release branch without a repo');
+      throw new ValidationError('no_connected_repo: cannot promote without a repo');
+    }
+    // single_env runs no git operations — short-circuit before the
+    // GitHub-App env check so review-only projects work without
+    // GitHub Actions credentials configured on the server (#478).
+    if (strategy.kind === 'single_env') {
+      return this.acceptReviewed(project.id, project.organizationId, approvedChangesetIds);
     }
     if (!process.env.GITHUB_APP_ID || !process.env.GITHUB_APP_PRIVATE_KEY) {
       throw new ValidationError(
@@ -436,6 +442,75 @@ export class PromoteService {
     await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.promoteRun.update({ where: { id }, data: { releaseRef } }),
     );
+  }
+
+  /**
+   * single_env path (#478): no cherry-pick, no push, no dispatch.
+   * Create a completed PromoteRun, stamp lastPromoteRunId on the
+   * approved changesets so they leave the digest, emit an audit log
+   * entry per accepted changeset. The digest UI renames the CTA to
+   * "Mark reviewed" for this kind so the verb matches reality.
+   */
+  private async acceptReviewed(
+    projectId: string,
+    organizationId: string,
+    approvedChangesetIds: string[],
+  ): Promise<PromoteRun> {
+    const t = this.tenant.require();
+    // Re-validate ownership + non-dropped (the early validation already
+    // covered this for `approved` but acceptReviewed is reachable
+    // independently if future code paths call it).
+    const rows = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.changeset.findMany({
+        where: {
+          id: { in: approvedChangesetIds },
+          projectId,
+          droppedAt: null,
+        },
+        select: { id: true },
+      }),
+    );
+    if (rows.length !== approvedChangesetIds.length) {
+      throw new ValidationError(
+        'invalid_changesets: one or more changesets are unknown or already dropped',
+      );
+    }
+
+    const run = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.promoteRun.create({
+        data: {
+          organizationId,
+          projectId,
+          status: 'completed',
+          releaseRef: null,
+          approvedChangesetIds: rows.map((r) => r.id),
+          finishedAt: new Date(),
+        },
+      }),
+    );
+
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.changeset.updateMany({
+        where: { id: { in: rows.map((r) => r.id) }, projectId },
+        data: { lastPromoteRunId: run.id, updatedAt: new Date() },
+      }),
+    );
+
+    // Audit-log entry per accepted changeset. Free-form metadata keeps
+    // the row useful even before any UI consumes it.
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.auditLogEntry.createMany({
+        data: rows.map((r) => ({
+          organizationId,
+          actorUserId: t.userId,
+          action: 'changeset.accepted',
+          target: { changesetId: r.id, projectId } as Prisma.InputJsonValue,
+          metadata: { promoteRunId: run.id, strategyKind: 'single_env' } as Prisma.InputJsonValue,
+        })),
+      }),
+    );
+
+    return run;
   }
 }
 
