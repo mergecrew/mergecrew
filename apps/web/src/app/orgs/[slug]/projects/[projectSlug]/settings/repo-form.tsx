@@ -100,8 +100,11 @@ export function RepoForm({
     });
   };
 
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? '';
-  const installHref = `${apiBase}/v1/integrations/github/install?org=${encodeURIComponent(slug)}&project=${encodeURIComponent(projectSlug)}&from=${installFrom}`;
+  // BFF route (#457). The raw API endpoint requires a Bearer JWT
+  // that the browser doesn't carry on cross-subdomain navigation;
+  // routing through the web tier lets us forward auth properly and
+  // keeps the install URL same-origin.
+  const installHref = `/orgs/${encodeURIComponent(slug)}/projects/${encodeURIComponent(projectSlug)}/install-github?from=${installFrom}`;
 
   return (
     <div className="space-y-3">
