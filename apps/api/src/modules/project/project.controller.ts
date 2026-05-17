@@ -242,6 +242,11 @@ export class ProjectController {
     return { items: await this.promote.listRuns(projectSlug) };
   }
 
+  @Get(':projectSlug/promote-digest')
+  async getPromoteDigest(@Param('projectSlug') projectSlug: string) {
+    return this.promote.digest(projectSlug);
+  }
+
   @Post(':projectSlug/inception')
   @RequireRole('operator')
   async runInception(@Param('projectSlug') projectSlug: string) {

@@ -144,6 +144,46 @@ export async function upsertPromotionStrategyAction(
   revalidatePath(`/orgs/${slug}/onboarding`);
 }
 
+export interface PromoteRunSnapshot {
+  id: string;
+  status: 'pending' | 'conflict' | 'completed' | 'failed';
+  releaseRef: string | null;
+  conflict: { changesetId: string; files: string[] } | null;
+  failureReason: string | null;
+}
+
+export async function promoteAction(
+  slug: string,
+  projectSlug: string,
+  approvedChangesetIds: string[],
+): Promise<PromoteRunSnapshot> {
+  const session = await requireSession();
+  const run = await api<PromoteRunSnapshot>(
+    `/v1/orgs/${slug}/projects/${projectSlug}/promote`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ approvedChangesetIds }),
+      session,
+    },
+  );
+  revalidatePath(`/orgs/${slug}/projects/${projectSlug}`);
+  return run;
+}
+
+export async function dropChangesetAction(
+  slug: string,
+  projectSlug: string,
+  csId: string,
+): Promise<{ revertPrUrl: string; alreadyDropped: boolean }> {
+  const session = await requireSession();
+  const r = await api<{ revertPrUrl: string; alreadyDropped: boolean }>(
+    `/v1/orgs/${slug}/projects/${projectSlug}/changesets/${csId}/drop`,
+    { method: 'POST', session },
+  );
+  revalidatePath(`/orgs/${slug}/projects/${projectSlug}`);
+  return r;
+}
+
 /**
  * V1.1 onboarding smoke test (#7): opens a no-op draft PR, dispatches
  * the dev deploy workflow, awaits completion, returns the resulting URL.
