@@ -8,9 +8,11 @@ import { RenderForm, renderDefaultConfig } from './render';
 import { FlyForm, flyDefaultConfig } from './fly';
 import { RailwayForm, railwayDefaultConfig } from './railway';
 import { AwsDirectForm, awsDirectDefaultConfig } from './aws-direct';
+import { ExternalCiForm, externalCiDefaultConfig } from './external-ci';
 import type { AdapterFormProps } from './shared';
 
 export type AdapterId =
+  | 'external-ci'
   | 'github-actions'
   | 'vercel'
   | 'netlify'
@@ -20,6 +22,7 @@ export type AdapterId =
   | 'aws-direct';
 
 export const ADAPTERS: Array<{ id: AdapterId; label: string }> = [
+  { id: 'external-ci', label: 'External CI/CD (just record the URL)' },
   { id: 'github-actions', label: 'GitHub Actions' },
   { id: 'vercel', label: 'Vercel' },
   { id: 'netlify', label: 'Netlify' },
@@ -30,6 +33,7 @@ export const ADAPTERS: Array<{ id: AdapterId; label: string }> = [
 ];
 
 const FORMS: Record<AdapterId, (props: AdapterFormProps) => ReactElement> = {
+  'external-ci': ExternalCiForm,
   'github-actions': GitHubActionsForm,
   vercel: VercelForm,
   netlify: NetlifyForm,
@@ -40,6 +44,7 @@ const FORMS: Record<AdapterId, (props: AdapterFormProps) => ReactElement> = {
 };
 
 const DEFAULTS: Record<AdapterId, () => Record<string, unknown>> = {
+  'external-ci': externalCiDefaultConfig,
   'github-actions': githubActionsDefaultConfig,
   vercel: vercelDefaultConfig,
   netlify: netlifyDefaultConfig,

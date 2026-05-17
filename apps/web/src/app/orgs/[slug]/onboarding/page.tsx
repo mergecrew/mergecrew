@@ -39,7 +39,7 @@ const STEP_HELP: Record<StepKey, string> = {
   connected_repo:
     'Mergecrew opens its PRs here. The bundled GitHub adapter handles app install + repo selection; pick "local" for a synthetic walkthrough.',
   deploy_target:
-    "The dev target is where the agent's changesets get deployed for human review before prod. Use `local-noop` if you just want to see the loop and skip real deploys.",
+    "Where merged PRs land. Most teams already have CI/CD wired up — paste the URL it deploys to and we're done. Need a different adapter (Vercel, Netlify, GitHub Actions dispatch, …)? Switch in project settings later.",
   lifecycle_template:
     'Pick a stock Planner/Coder/Reviewer setup tuned for your stack (Next.js, Python, Go, or generic). One click installs it as your project lifecycle.',
 };
@@ -259,6 +259,8 @@ export default async function OnboardingPage({
                     projectSlug={projectSlug}
                     initial={deployTargets}
                     kinds={['dev']}
+                    installFrom="wizard"
+                    baseBranch={connectedRepo?.defaultBranch}
                   />
                 ) : (
                   <BlockedBecauseNoProject />

@@ -15,6 +15,8 @@ If you want the underlying interface contract instead of recipes, see [`packages
 ```
 What kicks your existing dev deploy today?
 │
+├─ Already wired up — I just need mergecrew to know the URL  ─►  Pattern 0 (external-ci)
+│
 ├─ A push to main (your CI fires automatically)
 │  ├─ Vercel project? ─────────────────────►  Pattern 1
 │  ├─ Netlify site?   ─────────────────────►  Pattern 2
@@ -33,6 +35,42 @@ What kicks your existing dev deploy today?
 ```
 
 Mix and match across environments. A common shape: Pattern 3 for dev, Pattern 4 for prod (auto-deploy on PR merge to main; require a human to click the prod button).
+
+## Pattern 0 — External CI/CD (the wizard default)
+
+**Shape.** You already have CI/CD building and deploying your app on merge to your base branch — GitHub Actions, GitLab CI, Buildkite, Jenkins, Argo, anything. The pipeline publishes to a stable URL like `https://dev.example.com`. You don't want mergecrew to dispatch builds; you just need it to know where the build will be reachable so downstream skills (smoke checks, screenshot diffs) can target it.
+
+**DeployTarget config.**
+
+```jsonc
+{
+  "kind": "dev",
+  "adapterId": "external-ci",
+  "config": {
+    "urlFixed": "https://dev.example.com"
+  }
+}
+```
+
+For per-branch preview hosts, swap `urlFixed` for `urlPattern` with `${branch}` / `${sha}` placeholders:
+
+```jsonc
+{
+  "config": {
+    "urlPattern": "https://${branch}.preview.example.com"
+  }
+}
+```
+
+**Provider auth.** None. The adapter makes no outbound HTTP calls.
+
+**What the agent does.** Nothing on the deploy side. `triggerDeploy` returns success immediately; `resolveUrlForRef` interpolates the configured URL. The assumption is that by the time downstream skills need the URL, the user's existing pipeline has already raced ahead. Teams that need stricter sequencing — mergecrew waiting until the deploy is actually live before running a smoke check — should use **Pattern 3** (`github-actions observe`) instead.
+
+**GitHub App scopes.** Contents:read/write, Pull requests:read/write. No Actions scope needed.
+
+This is the adapter the inline onboarding wizard defaults to (#467). It's the fastest path to a green wizard for anyone whose CI/CD is already configured outside mergecrew. Switch to a richer adapter from project settings later if you need lifecycle observation, dispatch, or rollback support.
+
+Source: [`packages/adapters-deploy/src/external-ci.ts`](../../packages/adapters-deploy/src/external-ci.ts).
 
 ## Pattern 1 — Vercel preview deploys
 
@@ -320,6 +358,22 @@ No adapter, no config combination, no env var bypasses the human approval for pr
 ### When deploys fail
 
 The runbook's [Deploy adapter timeout](05-operator-runbook.md#deploy-timeout) section covers the most common failure (Mergecrew gave up polling while the deploy was still running) and the recovery steps.
+
+### Adapter selection at a glance
+
+| Adapter | Use it when | mergecrew dispatches? | mergecrew observes status? | Needs provider token? |
+|---|---|---|---|---|
+| `external-ci` | Existing CI/CD already deploys on merge; you only need the URL recorded | No (no-op) | No (assumes success) | No |
+| `github-actions` (`observe`) | A `.github/workflows/` workflow already auto-deploys on push/PR | No | Yes — watches the existing run | App install |
+| `github-actions` (`dispatch`) | A workflow you call via `workflow_dispatch` (typical for prod) | Yes (`workflow_dispatch`) | Yes | App install |
+| `vercel` | Vercel imports the repo and builds previews automatically | No | Yes — polls Vercel's REST API | `VERCEL_TOKEN` |
+| `netlify` | Netlify imports the repo and builds previews automatically | No | Yes — polls Netlify's REST API | `NETLIFY_TOKEN` |
+| `render` | Render service rebuilds on git push | Yes (Render deploy hook) | Yes — polls Render's REST API | `RENDER_TOKEN` |
+| `fly` | Fly machines deploy via REST API | Yes | Yes | `FLY_API_TOKEN` |
+| `railway` | Railway service redeploy via GraphQL API | Yes | Yes | `RAILWAY_TOKEN` |
+| `aws-direct` | Direct SDK call (Lambda update / ECS service / S3 sync); no CI in the middle | Yes | Yes | AWS env credentials |
+
+When in doubt, pick `external-ci` first to get the loop running, then upgrade to the richer adapter once you want mergecrew to observe deploy outcomes or dispatch builds itself.
 
 ### Adding a new adapter
 
