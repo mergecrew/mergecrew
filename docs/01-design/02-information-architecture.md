@@ -11,9 +11,14 @@
 │  Inbox           ← pending approvals         │
 │  Activity        ← org-wide timeline         │
 │  Costs           ← spend & budgets           │
-│  Settings        ← org & members             │
+│  Settings        ← org, LLM, API keys,       │
+│                    webhooks                  │
 └──────────────────────────────────────────────┘
 ```
+
+> Members management, integrations hub, and billing tabs are **Planned** —
+> the current org settings surface covers general, LLM profiles, API keys,
+> and webhooks. See `apps/web/src/app/orgs/[slug]/(org)/settings/`.
 
 `Today` is the org-wide rollup of: in-flight runs, pending approvals, last night's digest items not yet decided, anomalies. It's the landing surface after sign-in.
 
@@ -67,14 +72,22 @@ Organization
 /                                       → Today (if logged in)
 /login
 /signup
+/orgs/new                               → first-org create flow
 /orgs/:org_slug                         → org Today
+/orgs/:org_slug/onboarding              → DB-derived onboarding wizard
 /orgs/:org_slug/inbox
 /orgs/:org_slug/activity
 /orgs/:org_slug/costs
-/orgs/:org_slug/settings
-/orgs/:org_slug/settings/members
-/orgs/:org_slug/settings/integrations
-/orgs/:org_slug/settings/billing
+/orgs/:org_slug/settings                → general (LLM profiles inline)
+/orgs/:org_slug/settings/api-keys
+/orgs/:org_slug/settings/webhooks
+/orgs/:org_slug/lifecycle-templates     → custom YAML lifecycle templates
+/orgs/:org_slug/evals                   → eval dashboard
+/orgs/:org_slug/evals/compare
+/orgs/:org_slug/evals/:runId
+/orgs/:org_slug/settings/members        ← Planned
+/orgs/:org_slug/settings/integrations   ← Planned
+/orgs/:org_slug/settings/billing        ← Planned
 /orgs/:org_slug/projects
 /orgs/:org_slug/projects/new
 /orgs/:org_slug/projects/:project_slug
@@ -82,6 +95,7 @@ Organization
 /orgs/:org_slug/projects/:project_slug/timeline/:date
 /orgs/:org_slug/projects/:project_slug/changesets
 /orgs/:org_slug/projects/:project_slug/changesets/:changeset_id
+/orgs/:org_slug/projects/:project_slug/changesets/:changeset_id/diff
 /orgs/:org_slug/projects/:project_slug/digest                ← today's
 /orgs/:org_slug/projects/:project_slug/digest/:date          ← historical
 /orgs/:org_slug/projects/:project_slug/lifecycle
@@ -90,6 +104,7 @@ Organization
 /orgs/:org_slug/projects/:project_slug/runs/:run_id
 /orgs/:org_slug/projects/:project_slug/runs/:run_id/transcript/:agent_step_id
 /orgs/:org_slug/projects/:project_slug/settings
+/orgs/:org_slug/projects/:project_slug/settings/auto-promote
 ```
 
 URL design notes:

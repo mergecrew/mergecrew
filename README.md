@@ -12,9 +12,11 @@ Mergecrew is the open-source platform for running an **agentic software developm
 flowchart LR
     Cron([Cron trigger<br/>no ticket needed]) --> Plan[Planner<br/>spec the change]
     Plan --> Code[Coder<br/>build the diff]
-    Code --> Rev{LLM reviewer}
+    Code --> Draft[Open draft PR]
+    Draft --> Rev{LLM reviewer}
     Rev -- request_changes --> Code
-    Rev -- approve --> Dev[Deploy to dev]
+    Rev -- approve --> Ready[Post review +<br/>mark ready-for-review]
+    Ready --> Dev[Deploy to dev]
     Dev --> Scan[Bug scan<br/>preview env]
     Scan --> Digest[Daily digest]
     Digest --> Human{Human approval}
@@ -25,10 +27,12 @@ flowchart LR
     classDef agent fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
     classDef gate fill:#fee2e2,stroke:#dc2626,color:#991b1b
     classDef ship fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef vcs fill:#ede9fe,stroke:#7c3aed,color:#4c1d95
     class Cron trigger
     class Plan,Code,Rev,Scan agent
     class Human gate
     class Dev,Digest,Prod ship
+    class Draft,Ready vcs
 ```
 
 > **Try it in 5 minutes:** `docker compose -f docker-compose.full.yml up`, open `http://localhost:3000`. You land directly in the seeded `demo-saas` project — a guided coachmark tour walks you through the completed sample run, then drops you in the wizard when you click **Set up your own project →**. Full walkthrough: [docs/00-quickstart.md](docs/00-quickstart.md). Screenshots of the live UI live in [docs/assets/screenshots](docs/assets/screenshots/).

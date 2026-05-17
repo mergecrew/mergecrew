@@ -19,6 +19,9 @@ Concrete feature inventory grouped by surface. Each feature has a brief descript
 |---|---|---|
 | Connect-GitHub (GitHub App install + repo selection) | All | Implemented |
 | Project Inception (auto-detect stack, CI, tests; emit `mergecrew.yaml`) | All | Planned |
+| Seeded per-org `demo-saas` project with completed sample run | Theo (day-zero) | Implemented (`Project.demo = true`; mutations rejected 403) |
+| Coachmark tour over the demo project's timeline → digest → review | Theo (day-zero) | Implemented |
+| Inverted FTE: new orgs land in `demo-saas`; "Set up your own project →" CTA → onboarding wizard | Theo (day-zero) | Implemented |
 | Per-project secret store (encrypted, scoped) | All | Implemented |
 | Per-project policy: don't-touch path patterns, sensitive-area heuristics | Mira | In progress |
 | Project archive / unarchive | All | Implemented |
@@ -30,11 +33,14 @@ Concrete feature inventory grouped by surface. Each feature has a brief descript
 | Feature | Persona | Status |
 |---|---|---|
 | Default Lifecycle out of the box | All | Implemented |
+| Stock lifecycle templates (`generic-careful`, `nextjs-vercel`, `python-render`, `go-fly`) selectable from the project Lifecycle page | All | Implemented |
 | Lifecycle defined as YAML in `mergecrew.yaml` (versioned with the repo) | All | Implemented |
-| Visual lifecycle viewer (read-only) | All | Planned (only a JSON-ish editor exists at `apps/web/src/components/lifecycle/lifecycle-editor.tsx`) |
+| Visual lifecycle viewer (DAG render of nodes + edges) | All | Implemented (`apps/web/src/components/lifecycle/lifecycle-graph.tsx`) |
 | Visual lifecycle editor (drag-drop nodes) | All | Planned |
 | Stock agents library (PM, UX, FE, BE, QA, SRE, Bug Triager, Doc Writer) | All | Implemented |
 | Custom agent definitions in `mergecrew.yaml` | Mira | Implemented |
+| `description:` field on agents and workflows (rendered on Lifecycle + Agents pages) | Mira | Implemented (lifecycle YAML schema only — not a Prisma column) |
+| Multi-agent specialization (planner → coder → reviewer) with reviewer loop-back | Mira | Implemented — see [`03-infrastructure/18-multi-agent.md`](../03-infrastructure/18-multi-agent.md) |
 | Stock skills library (~25 skills, see §Skills below) | All | In progress |
 | Custom skill definitions (OpenAPI / JSON-schema-shaped) | Mira | Planned |
 | Per-agent and per-skill model assignment with capability requirements | Mira | Implemented |
@@ -113,15 +119,19 @@ Concrete feature inventory grouped by surface. Each feature has a brief descript
 | Feature | Persona | Status |
 |---|---|---|
 | GitHub (App install, PR, issues) | All | Implemented |
+| Draft PR + reviewer-verdict surfaced as native GitHub Review (`postReview` + `markReadyForReview`) | All | Implemented (GitHub); Gitea/GitLab no-op |
 | GitHub Actions (deploy adapter) | All | Implemented |
 | Vercel (deploy adapter) | Theo (greenfield) | Implemented |
+| Netlify (deploy adapter) | Theo (greenfield) | Implemented |
 | Slack (notifications, approvals, daily digest) | All | In progress (inbound webhook Implemented; outbound Planned) |
+| Email — SMTP transport | All | Implemented |
+| Email — Resend transport (`RESEND_API_KEY`) | All | Implemented |
 | Linear (issue source for Discovery agent) | Mira | In progress |
 | Sentry (bug source for Triage agent) | All | In progress |
 | Intercom / Zendesk (customer feedback source) | Theo | Planned |
 | Notion / Confluence (doc target) | Mira | Planned |
-| AWS direct deploy (ECS/Lambda) — no GH Actions middle | Mira | Planned |
-| Fly / Render / Railway deploy adapters | All | Planned |
+| AWS direct deploy (ECS/Lambda) — no GH Actions middle | Mira | Implemented (`aws-direct` adapter) |
+| Fly / Render / Railway deploy adapters | All | Implemented |
 
 ## Stock skills (catalog)
 

@@ -232,19 +232,21 @@ A "Review" tap opens an approval-shaped variant of S4: the diff, the agent's rea
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## S8 — New project wizard
+## S8 — Onboarding checklist
 
-**Purpose.** Get to first run fast. **Persona.** All.
+**Purpose.** Get the user from "looking at the seeded demo" to "first run on their own repo." **Persona.** All.
 
-Step 1: connect GitHub → repo picker.
-Step 2: detected stack summary + confirm.
-Step 3: pick deploy adapter (auto-detected: GitHub Actions; alternative: Vercel for greenfield).
-Step 4: pick LLM profile (Anthropic / OpenAI / Bedrock / Local with Ollama / Mixed).
-Step 5: review proposed lifecycle + gate policy.
-Step 6: smoke-test deploy ("we'll trigger your dev pipeline once with a no-op commit to confirm everything is wired"). Hit Run.
-Step 7: schedule first run.
+The current implementation lives at `/orgs/{slug}/onboarding` and renders a **DB-derived checklist**, not a multi-step wizard. Each item resolves once the underlying record exists, so a user can complete steps in any order and refresh-resume without losing progress.
 
-Each step is one screen on mobile, a single page with sections on desktop. Back/forward preserves state.
+Sections, in checklist order:
+
+1. **LLM provider** — register one provider/profile (Anthropic, OpenAI, Bedrock, Ollama). Inline form. Skippable while `MERGECREW_DEMO_MODE=1` is set.
+2. **GitHub App** — install on the target org/repo. Status pulled from `Integration` rows.
+3. **Project** — create a project pointed at the connected repo. The Lifecycle page lets the user pick a stock template (`generic-careful`, `nextjs-vercel`, `python-render`, `go-fly`).
+4. **Deploy target** — at minimum one `dev` target (configured under project settings → deploy targets).
+5. **Schedule** — set the cron or leave it unscheduled and run on-demand.
+
+> **Planned (not in S8 today):** automatic stack detection, env-var import from `.env.example`, end-to-end smoke-test that fires a no-op deploy. These are part of the future Project Inception flow (see `00-product/05-features.md`).
 
 ## Visual language
 

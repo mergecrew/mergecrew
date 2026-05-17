@@ -34,15 +34,21 @@ The `careful` graph definition lives in `@mergecrew/domain/graph-profile.ts` as 
 flowchart LR
     Start([__start__]) --> Plan[planner<br/>read-only tools]
     Plan -->|planMarkdown| Code[coder<br/>full edit surface]
-    Code -->|diff| Rev{reviewer<br/>read-only}
-    Rev -- approve --> End([__end__<br/>open PR])
+    Code -->|diff| Draft[[VCS: open draft PR]]
+    Draft --> Rev{reviewer<br/>read-only}
     Rev -- request_changes<br/>up to REVIEW_LOOP_CAP --> Code
+    Rev -- approve --> Post[[VCS: postReview approve<br/>+ markReadyForReview]]
+    Post --> End([__end__])
 
     classDef agent fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
     classDef gate fill:#fef3c7,stroke:#d97706,color:#92400e
+    classDef vcs fill:#ede9fe,stroke:#7c3aed,color:#4c1d95
     class Plan,Code agent
     class Rev gate
+    class Draft,Post vcs
 ```
+
+The draft-PR + reviewer-verdict surfacing is best-effort: a `postReview` failure (auth, draft-unsupported adapter) is logged and the run continues. See [`02-architecture/07-vcs-adapter.md`](../02-architecture/07-vcs-adapter.md#draft-pr--reviewer-verdict-surfacing) for the adapter contract.
 
 The default loop cap is **3 rounds** (one initial coder pass plus up to 2 retries), tunable via `REVIEW_LOOP_CAP`. After exhaustion the run records `REVIEW_LOOP_EXHAUSTED` with the reviewer's last `reasoning` + `requestedChanges` in the event payload, then the workflow advances normally — the changeset surfaces on its existing path (Changesets list / inbox / Slack) with no further coder retries. The timeline event on the run-detail page is where to read what the LLM reviewer was unhappy about.
 

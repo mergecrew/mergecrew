@@ -31,14 +31,36 @@ Documentation for contributors and operators of [Mergecrew](https://github.com/m
 11. [Security](02-architecture/11-security.md)
 
 ### 3 — Infrastructure
+
+**Topology & operations**
 1. [Infra overview](03-infrastructure/01-overview.md)
 2. [Credit & rate-limit handling](03-infrastructure/03-credit-and-rate-handling.md)
 3. [Observability](03-infrastructure/04-observability.md)
-4. [Operator runbook](03-infrastructure/05-operator-runbook.md)
-5. [Deploy-target cookbook](03-infrastructure/06-deploy-targets-cookbook.md)
-6. [Anonymous usage telemetry](03-infrastructure/07-telemetry.md)
+4. [Operator runbook](03-infrastructure/05-operator-runbook.md) — application-level failure modes
+5. [Self-host runbook](03-infrastructure/16-self-host-runbook.md) — infrastructure-level failure modes
+6. [Deploy-target cookbook](03-infrastructure/06-deploy-targets-cookbook.md)
 7. [Single-VM deploy via GHCR](03-infrastructure/19-vm-deploy.md)
 8. [GitHub App setup](03-infrastructure/20-github-app-setup.md)
+
+**Guardrails & budgets**
+
+8. [Monthly spend cap](03-infrastructure/08-monthly-spend-cap.md)
+9. [Dry-run mode](03-infrastructure/09-dry-run.md)
+10. [Blast-radius limits](03-infrastructure/10-blast-radius.md)
+11. [Risk-score gate](03-infrastructure/11-risk-score-gate.md)
+12. [Rollback model](03-infrastructure/12-rollback.md)
+13. [Spend forecast](03-infrastructure/13-spend-forecast.md)
+14. [Anomaly digest](03-infrastructure/14-anomaly-digest.md)
+
+**Quality & telemetry**
+
+15. [Evals](03-infrastructure/15-evals.md)
+16. [Anonymous usage telemetry](03-infrastructure/07-telemetry.md)
+17. [Install telemetry](03-infrastructure/17-install-telemetry.md)
+
+**Advanced**
+
+18. [Multi-agent specialization (planner → coder → reviewer)](03-infrastructure/18-multi-agent.md)
 
 ### 4 — Roadmap
 - [Vision-tier roadmap](04-roadmap.md). Tactical milestones live in [GitHub Issues](https://github.com/mergecrew/mergecrew/issues) and the [project board](https://github.com/orgs/mergecrew/projects).

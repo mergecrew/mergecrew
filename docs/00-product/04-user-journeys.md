@@ -8,22 +8,22 @@ End-to-end flows for the personas. Each journey lists the actor, the steps, and 
 
 ## J1 — First-run onboarding (Theo, day zero)
 
-1. Theo signs up with GitHub OAuth. Org is auto-created from his GitHub username; he can rename it.
-2. He installs the Mergecrew GitHub App on the repo for his existing SaaS.
-3. Mergecrew clones the repo into a sandboxed workspace and runs **Project Inception** — a one-time analysis pass:
-   - Detects stack (NestJS API + Next.js web + Prisma + PostgreSQL).
-   - Detects existing CI: `.github/workflows/deploy-dev.yml`, `.github/workflows/deploy-prod.yml`.
-   - Detects existing test scripts in `package.json`.
-   - Generates a draft `mergecrew.yaml` at the repo root summarizing what it found and proposing a default lifecycle.
-4. Theo opens the **Project setup wizard**:
-   - Confirms the deploy adapter (GitHub Actions, with the dev-deploy workflow filename pre-filled).
-   - Pastes any required env-var contracts (Mergecrew offers to import from `.env.example`).
-   - Picks an LLM provider profile: "Anthropic primary, Bedrock fallback" (default) or others.
-   - Reviews the proposed default lifecycle and human-gate policy.
-5. Mergecrew runs a **dry-run smoke test** — kicks off the dev deploy with a no-op commit, watches the workflow, confirms the URL is reachable. This proves the round-trip.
-6. Theo schedules the first daily run for tomorrow at 08:00 in his timezone, or hits "Run now."
+The first-run experience is **inverted**: instead of asking Theo to wire up an LLM, a repo, and a deploy target before seeing anything, the system drops him into a seeded `demo-saas` project that already has a completed run on the timeline. He sees the loop work first; setup comes after.
 
-**Time budget for J1:** 10 minutes for a clean repo.
+1. Theo signs up (GitHub OAuth or magic-link email). The first org create page is a single informative screen — name, slug, time zone.
+2. He lands directly on `/orgs/{slug}/projects/demo-saas/timeline`, a per-org seeded read-only demo project (`Project.demo = true`, mutations rejected 403). The completed sample run is already visible.
+3. A coachmark tour (`components/demo-project-tour.tsx`) walks the timeline → digest → changeset detail → reviewer verdict → human approval gate. Theo can dismiss it at any time; it's not blocking.
+4. When ready, Theo clicks **Set up your own project →** on the project overview's OrgSetupCard. He's routed to `/orgs/{slug}/onboarding`, a DB-derived checklist:
+   - Connect an LLM provider (or stay in `MERGECREW_DEMO_MODE=1` for deterministic stubs).
+   - Install the Mergecrew GitHub App and connect a repo.
+   - Pick a stock lifecycle template (`generic-careful`, `nextjs-vercel`, `python-render`, `go-fly`) or compose one.
+   - Configure a deploy target.
+   - Set up the schedule.
+5. Theo hits **Run now** on his new project — or waits for the cron tick at 08:00 local time.
+
+**Time budget for J1:** under 5 minutes from `docker compose up` to seeing the demo loop; another 5–10 minutes to wire up a real repo.
+
+> **Planned (not in J1 today):** automatic "Project Inception" pass that clones the user's repo, sniffs stack + CI, and generates a draft `mergecrew.yaml`. Today the user picks a stock template and edits it. Tracked in `05-features.md` under "Project Inception (auto-detect stack)."
 
 ## J2 — Daily run, hands-off (Theo, every weekday)
 

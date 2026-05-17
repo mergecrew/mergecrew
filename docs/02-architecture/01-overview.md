@@ -72,10 +72,10 @@ mergecrew/
     llm/                  LangChain BaseChatModel factory + CapabilityRouter
     skills/               Skill SDK + ~25 stock skills
     agent-runtime/        LangGraph StateGraph (agent + tools nodes)
-    adapters-vcs/         GitHubProvider
-    adapters-deploy/      GitHubActionsProvider, VercelProvider
+    adapters-vcs/         GitHubProvider, GitLabProvider, GiteaProvider
+    adapters-deploy/      github-actions, vercel, netlify, render, fly, railway, aws-direct
     adapters-tracker/     LinearProvider, GitHubIssuesProvider
-    adapters-comms/       SlackProvider, EmailProvider
+    adapters-comms/       SlackProvider, EmailProvider (SMTP + Resend)
     db/                   Prisma schema, migrations, RLS, withTenant/withSystem
     eventlog/             Append-only timeline event types & repository
     config-yaml/          mergecrew.yaml parser/validator
