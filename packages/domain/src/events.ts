@@ -22,6 +22,9 @@ export const TimelineEventType = z.enum([
   'CHANGESET_PROMOTED',
   'CHANGESET_AUTO_PROMOTED',
   'CHANGESET_ROLLED_BACK',
+  // Dropped from the promote digest (#471). Mergecrew opened a revert
+  // PR on basePrBranch; the user reviews + merges it themselves.
+  'CHANGESET_DROPPED',
   // Native PR review surface (#420, V2.al). Fires when the runner
   // posts the reviewer agent's verdict as a GitHub PR review and
   // (on approve) flips the draft PR to ready-for-review.

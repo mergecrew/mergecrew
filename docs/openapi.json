@@ -621,6 +621,34 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/projects/{projectSlug}/promote": {
+      "post": {
+        "operationId": "ProjectController_runPromote",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/promote-runs": {
+      "get": {
+        "operationId": "ProjectController_listPromoteRuns",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/projects/{projectSlug}/inception": {
       "post": {
         "operationId": "ProjectController_runInception",
@@ -1204,6 +1232,20 @@
     "/v1/orgs/{slug}/projects/{projectSlug}/changesets/{csId}/rollback": {
       "post": {
         "operationId": "ChangesetController_rollback",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Changeset"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/changesets/{csId}/drop": {
+      "post": {
+        "operationId": "ChangesetController_drop",
         "parameters": [],
         "responses": {
           "201": {

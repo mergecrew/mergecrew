@@ -4,9 +4,11 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type {
   ConnectedRepoRef,
+  DispatchWorkflowOpts,
   FileChangeStatus,
   MergeOpts,
   MergeResult,
+  MergedPullRequest,
   PullRequest,
   PullRequestFile,
   PullRequestOpts,
@@ -313,6 +315,25 @@ export class GiteaProvider implements VcsProvider {
       page++;
     }
     return out;
+  }
+
+  // ─── promote engine helpers (#471) ──────────────────────────────────────
+
+  async getMergedPullRequest(
+    _repo: ConnectedRepoRef,
+    _prNumber: number,
+  ): Promise<MergedPullRequest> {
+    // Gitea's promote-engine wiring lands when the cherry-pick engine
+    // is generalized beyond GitHub. Throwing rather than no-op-ing keeps
+    // misconfigured projects from silently producing empty release refs.
+    throw new Error('getMergedPullRequest is not implemented for the Gitea adapter');
+  }
+
+  async dispatchWorkflow(
+    _repo: ConnectedRepoRef,
+    _opts: DispatchWorkflowOpts,
+  ): Promise<void> {
+    throw new Error('dispatchWorkflow is not supported by the Gitea adapter');
   }
 
   // ─── webhooks ───────────────────────────────────────────────────────────

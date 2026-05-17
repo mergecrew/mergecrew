@@ -71,6 +71,42 @@ export interface PostReviewOpts {
   comments?: InlineReviewComment[];
 }
 
+/**
+ * Snapshot of a merged PR needed by the promote engine (#471) — it
+ * needs the merge commit SHA to cherry-pick onto the release branch
+ * and the parent count to pick between `git cherry-pick` and `git
+ * cherry-pick -m 1`. Also used by drop/revert to open a revert PR.
+ */
+export interface MergedPullRequest {
+  number: number;
+  title: string;
+  body: string | null;
+  url: string;
+  /** Commit on the base branch after the PR merged. Null for unmerged PRs. */
+  mergeCommitSha: string | null;
+  mergedAt: string | null;
+  /**
+   * True when the merge commit has 2+ parents (true merge); false for
+   * squash- or rebase-merged PRs (single-parent commit). Cherry-pick of
+   * the former needs `-m 1` to pick the first-parent diff.
+   */
+  isMergeCommit: boolean;
+  /** PR head branch ref, used by drop to derive a slug. */
+  headBranch: string;
+}
+
+/**
+ * Inputs to dispatch a `workflow_dispatch` event on a GitHub Actions
+ * workflow file (#471). Used by `manual_workflow` PromotionStrategy
+ * after the release branch is built.
+ */
+export interface DispatchWorkflowOpts {
+  workflowFilename: string;
+  /** Ref the workflow runs against — usually the release branch. */
+  ref: string;
+  inputs?: Record<string, string>;
+}
+
 export interface PullRequestFile {
   path: string;
   /** Source path when the file was renamed; null otherwise. */
@@ -131,6 +167,18 @@ export interface VcsProvider {
   getDefaultBranch(repo: ConnectedRepoRef): Promise<string>;
   getFileAt(repo: ConnectedRepoRef, ref: string, path: string): Promise<{ contentBase64: string }>;
   getPullRequestFiles(repo: ConnectedRepoRef, prNumber: number): Promise<PullRequestFile[]>;
+  /**
+   * Fetch the bits of a merged PR the promote engine (#471) needs.
+   * Returns `mergeCommitSha = null` if the PR isn't merged yet.
+   */
+  getMergedPullRequest(repo: ConnectedRepoRef, prNumber: number): Promise<MergedPullRequest>;
+  /**
+   * Dispatch a `workflow_dispatch` event (#471). Adapters that don't
+   * support workflow dispatch (Gitea, GitLab) should throw a clear
+   * error rather than silently no-op — the caller chose this strategy
+   * explicitly and a silent no-op masks a misconfiguration.
+   */
+  dispatchWorkflow(repo: ConnectedRepoRef, opts: DispatchWorkflowOpts): Promise<void>;
 
   verifyWebhookSignature(headers: Record<string, string>, body: Buffer, secret: string): Promise<boolean>;
   parseWebhookEvent(headers: Record<string, string>, body: Buffer): VcsEvent;

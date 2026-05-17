@@ -311,6 +311,111 @@ export class ChangesetService {
   }
 
   /**
+   * Drop a not-yet-promoted changeset from the digest (#471). The
+   * conceptual sibling of rollback: rollback unwinds something
+   * shipped to prod; drop hides something that landed on dev so the
+   * promote digest never offers it again. Mechanically both open a
+   * revert PR via the VCS adapter — drop targets the base PR branch
+   * (the dev branch the changeset's original PR merged into).
+   *
+   * Idempotent: a second click returns the existing revert PR URL
+   * rather than opening a duplicate. Callers should rely on this so
+   * UI double-tap doesn't fan out into two PRs.
+   */
+  async drop(csId: string): Promise<{
+    ok: true;
+    revertPrUrl: string;
+    droppedAt: string;
+    alreadyDropped: boolean;
+  }> {
+    const t = this.tenant.require();
+    const cs = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.changeset.findFirst({ where: { id: csId, organizationId: t.organizationId } }),
+    );
+    if (!cs) throw new NotFoundError();
+    if (!cs.prNumber) {
+      throw new ValidationError(
+        'changeset_not_merged: drop requires a merged PR to revert against',
+      );
+    }
+    if (cs.lastPromoteRunId) {
+      throw new ValidationError(
+        'already_promoted: changesets already shipped to prod should be rolled back, not dropped',
+      );
+    }
+    if (cs.droppedAt && cs.dropRevertPrUrl) {
+      return {
+        ok: true,
+        revertPrUrl: cs.dropRevertPrUrl,
+        droppedAt: cs.droppedAt.toISOString(),
+        alreadyDropped: true,
+      };
+    }
+
+    const repo = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.connectedRepo.findUnique({ where: { projectId: cs.projectId } }),
+    );
+    if (!repo) {
+      throw new ValidationError('no_connected_repo: cannot open a revert PR');
+    }
+    if (!process.env.GITHUB_APP_ID || !process.env.GITHUB_APP_PRIVATE_KEY) {
+      throw new ValidationError('github_app_not_configured');
+    }
+    const provider = new GitHubProvider({
+      appId: process.env.GITHUB_APP_ID,
+      privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
+    });
+    const repoRef = {
+      installationId: repo.installationId,
+      repoId: repo.repoId ?? undefined,
+      repoFullName: repo.repoFullName,
+      defaultBranch: effectiveBaseBranch(repo),
+    };
+
+    const { revertPrNumber } = await provider.revertPullRequest(repoRef, cs.prNumber);
+    const revertPrUrl = `https://github.com/${repo.repoFullName}/pull/${revertPrNumber}`;
+    const droppedAt = new Date();
+
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.changeset.update({
+        where: { id: csId },
+        data: {
+          droppedAt,
+          dropRevertPrUrl: revertPrUrl,
+          updatedAt: droppedAt,
+        },
+      }),
+    );
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.auditLogEntry.create({
+        data: {
+          organizationId: t.organizationId,
+          actorUserId: t.userId,
+          action: 'changeset.dropped',
+          target: { changesetId: csId, projectId: cs.projectId },
+          metadata: { originalPrNumber: cs.prNumber, revertPrNumber, revertPrUrl },
+        },
+      }),
+    );
+    await this.elSvc.eventlog.emit({
+      organizationId: t.organizationId,
+      projectId: cs.projectId,
+      dailyRunId: cs.dailyRunId,
+      changesetId: csId,
+      type: 'CHANGESET_DROPPED',
+      actor: { kind: 'user', id: t.userId },
+      payload: { revertPrNumber, revertPrUrl },
+    });
+
+    return {
+      ok: true,
+      revertPrUrl,
+      droppedAt: droppedAt.toISOString(),
+      alreadyDropped: false,
+    };
+  }
+
+  /**
    * Recent rollbacks for a project (#289). Surfaces the last N
    * one-click rollback events on the project Guardrails settings
    * card so operators have a passive audit trail without needing to
