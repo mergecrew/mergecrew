@@ -2,6 +2,10 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Put, UseGuards } fro
 import { ProjectService } from './project.service.js';
 import { InceptionService } from './inception.service.js';
 import { SmokeTestService } from './smoke-test.service.js';
+import {
+  PromotionStrategyService,
+  type PromotionStrategyInput,
+} from './promotion-strategy.service.js';
 import { RequireRole, RoleGuard } from '../../common/role.guard.js';
 
 @Controller('v1/orgs/:slug/projects')
@@ -11,6 +15,7 @@ export class ProjectController {
     private projects: ProjectService,
     private inception: InceptionService,
     private smokeTest: SmokeTestService,
+    private promotionStrategies: PromotionStrategyService,
   ) {}
 
   @Get()
@@ -205,6 +210,20 @@ export class ProjectController {
     @Body() body: { rules: unknown },
   ) {
     return { rules: await this.projects.setAutoPromoteRules(projectSlug, body?.rules) };
+  }
+
+  @Get(':projectSlug/promotion-strategy')
+  async getPromotionStrategy(@Param('projectSlug') projectSlug: string) {
+    return this.promotionStrategies.get(projectSlug);
+  }
+
+  @Put(':projectSlug/promotion-strategy')
+  @RequireRole('operator')
+  async putPromotionStrategy(
+    @Param('projectSlug') projectSlug: string,
+    @Body() body: PromotionStrategyInput,
+  ) {
+    return this.promotionStrategies.upsert(projectSlug, body);
   }
 
   @Post(':projectSlug/inception')

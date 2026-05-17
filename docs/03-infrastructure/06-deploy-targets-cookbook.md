@@ -345,6 +345,123 @@ Source: [`packages/adapters-deploy/src/render.ts`](../../packages/adapters-deplo
 
 Source: [`packages/adapters-deploy/src/railway.ts`](../../packages/adapters-deploy/src/railway.ts).
 
+## Promotion patterns
+
+The patterns above describe how the **dev** target works: where merged PRs land, how mergecrew watches them. This section describes how the **human-approved subset of those dev changes graduates to prod** — the daily-digest "Promote" loop the product is built around.
+
+The constraint that shapes everything here: **pick-and-choose**. Each morning the human reviews what landed on dev overnight, picks the subset that's ready, and ships only that subset. Anything not picked stays on dev (deferred to next cycle) or is explicitly dropped (mergecrew opens a revert PR on dev). Because prod ≠ "current dev," every pattern needs a **release branch** that mergecrew builds by cherry-picking the approved subset. The patterns below differ in *what triggers prod from that release branch*.
+
+The wizard's step 4b is one click per pattern. Switch later from project settings.
+
+### Shape picker
+
+```
+What triggers your prod deploy today?
+│
+├─ A push to my release branch fires CI    ─►  Pattern PA (auto_deploy, the wizard default)
+├─ A manual workflow_dispatch in GitHub    ─►  Pattern PB (manual_workflow)
+├─ A git tag (v1.2.3 / 2026-05-17.1)       ─►  Pattern PC (tag_driven)
+└─ I'll figure this out later              ─►  Pattern PD (deferred)
+```
+
+### Pattern PA — Release branch + auto-deploy
+
+**Shape.** Your existing CI deploys to prod whenever a commit lands on your release branch (often `main`). Common with Vercel production deploys, Netlify production sites, "merge to main = ship" GitHub Actions workflows, Heroku auto-deploy, Render production services, and most "configure once, forget" managed pipelines.
+
+**PromotionStrategy config.**
+
+```jsonc
+{
+  "kind": "auto_deploy",
+  "releaseBranch": "main",
+  "prodUrl": "https://app.example.com"
+}
+```
+
+`releaseBranch` defaults to the connected repo's base PR branch (#469 — `basePrBranch ?? defaultBranch`). For branch-per-env teams, this is typically a separate branch from the one mergecrew opens PRs against — e.g. PRs into `developer`, releases into `main`.
+
+**What mergecrew does on promote.**
+
+1. Clone a fresh worktree.
+2. Branch off `releaseBranch` HEAD into `mergecrew/release-{ISO-date}-{shortSha}`.
+3. Cherry-pick each approved changeset's merge commit in chronological order.
+4. Push the release branch (or open a PR against `releaseBranch` if it's protected).
+
+**What your CI does.** Whatever it already does on push. mergecrew doesn't dispatch anything — the existing pipeline picks up the new commit and ships.
+
+**Required GitHub App scopes.** Contents:write, Pull requests:write. No Actions scope needed.
+
+### Pattern PB — Release branch + manual workflow
+
+**Shape.** Your CI has a gated "Deploy to prod" workflow — `workflow_dispatch` in GitHub Actions — that an engineer clicks to ship. Common when prod deploys are coordinated with a release manager, when feature flags need flipping in concert, or when prod runs through a non-CI tool (Argo, Spinnaker) triggered via a one-button workflow.
+
+**PromotionStrategy config.**
+
+```jsonc
+{
+  "kind": "manual_workflow",
+  "releaseBranch": "main",
+  "workflowFilename": "deploy-prod.yml",
+  "envInputKey": "environment",
+  "envInputValue": "prod",
+  "prodUrl": "https://app.example.com"
+}
+```
+
+The `envInput*` fields target the workflow's `inputs:` schema. If the workflow has `inputs: { environment: { … } }`, mergecrew dispatches with `{ environment: "prod" }`.
+
+**What mergecrew does on promote.**
+
+1. Build the release branch (same cherry-pick flow as Pattern PA).
+2. Dispatch `workflowFilename` via GitHub's `POST /repos/:owner/:repo/actions/workflows/:file/dispatches`, passing `{ [envInputKey]: envInputValue }` and `ref: releaseBranch`.
+3. Return the workflow run URL in the digest so the human can watch it green.
+
+If the GitHub App doesn't have the Actions:write scope, mergecrew falls back to pushing the release branch and surfacing the dispatch URL — the human clicks Run in the GitHub UI.
+
+**What your CI does.** Runs whatever the workflow file says — typically a kube apply / Argo sync / aws-cli deploy / Spinnaker trigger.
+
+**Required GitHub App scopes.** Contents:write, Pull requests:write, Actions:write.
+
+### Pattern PC — Tag-driven
+
+**Shape.** Your CI deploys when a tag matching a pattern is pushed. Common with semantic versioning (`v1.2.3`), date-based releases (`2026-05-17.1`), or any pipeline that watches `on: push: tags:` and ignores branch pushes.
+
+**PromotionStrategy config.**
+
+```jsonc
+{
+  "kind": "tag_driven",
+  "tagPattern": "v${YYYY-MM-DD}-${shortSha}",
+  "prodUrl": "https://app.example.com"
+}
+```
+
+The pattern supports `${YYYY-MM-DD}` (UTC date at promote time) and `${shortSha}` (first 7 chars of the release branch HEAD). A future enhancement might add `${counter}` for monotonic ordering across same-day promotes.
+
+**What mergecrew does on promote.**
+
+1. Build the release branch (same cherry-pick flow).
+2. Interpolate the tag pattern. Create an annotated tag at the release branch HEAD.
+3. Push the tag. The release branch may or may not be pushed depending on your team's convention (mergecrew pushes both by default; tagging without a corresponding branch ref is fragile).
+
+**What your CI does.** Fires on tag push. The agent reads the tag at deploy time and ships whatever commit it points at.
+
+**Required GitHub App scopes.** Contents:write (push tags), Pull requests:write.
+
+### Pattern PD — Deferred
+
+**Shape.** You're not ready to commit to a promote shape during onboarding. Maybe your prod pipeline isn't fully wired yet, maybe you want to see mergecrew run on dev for a few days before deciding.
+
+**PromotionStrategy config.**
+
+```jsonc
+{ "kind": "deferred" }
+```
+
+**What mergecrew does on promote.** Nothing — the Promote button is replaced by a chip on the project page reading "Promotion not configured · settings", linking back here. Daily runs still happen; changes still land on dev; the digest still accumulates approved/deferred/dropped state per changeset. You just can't ship.
+
+Switch to a real strategy in **Settings → Promotion strategy** whenever you're ready. The accumulated digest is preserved.
+
 ## Cross-cutting
 
 ### Per-environment configuration

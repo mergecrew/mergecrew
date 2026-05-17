@@ -436,6 +436,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/orgs/{slug}/projects/{projectSlug}/promotion-strategy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["ProjectController_getPromotionStrategy"];
+        put: operations["ProjectController_putPromotionStrategy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{slug}/projects/{projectSlug}/inception": {
         parameters: {
             query?: never;
@@ -2461,6 +2477,40 @@ export interface operations {
         };
     };
     ProjectController_setAutoPromote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ProjectController_getPromotionStrategy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ProjectController_putPromotionStrategy: {
         parameters: {
             query?: never;
             header?: never;
