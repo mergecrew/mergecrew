@@ -22,29 +22,35 @@ export interface DeployTargetRow {
   config: Record<string, unknown>;
 }
 
-const KINDS: Kind[] = ['dev', 'staging', 'prod'];
+const DEFAULT_KINDS: Kind[] = ['dev', 'staging', 'prod'];
 
 /**
  * V2.z deploy-target editor (#266).
  *
- * One row per kind (dev / staging / prod). The adapter picker swaps in
- * the matching typed form from `@/components/deploy-target-forms/` so
- * an operator never has to paste raw jsonb to wire a new target.
- * The API surface is unchanged — each adapter form returns the same
- * Record<string, unknown> the upsert endpoint already accepts.
+ * One row per kind. The adapter picker swaps in the matching typed form
+ * from `@/components/deploy-target-forms/` so an operator never has to
+ * paste raw jsonb to wire a new target. The API surface is unchanged —
+ * each adapter form returns the same Record<string, unknown> the upsert
+ * endpoint already accepts.
+ *
+ * `kinds` defaults to all three kinds; the inline onboarding wizard
+ * passes `kinds={['dev']}` to render only the dev row, since that's the
+ * only target the wizard step covers (#455).
  */
 export function DeployTargetForm({
   slug,
   projectSlug,
   initial,
+  kinds = DEFAULT_KINDS,
 }: {
   slug: string;
   projectSlug: string;
   initial: DeployTargetRow[];
+  kinds?: Kind[];
 }) {
   return (
     <div className="space-y-4">
-      {KINDS.map((kind) => (
+      {kinds.map((kind) => (
         <KindRow
           key={kind}
           slug={slug}

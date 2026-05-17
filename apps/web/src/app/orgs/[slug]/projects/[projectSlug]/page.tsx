@@ -56,30 +56,38 @@ export default async function ProjectOverview({
   const { slug, projectSlug } = await params;
   const session = await requireSession();
 
-  const [project, runsRes, changesetsRes, approvalsRes, schedule] = await Promise.all([
-    apiOr404<Project>(`/v1/orgs/${slug}/projects/${projectSlug}`, { session }),
-    safe(() =>
-      api<{ items: Run[] }>(
-        `/v1/orgs/${slug}/projects/${projectSlug}/runs?limit=5`,
-        { session },
+  const [project, runsRes, changesetsRes, approvalsRes, schedule, orgOnboardingRes] =
+    await Promise.all([
+      apiOr404<Project>(`/v1/orgs/${slug}/projects/${projectSlug}`, { session }),
+      safe(() =>
+        api<{ items: Run[] }>(
+          `/v1/orgs/${slug}/projects/${projectSlug}/runs?limit=5`,
+          { session },
+        ),
       ),
-    ),
-    safe(() =>
-      api<{ items: Changeset[] }>(
-        `/v1/orgs/${slug}/projects/${projectSlug}/changesets?limit=5`,
-        { session },
+      safe(() =>
+        api<{ items: Changeset[] }>(
+          `/v1/orgs/${slug}/projects/${projectSlug}/changesets?limit=5`,
+          { session },
+        ),
       ),
-    ),
-    safe(() =>
-      api<{ items: ApprovalRequest[] }>(
-        `/v1/orgs/${slug}/projects/${projectSlug}/approvals`,
-        { session },
+      safe(() =>
+        api<{ items: ApprovalRequest[] }>(
+          `/v1/orgs/${slug}/projects/${projectSlug}/approvals`,
+          { session },
+        ),
       ),
-    ),
-    safe(() =>
-      api<Schedule>(`/v1/orgs/${slug}/projects/${projectSlug}/schedule`, { session }),
-    ),
-  ]);
+      safe(() =>
+        api<Schedule>(`/v1/orgs/${slug}/projects/${projectSlug}/schedule`, { session }),
+      ),
+      // Org-level wizard state (#455). The per-project OnboardingChecklist
+      // below only renders once the org wizard is complete — during FTE
+      // the wizard owns the experience and the per-project banner would
+      // just re-bait the redirect-to-settings path the wizard fixes.
+      safe(() =>
+        api<{ complete: boolean }>(`/v1/orgs/${slug}/onboarding`, { session }),
+      ),
+    ]);
 
   const runs = runsRes?.items ?? [];
   const changesets = changesetsRes?.items ?? [];
@@ -91,6 +99,7 @@ export default async function ProjectOverview({
   const hasCompletedRun = runs.some((r) => r.status === 'done');
   const isPaused = !hasRepo || !hasDevTarget;
   const isDemo = Boolean(project.demo);
+  const orgWizardComplete = orgOnboardingRes?.complete ?? false;
 
   return (
     <main className="mx-auto max-w-5xl space-y-8 p-6">
@@ -122,7 +131,7 @@ export default async function ProjectOverview({
         </Card>
       )}
 
-      {!isDemo && (
+      {!isDemo && orgWizardComplete && (
         <OnboardingChecklist
           orgSlug={slug}
           projectSlug={projectSlug}

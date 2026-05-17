@@ -8,22 +8,27 @@ import { RoleGuard } from '../../common/role.guard.js';
  *
  * Two endpoints make a round-trip:
  *
- *   1. GET /v1/integrations/github/install?org=<slug>&project=<slug>
+ *   1. GET /v1/integrations/github/install?org=<slug>&project=<slug>&from=wizard|settings
  *      The BFF's "Install GitHub App" button links here. The user is
  *      already authenticated (Nest session cookie); we mint an HMAC-signed
- *      `state` blob containing {userId, orgSlug, projectSlug, exp} and
+ *      `state` blob containing {userId, orgSlug, projectSlug, from, exp} and
  *      redirect to GitHub's installation page with it.
  *
  *   2. GET /v1/integrations/github/install/callback?installation_id=N&state=<signed>
  *      GitHub redirects back here after the user completes the install.
- *      We verify the state HMAC + expiry, then redirect to the BFF's
- *      project settings page with `installation_id` in the query so the
- *      repo-connect form can pre-fill and the user only needs to pick the
- *      repo.
+ *      We verify the state HMAC + expiry, then redirect to the originating
+ *      surface (wizard or settings) with `installation_id` in the query so
+ *      the repo-connect form can pre-fill and the user only needs to pick
+ *      the repo.
  *
- * State is HMAC-SHA256 over `version|userId|orgSlug|projectSlug|exp` keyed
- * with `JWT_SECRET`. We don't trust the redirect URL fragment for routing;
- * everything that drives the BFF redirect comes from the verified state.
+ * State is HMAC-SHA256 over `version|userId|orgSlug|projectSlug|from|exp`
+ * keyed with `JWT_SECRET`. We don't trust the redirect URL fragment for
+ * routing; everything that drives the BFF redirect comes from the verified
+ * state.
+ *
+ * `STATE_VERSION` bumped to `v2` for the wizard-aware `from` field (#455).
+ * In-flight `v1` tokens fail verification and surface a `bad_state` error;
+ * the 15-min TTL bounds the blast radius.
  */
 @Controller('v1/integrations/github')
 export class GitHubAppController {
@@ -32,7 +37,11 @@ export class GitHubAppController {
   @Get('install')
   @UseGuards(RoleGuard)
   @Redirect()
-  install(@Query('org') org?: string, @Query('project') project?: string) {
+  install(
+    @Query('org') org?: string,
+    @Query('project') project?: string,
+    @Query('from') from?: string,
+  ) {
     const u = this.tenant.user();
     if (!u) throw new UnauthorizedException();
     if (!org) throw new UnauthorizedException('missing org');
@@ -41,6 +50,7 @@ export class GitHubAppController {
       userId: u.userId,
       orgSlug: org,
       projectSlug: project ?? '',
+      from: from === 'wizard' ? 'wizard' : 'settings',
     });
     return {
       url: `https://github.com/apps/${slug}/installations/new?state=${encodeURIComponent(state)}`,
@@ -65,26 +75,37 @@ export class GitHubAppController {
     if (!verified) {
       return { url: `${webBase}/?github_install_error=bad_state`, statusCode: 302 };
     }
-    const { orgSlug, projectSlug } = verified;
-    const target = projectSlug
-      ? `${webBase}/orgs/${orgSlug}/projects/${projectSlug}/settings?installation_id=${encodeURIComponent(installationId)}&from=github_install&setup_action=${encodeURIComponent(setupAction ?? '')}`
-      : `${webBase}/orgs/${orgSlug}?installation_id=${encodeURIComponent(installationId)}&from=github_install`;
+    const { orgSlug, projectSlug, from } = verified;
+    const installQuery = `installation_id=${encodeURIComponent(installationId)}&from=github_install&setup_action=${encodeURIComponent(setupAction ?? '')}`;
+    let target: string;
+    if (from === 'wizard') {
+      // Wizard owns the FTE; route the user back to the active step
+      // (Connect a repo) instead of bouncing them through Settings.
+      target = `${webBase}/orgs/${orgSlug}/onboarding?${installQuery}`;
+    } else if (projectSlug) {
+      target = `${webBase}/orgs/${orgSlug}/projects/${projectSlug}/settings?${installQuery}`;
+    } else {
+      target = `${webBase}/orgs/${orgSlug}?installation_id=${encodeURIComponent(installationId)}&from=github_install`;
+    }
     return { url: target, statusCode: 302 };
   }
 }
 
-const STATE_VERSION = 'v1';
+const STATE_VERSION = 'v2';
 const STATE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
+type InstallFrom = 'wizard' | 'settings';
 
 interface StateClaims {
   userId: string;
   orgSlug: string;
   projectSlug: string;
+  from: InstallFrom;
 }
 
 function signState(claims: StateClaims): string {
   const exp = Date.now() + STATE_TTL_MS;
-  const payload = `${STATE_VERSION}|${claims.userId}|${claims.orgSlug}|${claims.projectSlug}|${exp}`;
+  const payload = `${STATE_VERSION}|${claims.userId}|${claims.orgSlug}|${claims.projectSlug}|${claims.from}|${exp}`;
   const sig = crypto
     .createHmac('sha256', process.env.JWT_SECRET ?? 'dev-secret')
     .update(payload)
@@ -100,21 +121,22 @@ function verifyState(token: string): StateClaims | null {
     return null;
   }
   const parts = raw.split('|');
-  if (parts.length !== 6) return null;
-  const [version, userId, orgSlug, projectSlug, expStr, sig] = parts as [
-    string, string, string, string, string, string,
+  if (parts.length !== 7) return null;
+  const [version, userId, orgSlug, projectSlug, fromStr, expStr, sig] = parts as [
+    string, string, string, string, string, string, string,
   ];
   if (version !== STATE_VERSION) return null;
+  if (fromStr !== 'wizard' && fromStr !== 'settings') return null;
   const exp = Number(expStr);
   if (!Number.isFinite(exp) || exp < Date.now()) return null;
   const expected = crypto
     .createHmac('sha256', process.env.JWT_SECRET ?? 'dev-secret')
-    .update(`${version}|${userId}|${orgSlug}|${projectSlug}|${exp}`)
+    .update(`${version}|${userId}|${orgSlug}|${projectSlug}|${fromStr}|${exp}`)
     .digest('base64url');
   // timing-safe compare
   const a = Buffer.from(sig);
   const b = Buffer.from(expected);
   if (a.length !== b.length) return null;
   if (!crypto.timingSafeEqual(a, b)) return null;
-  return { userId, orgSlug, projectSlug };
+  return { userId, orgSlug, projectSlug, from: fromStr as InstallFrom };
 }

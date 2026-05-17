@@ -86,6 +86,7 @@ export async function applyStockTemplateAction(
     body: JSON.stringify({ yaml: tpl.sourceYaml }),
   });
   revalidatePath(lifecycleRevalidatePath(scope));
+  revalidatePath(`/orgs/${scope.orgSlug}/onboarding`);
 }
 
 /**

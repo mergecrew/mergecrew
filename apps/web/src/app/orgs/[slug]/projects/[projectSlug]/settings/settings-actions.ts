@@ -48,6 +48,7 @@ export async function connectRepoAction(
     session,
   });
   revalidatePath(`/orgs/${slug}/projects/${projectSlug}/settings`);
+  revalidatePath(`/orgs/${slug}/onboarding`);
 }
 
 export async function disconnectRepoAction(slug: string, projectSlug: string) {
@@ -57,6 +58,7 @@ export async function disconnectRepoAction(slug: string, projectSlug: string) {
     session,
   });
   revalidatePath(`/orgs/${slug}/projects/${projectSlug}/settings`);
+  revalidatePath(`/orgs/${slug}/onboarding`);
 }
 
 /**
@@ -88,6 +90,7 @@ export async function upsertDeployTargetAction(
     session,
   });
   revalidatePath(`/orgs/${slug}/projects/${projectSlug}/settings`);
+  revalidatePath(`/orgs/${slug}/onboarding`);
 }
 
 export async function deleteDeployTargetAction(
@@ -101,6 +104,7 @@ export async function deleteDeployTargetAction(
     session,
   });
   revalidatePath(`/orgs/${slug}/projects/${projectSlug}/settings`);
+  revalidatePath(`/orgs/${slug}/onboarding`);
 }
 
 /**
