@@ -595,6 +595,32 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/projects/{projectSlug}/promotion-strategy": {
+      "get": {
+        "operationId": "ProjectController_getPromotionStrategy",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      },
+      "put": {
+        "operationId": "ProjectController_putPromotionStrategy",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/projects/{projectSlug}/inception": {
       "post": {
         "operationId": "ProjectController_runInception",

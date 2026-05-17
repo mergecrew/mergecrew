@@ -117,8 +117,10 @@ fi
 echo "[quickstart-smoke] ✓ seeded sample changeset visible"
 
 # Progress chip on the merged OrgSetupCard (#441). Fresh stack has
-# every step pending, so "of 5 done" is a stable substring.
-if ! echo "$home" | grep -q "of 5 done"; then
+# every step pending, so "0 of N done" appears verbatim. Grep just on
+# the "of … done" tail so the count can grow with new wizard steps
+# (#470 added promotion_strategy) without breaking the smoke.
+if ! echo "$home" | grep -qE "of [0-9]+ done"; then
   echo "::error::org setup card progress chip not present on /orgs/${ORG_SLUG}"
   echo "--- first 8 KB of body ---"
   echo "$home" | head -c 8192
