@@ -321,7 +321,7 @@ export class PromoteService {
         ['diff', '--name-only', '--diff-filter=U'],
         { cwd: workspace, env: gitEnv() },
       );
-      return r.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+      return r.stdout.split('\n').map((l: string) => l.trim()).filter(Boolean);
     } catch {
       return [];
     }

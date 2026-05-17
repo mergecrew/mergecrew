@@ -113,6 +113,9 @@ importers:
       class-validator:
         specifier: ^0.15.1
         version: 0.15.1
+      execa:
+        specifier: ^8.0.1
+        version: 8.0.1
       express:
         specifier: ^4.21.1
         version: 4.22.1
@@ -8520,6 +8523,14 @@ snapshots:
       chai: 5.3.3
       tinyrainbow: 1.2.0
 
+  '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@25.6.2)(terser@5.47.1))':
+    dependencies:
+      '@vitest/spy': 2.1.9
+      estree-walker: 3.0.3
+      magic-string: 0.30.21
+    optionalDependencies:
+      vite: 5.4.21(@types/node@25.6.2)(terser@5.47.1)
+
   '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@25.7.0)(terser@5.47.1))':
     dependencies:
       '@vitest/spy': 2.1.9
@@ -11572,7 +11583,7 @@ snapshots:
   vitest@2.1.9(@types/node@25.6.2)(terser@5.47.1):
     dependencies:
       '@vitest/expect': 2.1.9
-      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@25.7.0)(terser@5.47.1))
+      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@25.6.2)(terser@5.47.1))
       '@vitest/pretty-format': 2.1.9
       '@vitest/runner': 2.1.9
       '@vitest/snapshot': 2.1.9
