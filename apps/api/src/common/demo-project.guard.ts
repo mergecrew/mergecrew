@@ -3,11 +3,10 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
-  Logger,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { PrismaService } from './prisma.service.js';
-import { TenantContextService } from './tenant-context.service.js';
+import type { UserContext } from './tenant-context.service.js';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const READ_ONLY_ERROR_CODE = 'demo_project_readonly';
@@ -24,18 +23,20 @@ const READ_ONLY_ERROR_MESSAGE =
  * to accept POST /runs. Production / signup-flow demos run without
  * the env flag and stay read-only.
  *
- * Apply at the controller level alongside `RoleGuard`. Falls through
- * harmlessly when the route isn't project-scoped (no `:projectSlug`
- * param) or when the request method is safe.
+ * Registered globally via APP_GUARD so coverage is exhaustive — falls
+ * through harmlessly when the route isn't project-scoped (no
+ * `:projectSlug` param) or when the request method is safe.
+ *
+ * Reads the tenant context directly off the Express request object
+ * (#463 — stamped by the middleware in `apps/api/src/main.ts`) instead
+ * of injecting `TenantContextService`. NestJS resolves APP_GUARD as a
+ * singleton; the request-scoped tenant service can't be injected
+ * reliably here without forcing the whole guard to request scope, which
+ * would reinstantiate it on every request across the entire app.
  */
 @Injectable()
 export class DemoProjectGuard implements CanActivate {
-  private readonly logger = new Logger(DemoProjectGuard.name);
-
-  constructor(
-    private prisma: PrismaService,
-    private tenant: TenantContextService,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<Request>();
@@ -45,12 +46,12 @@ export class DemoProjectGuard implements CanActivate {
     const projectSlug = (req.params as Record<string, string> | undefined)?.projectSlug;
     if (!projectSlug) return true;
 
-    const t = this.tenant.current();
-    if (!t) return true; // RoleGuard will reject auth before us if needed.
+    const tenant = (req as { mergecrewUser?: UserContext }).mergecrewUser?.tenant;
+    if (!tenant) return true; // RoleGuard will reject auth before us if needed.
 
-    const project = await this.prisma.withTenant(t.organizationId, (tx) =>
+    const project = await this.prisma.withTenant(tenant.organizationId, (tx) =>
       tx.project.findFirst({
-        where: { organizationId: t.organizationId, slug: projectSlug, deletedAt: null },
+        where: { organizationId: tenant.organizationId, slug: projectSlug, deletedAt: null },
         select: { demo: true },
       }),
     );
