@@ -66,9 +66,11 @@ import {
   DESIGN_REVIEWER_AGENT_KIND,
   OBSERVATION_AGENT_KIND,
   BUG_TRIAGE_AGENT_KIND,
+  DOC_WRITER_AGENT_KIND,
   PLANNER_DISCOVERY_SYSTEM_PROMPT,
   parseBugTriageReport,
   parseDesignReviewVerdict,
+  parseDocWriterReport,
   parseObservationReport,
   parsePlanPaths,
   parsePlannerDirections,
@@ -1171,6 +1173,40 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
         intentsQueued: intentIds.length,
         intentIds,
       },
+    });
+  }
+
+  // DocWriter post-process (#525, V2.af roster). Parse the structured
+  // report, persist on agent_steps.output, and emit DOC_WRITER_REPORT.
+  // The actual docs edits live on the sibling commit the agent
+  // produced via `repo.write_file`; ensureChangesetForCommit records
+  // the commit separately. Parser failure resolves to a no-op so a
+  // malformed agent reply doesn't false-positive a `docs_updated`
+  // signal on the timeline.
+  if (
+    agentDef.kind === DOC_WRITER_AGENT_KIND &&
+    outcome.kind === 'completed' &&
+    typeof outcome.output === 'string'
+  ) {
+    const parsed = parseDocWriterReport(outcome.output);
+    const verdict: 'docs_updated' | 'no_op' = parsed?.verdict ?? 'no_op';
+    const filesChanged = parsed?.filesChanged ?? [];
+    const summary = parsed?.summary ?? '';
+    await withTenant(organizationId, (tx) =>
+      tx.agentStep.update({
+        where: { id: stepId },
+        data: { output: { verdict, filesChanged, summary } as any },
+      }),
+    );
+    await eventlog.emit({
+      organizationId,
+      projectId,
+      dailyRunId: runId,
+      workflowRunId,
+      agentStepId: stepId,
+      type: 'DOC_WRITER_REPORT',
+      actor: { kind: 'agent', id: stepId, agentKind: agentDef.kind },
+      payload: { verdict, filesChanged, summary },
     });
   }
 
@@ -2361,6 +2397,36 @@ async function synthesizeAgentInput(
       agentRef,
       instruction: `You are the ${role}. Implement the ${portion} portion of the supplied spec. The ${sibling} is running in parallel — leave ${siblingScope} to them.`,
       spec,
+    };
+  }
+
+  // DocWriter agent input (#525, V2.af roster). Final roster agent
+  // — runs in the parallel observation stage alongside Observation /
+  // DesignReviewer / BugTriage. Input bundles the run's most-recent
+  // changeset (id, branch, title, PR number) so the agent can write
+  // a docs-follow-up commit with a subject like `docs: follow-up to
+  // PR #<n>`.
+  if (agentDef.kind === DOC_WRITER_AGENT_KIND) {
+    const cs = await withTenant(organizationId, (tx) =>
+      tx.changeset.findFirst({
+        where: { projectId, dailyRunId: runId },
+        orderBy: { updatedAt: 'desc' },
+        select: {
+          id: true,
+          title: true,
+          branch: true,
+          whyParagraph: true,
+          prNumber: true,
+          prUrl: true,
+        },
+      }),
+    );
+    return {
+      runId,
+      agentRef,
+      instruction:
+        'You are the Doc Writer. Decide whether the supplied changeset warrants a docs update. Only edit README.md / docs/** / CHANGELOG.md — never source files. Commit on a sibling branch with a subject like `docs: follow-up to PR #<n>`. Emit the structured VERDICT block prescribed by your system prompt; choose `no_op` when no user-facing change in the run warrants a doc update.',
+      changeset: cs,
     };
   }
 
