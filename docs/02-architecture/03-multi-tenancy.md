@@ -59,8 +59,8 @@ Even if the API forgets to filter, RLS makes cross-tenant reads return empty and
 
 ### Layer 5 — Runner workspace isolation
 
-- Each `AgentStep` executes in a per-run, per-changeset working directory under `/var/mergecrew/work/{run_id}/{cs_id}/`.
-- The directory is created at step start and deleted at step end.
+- Each `DailyRun` executes in a per-run working directory under `/var/mergecrew/work/{run_id}/`.
+- The directory is created (and the connected repo cloned into it) by the first agent step in the run; subsequent steps reuse the same working tree so the coder sees the planner's branch, the reviewer sees the coder's diff, etc. Cleanup is run-terminal: the orchestrator (on `done`) and the API (on `cancelled`) enqueue a `runner.workspace-cleanup` job that rms the directory.
 - Skills that touch the filesystem are restricted (chrooted-by-convention) to the working directory; absolute paths outside are rejected at the skill level.
 - Network egress from runners is allowlisted: GitHub, configured deploy adapters, configured LLM providers, observability sinks. Outbound to arbitrary URLs requires the user-defined `web.fetch_url` skill which logs the URL.
 

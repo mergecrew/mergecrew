@@ -81,21 +81,21 @@ Webhooks are delivered to `/webhooks/github`, signature verified, persisted, the
 
 ### Workspaces
 
-Each Changeset gets a per-changeset working directory:
+Each DailyRun gets one shared working directory; all agent steps in the run reuse it so the coder sees the planner's branch, the reviewer sees the coder's diff, etc:
 
 ```
-/var/mergecrew/work/{run_id}/{cs_id}/
+/var/mergecrew/work/{run_id}/
 ```
 
 Lifecycle:
 
-1. **Setup.** `git clone --depth 50 --branch <default> --filter=blob:none <repo-url>`. Shallow + partial clones to keep IO low.
-2. **Branch.** `git checkout -b mergecrew/<cs_id>`.
+1. **Bootstrap (first step).** `git clone --depth 50 --branch <default> --filter=blob:none <repo-url>` via `VcsProvider.cloneIntoWorkspace`. Idempotent — subsequent steps in the same run see `.git` and skip the clone. Fails the step with `reason: 'no_connected_repo'` if the project has no `ConnectedRepo` row.
+2. **Branch (coder).** `git checkout -b mergecrew/<cs_id>` — each changeset gets its own branch in the shared tree.
 3. **Edits.** Skills (`repo.write_file`, etc.) operate on this tree.
 4. **Commits.** Commits are authored as `Mergecrew (<agent-kind>) <mergecrew@<tenant>.mergecrew.dev>`, with a `Co-authored-by:` trailer for the underlying provider+model when relevant.
 5. **Push.** `git push origin mergecrew/<cs_id>`.
 6. **PR.** `openPullRequest` against the project's configured base branch.
-7. **Teardown.** Workspace is destroyed when the changeset reaches a terminal state.
+7. **Teardown.** When the run reaches a terminal state (`done`/`cancelled`/`failed`), the orchestrator/API enqueues a `runner.workspace-cleanup` job that rms `/var/mergecrew/work/{run_id}/`.
 
 Branch naming: `mergecrew/<cs_id>` (cs_id is the short URL-safe Changeset id). Long-running changesets get a human-readable suffix: `mergecrew/<cs_id>-tax-id-export`.
 
