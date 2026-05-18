@@ -154,6 +154,16 @@ export class RunService {
         /* the DB flip already persisted; runners will pick up at next heartbeat sweep */
       });
 
+    // Run-terminal workspace cleanup — the per-run /var/mergecrew/work/<runId>/
+    // tree is no longer needed once the run is cancelled. Fire-and-forget;
+    // the runner consumes from this queue and rms best-effort.
+    await this.queue
+      .get('runner.workspace-cleanup')
+      .add('cleanup', { runId }, { removeOnComplete: 1000, removeOnFail: 1000 })
+      .catch(() => {
+        /* the cleanup is a disk-only optimization; missing it leaks until next sweep */
+      });
+
     void this.telemetry.emit(t.organizationId, 'run.completed', { status: 'cancelled' });
     return { cancelled: true };
   }
