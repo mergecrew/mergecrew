@@ -58,10 +58,13 @@ import {
   PLANNER_AGENT_KIND,
   CODER_AGENT_KIND,
   REVIEWER_AGENT_KIND,
+  PM_AGENT_KIND,
   PLANNER_DISCOVERY_SYSTEM_PROMPT,
   parsePlanPaths,
   parsePlannerDirections,
+  parsePmSpec,
   parseReviewerVerdict,
+  type ParsedPmSpec,
 } from '@mergecrew/agent-runtime';
 import { transcriptStoreFromEnv } from '@mergecrew/transcript-store';
 import type { CancellationCoordinator } from './cancellation.js';
@@ -909,6 +912,68 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
         type: 'PLAN_PROPOSED',
         actor: { kind: 'agent', id: stepId, agentKind: agentDef.kind },
         payload: { planMarkdown },
+      });
+    }
+  }
+
+  // PM agent post-process (#517, V2.af roster). Parse the spec markdown
+  // into the structured shape the engineer agents consume, persist on
+  // agent_steps.output, and emit PM_SPEC_PROPOSED. A `SPEC_GAP` output
+  // (PM couldn't scope the intent) parses to null — we still persist
+  // the raw markdown so the run-detail UI can render what PM said and
+  // the operator sees why the chain stopped advancing.
+  if (
+    agentDef.kind === PM_AGENT_KIND &&
+    outcome.kind === 'completed' &&
+    typeof outcome.output === 'string' &&
+    outcome.output.trim().length > 0
+  ) {
+    const markdown = outcome.output.trim();
+    const spec: ParsedPmSpec | null = parsePmSpec(markdown);
+    const sourceIntentId =
+      typeof initialInput === 'object' && initialInput !== null
+        ? (initialInput as { intent?: { id?: string } }).intent?.id
+        : undefined;
+    await withTenant(organizationId, (tx) =>
+      tx.agentStep.update({
+        where: { id: stepId },
+        data: { output: { spec, markdown, sourceIntentId } as any },
+      }),
+    );
+    if (spec) {
+      await eventlog.emit({
+        organizationId,
+        projectId,
+        dailyRunId: runId,
+        workflowRunId,
+        agentStepId: stepId,
+        type: 'PM_SPEC_PROPOSED',
+        actor: { kind: 'agent', id: stepId, agentKind: agentDef.kind },
+        payload: { spec, sourceIntentId },
+      });
+    } else {
+      // Parser bailed — most likely a `SPEC_GAP:` response. Surface as
+      // a step failure so the orchestrator stops dispatching engineers
+      // against an empty spec. The raw markdown is on `output.markdown`
+      // for the operator to read in the UI.
+      logger.info(
+        { stepId, sourceIntentId },
+        'pm: spec parser returned null — likely SPEC_GAP; engineers will not be dispatched',
+      );
+      await eventlog.emit({
+        organizationId,
+        projectId,
+        dailyRunId: runId,
+        workflowRunId,
+        agentStepId: stepId,
+        type: 'AGENT_STEP_FAILED',
+        actor: { kind: 'system' },
+        payload: {
+          reason: 'spec_gap',
+          agentRef,
+          sourceIntentId,
+          message: markdown.slice(0, 1000),
+        },
       });
     }
   }
@@ -1985,6 +2050,51 @@ async function synthesizeAgentInput(
   }
   if (agentRef === 'pm') {
     return { runId, instruction: 'Translate discovery output into 1–3 prioritized intents with one-paragraph specs.' };
+  }
+
+  // PM agent input (#517, V2.af roster). Consumes the oldest queued
+  // intent and scopes it into a spec the engineer agents read. Mirrors
+  // the planner-seed-goal path (#493) below — the two are mutually
+  // exclusive in practice because a project runs ONE graph profile at
+  // a time. The intent is flipped `queued → picked_up` atomically so a
+  // parallel/retry run doesn't re-consume it.
+  if (agentDef.kind === PM_AGENT_KIND) {
+    const intent = await withTenant(organizationId, (tx) =>
+      tx.intentInboxItem.findFirst({
+        where: { projectId, status: 'queued' },
+        orderBy: { createdAt: 'asc' },
+      }),
+    );
+    if (intent) {
+      await withTenant(organizationId, (tx) =>
+        tx.intentInboxItem.update({
+          where: { id: intent.id },
+          data: { status: 'picked_up', pickedUpRunId: runId },
+        }),
+      );
+      return {
+        runId,
+        agentRef,
+        instruction:
+          'You are the PM agent. Scope the supplied intent into a single structured spec the engineers can implement in one run. Use the format the PM_SYSTEM_PROMPT prescribes; respond with SPEC_GAP if the intent is too vague or too large.',
+        intent: {
+          id: intent.id,
+          body: intent.body,
+          submittedByUserId: intent.submittedByUserId,
+          sourceKey: intent.sourceKey,
+        },
+      };
+    }
+    // No queued intent. The roster graph's discovery edge should have
+    // routed to __end__ before reaching here, but if it didn't (custom
+    // graph, hand-edited dispatch), return a stub input — the PM agent
+    // will emit `SPEC_GAP` since there's nothing to scope.
+    return {
+      runId,
+      agentRef,
+      instruction:
+        'No queued intent. Respond with SPEC_GAP: explain that there is nothing to scope yet.',
+    };
   }
 
   // Planner seed goal (#493). When the onboarding wizard captured a
