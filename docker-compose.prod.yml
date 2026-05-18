@@ -104,6 +104,10 @@ services:
     networks: [internal]
     volumes:
       - ./secrets:/app/secrets:ro
+      # Persisted transcripts (TRANSCRIPT_LOCAL_DIR in .env). The image
+      # pre-creates this path chowned to the `node` user, so the volume
+      # initializes with the right ownership on first mount.
+      - transcripts:/var/mergecrew/transcripts
     depends_on:
       redis: { condition: service_healthy }
     deploy:
@@ -156,3 +160,4 @@ networks:
 
 volumes:
   redis_data:
+  transcripts:
