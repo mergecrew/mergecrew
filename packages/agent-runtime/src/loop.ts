@@ -127,10 +127,34 @@ export async function runAgentStep(ctx: RunCtx): Promise<StepOutcome> {
     tools.push({ name: skill.name, description: skill.description, inputSchema: skill.inputSchema });
   }
 
-  // OpenAI-style tool definitions are accepted by all LangChain providers via bindTools.
+  // OpenAI requires `tools[].function.name` to match `^[a-zA-Z0-9_-]+$`,
+  // which rejects our dotted skill namespace (`repo.read_file`,
+  // `slack.post`, …). Anthropic, Bedrock, and Ollama accept dots, so the
+  // bug only surfaces the first time an org adds an OpenAI provider.
+  //
+  // We sanitize names on the wire (dots → underscores) and keep a
+  // `wire → original` map so policy checks, skill lookup, ToolCall rows
+  // and eventlog payloads still see the canonical dotted names. The
+  // sanitized form is also valid for the other providers, so the LLM
+  // sees a uniform name space regardless of which one routes the call.
+  const wireToOriginal = new Map<string, string>();
+  for (const t of tools) {
+    const wire = sanitizeToolName(t.name);
+    const prior = wireToOriginal.get(wire);
+    if (prior && prior !== t.name) {
+      throw new Error(
+        `tool name collision after sanitization: '${prior}' and '${t.name}' both map to '${wire}'`,
+      );
+    }
+    wireToOriginal.set(wire, t.name);
+  }
   const boundTools = tools.map((t) => ({
     type: 'function' as const,
-    function: { name: t.name, description: t.description, parameters: t.inputSchema as Record<string, unknown> },
+    function: {
+      name: sanitizeToolName(t.name),
+      description: t.description,
+      parameters: t.inputSchema as Record<string, unknown>,
+    },
   }));
 
   const systemText = agent.systemPrompt ?? defaultSystemPrompt(agent.kind);
@@ -223,7 +247,13 @@ export async function runAgentStep(ctx: RunCtx): Promise<StepOutcome> {
         return { outcome: { kind: 'failed', reason: 'tool_call_budget_exhausted' } };
       }
       const callId = tc.id ?? `call_${toolCallsMade}`;
-      const skillName = tc.name;
+      // The LLM echoes back the *wire* (sanitized) name we sent at
+      // bindTools time. Translate to the original dotted skill name
+      // before policy/skill lookup so the rest of the loop is unchanged.
+      // Unknown names (model hallucinated a tool we never registered)
+      // fall through with no translation; ctx.skills.get will return
+      // undefined and the existing error path handles it.
+      const skillName = wireToOriginal.get(tc.name) ?? tc.name;
       const input = tc.args ?? {};
 
       const decision = ctx.policy.check(skillName, input);
@@ -482,6 +512,14 @@ function aiMessageText(msg: AIMessage | undefined): string {
       .join('\n');
   }
   return '';
+}
+
+// OpenAI's tool-call API enforces `^[a-zA-Z0-9_-]+$` on `function.name`.
+// Anthropic, Bedrock, and Ollama accept a broader set, but the
+// sanitized form is valid for all of them, so we use it on every wire
+// rather than branch per-provider.
+export function sanitizeToolName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
 function defaultSystemPrompt(kind: string): string {
