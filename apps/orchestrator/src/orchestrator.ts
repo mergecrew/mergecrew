@@ -21,6 +21,7 @@ import {
 // branch on three string literals.
 const REVIEWER_KIND = 'Reviewer';
 const CODER_KIND = 'Coder';
+const PLANNER_KIND = 'Planner';
 import { emailEnabledFromEnv } from '@mergecrew/adapters-comms';
 import { syncLifecycleFromRepo } from './lifecycle-sync.js';
 import { dispatchSlackDigest } from './digest-slack.js';
@@ -332,6 +333,14 @@ export class Orchestrator {
     if (step.agentKind === REVIEWER_KIND) {
       const verdict = (step.output as { verdict?: string } | null)?.verdict;
       signal = verdict === 'approve' ? 'approve' : 'requestChanges';
+    } else if (step.agentKind === PLANNER_KIND) {
+      // Planner discovery mode (#492). The runner persists
+      // `output.mode = 'discovery'` when there was no seed task and the
+      // planner produced candidate directions instead of a plan. The
+      // CAREFUL_GRAPH `discovery` edge then terminates the chain so the
+      // coder + reviewer don't fan out against an empty plan.
+      const mode = (step.output as { mode?: string } | null)?.mode;
+      if (mode === 'discovery') signal = 'discovery';
     }
 
     const nextKey = findNextGraphNode(graph, step.graphNodeKey, signal);

@@ -617,6 +617,103 @@ export const CODER_SYSTEM_PROMPT = [
  * and a vague prompt produces unstable plan shapes that break the
  * coder's parsing.
  */
+/**
+ * Discovery-mode planner prompt (#492). Used when the runner detects
+ * that a project has no seed task — no queued intent, no prior plan,
+ * no active changeset, no reviewer feedback to address. The default
+ * planner prompt assumes a task has already been handed over; in
+ * discovery mode there isn't one, so the planner explores the repo
+ * itself and proposes three candidate directions for the operator to
+ * pick from. The workflow terminates after this step (see
+ * CAREFUL_GRAPH's `discovery` edge).
+ *
+ * Format is fixed so `parsePlannerDirections` can pull the structure
+ * out reliably. The orchestrator routes on `output.mode === 'discovery'`,
+ * so even a partial parse keeps the chain from advancing to the coder.
+ */
+export const PLANNER_DISCOVERY_SYSTEM_PROMPT = [
+  'You are the Planner agent in the Mergecrew autonomous product lifecycle, running in DISCOVERY MODE.',
+  'You have READ-ONLY access to the repository. You CANNOT edit, write, or execute shell commands.',
+  '',
+  'The operator just onboarded this project — there is NO task queued yet. Your job is to explore the codebase and propose 3 candidate first runs for the team to pick from.',
+  '',
+  'How to investigate:',
+  '- Use `repo.list_paths` to inspect the top-level shape.',
+  '- Read the README (if present) and the package manifest (package.json / pyproject.toml / go.mod / Cargo.toml). 2-3 file reads is plenty.',
+  '- Look for high-impact, low-risk first runs: missing `/healthz`, missing CI lint step, untyped boundaries, obvious dead code, missing tests for a hot path.',
+  '- DO NOT explore the whole tree. Stay within a small budget of tool calls.',
+  '',
+  'Each direction should be a SINGLE small first run — not a milestone or a quarter-long initiative.',
+  'Good examples: "add a /healthz endpoint", "wire prettier into CI", "convert `any` types in src/api/ to specific types", "add a missing 404 handler".',
+  'Bad examples (too big): "migrate from REST to GraphQL", "improve test coverage", "refactor the auth module".',
+  '',
+  'Output your candidates as the final message in this exact shape:',
+  '',
+  '```',
+  '# Discovery directions',
+  '',
+  '## 1. <short title>',
+  '**Rationale**: <one paragraph — why this is worth doing first>',
+  '**Files expected**: <comma-separated relative paths>',
+  '**Effort**: small | medium | large',
+  '',
+  '## 2. <short title>',
+  '**Rationale**: ...',
+  '**Files expected**: ...',
+  '**Effort**: ...',
+  '',
+  '## 3. <short title>',
+  '**Rationale**: ...',
+  '**Files expected**: ...',
+  '**Effort**: ...',
+  '```',
+  '',
+  'You ground every claim in repository state. You never invent files or APIs. If the repo is unreadable for any reason, return three directions that involve setting up the basics (README, CI, healthcheck) and say so in the rationale.',
+].join('\n');
+
+/**
+ * Parser for the discovery-mode markdown (#492). Pulls each direction
+ * out as a small structured record. Forgiving: missing fields land as
+ * empty strings rather than throwing, so a partial parse still gives
+ * the UI something to render and the orchestrator something to route
+ * on.
+ */
+export function parsePlannerDirections(markdown: string): Array<{
+  title: string;
+  rationale: string;
+  filesExpected: string[];
+  effort: string;
+}> {
+  const directions: Array<{
+    title: string;
+    rationale: string;
+    filesExpected: string[];
+    effort: string;
+  }> = [];
+  const sectionRe = /^##\s+\d+\.\s+(.+?)\s*$/gm;
+  const matches: Array<{ index: number; title: string }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = sectionRe.exec(markdown)) !== null) {
+    matches.push({ index: m.index, title: m[1]!.trim() });
+  }
+  for (let i = 0; i < matches.length; i++) {
+    const start = matches[i]!.index;
+    const end = i + 1 < matches.length ? matches[i + 1]!.index : markdown.length;
+    const body = markdown.slice(start, end);
+    const rationale = (body.match(/\*\*Rationale\*\*:\s*([^\n]+)/i)?.[1] ?? '').trim();
+    const filesLine = (body.match(/\*\*Files expected\*\*:\s*([^\n]+)/i)?.[1] ?? '').trim();
+    const effort = (body.match(/\*\*Effort\*\*:\s*([^\n]+)/i)?.[1] ?? '').trim();
+    const filesExpected = filesLine
+      ? filesLine
+          .split(/[,\s]+/)
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
+    directions.push({ title: matches[i]!.title, rationale, filesExpected, effort });
+  }
+  return directions;
+}
+
 export const PLANNER_SYSTEM_PROMPT = [
   'You are the Planner agent in the Mergecrew autonomous product lifecycle.',
   'You have READ-ONLY access to the repository. You CANNOT edit, write, or execute shell commands.',
