@@ -31,7 +31,13 @@ interface WorkflowDef {
   id: string;
   description?: string;
   agents: string[];
-  out: string[];
+  // Zod gives `out` a `.default([])` at YAML-parse time
+  // (`packages/domain/src/lifecycle.ts`), but the parsed JSON lands in
+  // the lifecycle.parsed column and is read back via Prisma without
+  // re-validation — so workflows that didn't declare `out` reach this
+  // component with `out: undefined`. Marking it optional forces every
+  // call site below to spell out the `?? []` fallback.
+  out?: string[];
 }
 
 interface ParsedConfigShape {
@@ -67,7 +73,7 @@ function bfsLayout(workflows: WorkflowDef[]): Record<string, { x: number; y: num
   const incoming = new Map<string, string[]>();
   for (const w of workflows) incoming.set(w.id, []);
   for (const w of workflows) {
-    for (const next of w.out) {
+    for (const next of w.out ?? []) {
       if (!incoming.has(next)) incoming.set(next, []);
       incoming.get(next)!.push(w.id);
     }
@@ -333,7 +339,7 @@ export function LifecycleGraph({
   for (const w of workflows) {
     const fromNode = placedById.get(w.id);
     if (!fromNode) continue;
-    for (const nextId of w.out) {
+    for (const nextId of w.out ?? []) {
       const toNode = placedById.get(nextId);
       if (toNode) edges.push({ from: fromNode, to: toNode });
     }
