@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { JWT_OVERRIDE_COOKIE } from '@/lib/session';
+import { getSession } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -49,13 +49,24 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   // The API authenticates via `Authorization: Bearer <jwt>` only — it
   // doesn't read cookies. Browser-initiated calls (EventSource for
   // `/timeline/stream`, client-component fetches) only send cookies, so
-  // we translate the `mergecrew_jwt` cookie into a Bearer header before
-  // forwarding. Don't overwrite an explicit Authorization header — API
-  // keys (`mc_live_…`) and server-side `requireSession()` flows set it
+  // we resolve the session server-side and synthesize the header.
+  //
+  // `getSession()` handles BOTH auth paths: the magic-link override
+  // (`mergecrew_jwt` cookie) AND NextAuth (`next-auth.session-token`
+  // cookie, encrypted, JWT lives in `token.mergecrewJwt`). Reading the
+  // raw `mergecrew_jwt` cookie alone misses every OAuth user.
+  //
+  // Don't overwrite an explicit Authorization header — API keys
+  // (`mc_live_…`) and server-side `requireSession()` flows set it
   // directly and must pass through unchanged.
   if (!headers.has('authorization')) {
-    const jwt = req.cookies.get(JWT_OVERRIDE_COOKIE)?.value;
-    if (jwt) headers.set('authorization', `Bearer ${jwt}`);
+    try {
+      const session = await getSession();
+      if (session?.jwt) headers.set('authorization', `Bearer ${session.jwt}`);
+    } catch {
+      // No session — let the API return its own 401 so the client
+      // surfaces a meaningful error instead of a proxy crash.
+    }
   }
 
   const init: RequestInit = {

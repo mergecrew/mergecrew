@@ -25,6 +25,25 @@ function defaultProbeModel(kind: string): string | undefined {
   return undefined;
 }
 
+// Initial model list seeded into `capabilityOverrides.models` when an
+// admin creates a hosted-API provider without declaring any models. Both
+// entries match the catalog prefixes in `packages/llm/src/models.ts` so
+// `capabilitiesFor()` returns `{ tools: true, longContext: 200_000 }` —
+// the capability profile the runner's planner/coder/reviewer require.
+//
+// Ollama is excluded because `createProvider` already auto-probes the
+// endpoint and discovers the real list of pulled models.
+function defaultModelsForKind(kind: string): string[] {
+  if (kind === 'anthropic') return ['claude-sonnet-4-5', 'claude-haiku-4-5'];
+  if (kind === 'openai') return ['gpt-4o', 'gpt-4o-mini'];
+  if (kind === 'bedrock')
+    return [
+      'anthropic.claude-3-5-sonnet-20241022-v2:0',
+      'anthropic.claude-3-5-haiku-20241022-v1:0',
+    ];
+  return [];
+}
+
 @Injectable()
 export class LlmService {
   constructor(
@@ -66,19 +85,28 @@ export class LlmService {
     const ciphertext = input.apiKey ? this.crypto.encrypt(input.apiKey) : null;
     let overrides = (input.capabilityOverrides ?? null) as Record<string, unknown> | null;
 
-    // Auto-populate ollama models when admin didn't provide any. Explicit
-    // user input always wins; probe failures are silent (endpoint may not
-    // be reachable from the API host yet).
+    // Auto-populate models when admin didn't provide any. Explicit user
+    // input always wins. For Ollama we probe the live endpoint; for the
+    // hosted APIs (OpenAI/Anthropic/Bedrock) there is no discovery
+    // endpoint we can call, so we fall back to a known-good default
+    // list so the very first run after "added my API key" doesn't fail
+    // with `no provider satisfies capability …`. Operators can prune
+    // the list afterwards via the providers UI.
     const declaredModels = (overrides as { models?: unknown } | null)?.models;
     const hasModels = Array.isArray(declaredModels) && declaredModels.length > 0;
-    if (input.kind === 'ollama' && input.endpoint && !hasModels) {
-      const r = await probeOllama(input.endpoint);
-      if (r.ok && r.models.length > 0) {
-        overrides = { ...(overrides ?? {}), models: r.models };
+    if (!hasModels) {
+      if (input.kind === 'ollama' && input.endpoint) {
+        const r = await probeOllama(input.endpoint);
+        if (r.ok && r.models.length > 0) {
+          overrides = { ...(overrides ?? {}), models: r.models };
+        }
+      } else if (input.kind !== 'ollama') {
+        const defaults = defaultModelsForKind(input.kind);
+        if (defaults.length > 0) overrides = { ...(overrides ?? {}), models: defaults };
       }
     }
 
-    return this.prisma.withTenant(t.organizationId, (tx) =>
+    const created = await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.llmProvider.create({
         data: {
           organizationId: t.organizationId,
@@ -90,6 +118,34 @@ export class LlmService {
         },
       }),
     );
+
+    // Seed a default LlmProfile on first provider so the runner has
+    // somewhere to look. Without this, `profiles[0]` in
+    // apps/runner/src/step.ts falls through to an empty `preferenceOrder`
+    // and the router throws `no provider satisfies capability` even
+    // though a valid provider+model exists. We only auto-create when the
+    // org has zero profiles — once a profile exists (auto or hand-rolled),
+    // the admin owns it.
+    const providerModels = ((overrides as { models?: unknown } | null)?.models ?? []) as string[];
+    if (providerModels.length > 0) {
+      const existingProfileCount = await this.prisma.withTenant(t.organizationId, (tx) =>
+        tx.llmProfile.count({ where: { organizationId: t.organizationId } }),
+      );
+      if (existingProfileCount === 0) {
+        await this.prisma.withTenant(t.organizationId, (tx) =>
+          tx.llmProfile.create({
+            data: {
+              organizationId: t.organizationId,
+              name: 'default',
+              preferenceOrder: providerModels.map((m) => `${created.id}/${m}`) as any,
+              capabilityRouting: {} as any,
+            },
+          }),
+        );
+      }
+    }
+
+    return created;
   }
 
   async updateProvider(
