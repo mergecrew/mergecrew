@@ -58,7 +58,9 @@ import {
   PLANNER_AGENT_KIND,
   CODER_AGENT_KIND,
   REVIEWER_AGENT_KIND,
+  PLANNER_DISCOVERY_SYSTEM_PROMPT,
   parsePlanPaths,
+  parsePlannerDirections,
   parseReviewerVerdict,
 } from '@mergecrew/agent-runtime';
 import { transcriptStoreFromEnv } from '@mergecrew/transcript-store';
@@ -463,6 +465,18 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   }
 
   const initialInput = await synthesizeAgentInput(organizationId, projectId, runId, agentRef, agentDef, cfg);
+  // Discovery-mode planner (#492): swap the system prompt so the
+  // planner explores instead of asking "what task?". Detected from the
+  // input shape rather than re-querying the DB. The mutation is
+  // step-scoped — agentDef is rebuilt by the caller on each step.
+  const isPlannerDiscovery =
+    agentDef.kind === PLANNER_AGENT_KIND &&
+    typeof initialInput === 'object' &&
+    initialInput !== null &&
+    (initialInput as { mode?: string }).mode === 'discovery';
+  if (isPlannerDiscovery) {
+    agentDef.systemPrompt = PLANNER_DISCOVERY_SYSTEM_PROMPT;
+  }
 
   const outcome = await runAgentStep({
     organizationId,
@@ -770,29 +784,56 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   // persist on a clean `completed` outcome — partial outcomes
   // (failed/budget_exhausted/cancelled) leave the field null because
   // a truncated plan is worse than no plan for the coder's purposes.
+  //
+  // Discovery mode (#492) splits the path: the planner produced three
+  // candidate directions, not a plan. Persist `{ mode: 'discovery',
+  // directions }` instead of `{ planMarkdown }` and emit
+  // PLANNER_DIRECTIONS_PROPOSED. The orchestrator routes on
+  // `output.mode === 'discovery'` to terminate the chain.
   if (
     agentDef.kind === PLANNER_AGENT_KIND &&
     outcome.kind === 'completed' &&
     typeof outcome.output === 'string' &&
     outcome.output.trim().length > 0
   ) {
-    const planMarkdown = outcome.output.trim();
-    await withTenant(organizationId, (tx) =>
-      tx.agentStep.update({
-        where: { id: stepId },
-        data: { output: { planMarkdown } as any },
-      }),
-    );
-    await eventlog.emit({
-      organizationId,
-      projectId,
-      dailyRunId: runId,
-      workflowRunId,
-      agentStepId: stepId,
-      type: 'PLAN_PROPOSED',
-      actor: { kind: 'agent', id: stepId, agentKind: agentDef.kind },
-      payload: { planMarkdown },
-    });
+    const markdown = outcome.output.trim();
+    if (isPlannerDiscovery) {
+      const directions = parsePlannerDirections(markdown);
+      await withTenant(organizationId, (tx) =>
+        tx.agentStep.update({
+          where: { id: stepId },
+          data: { output: { mode: 'discovery', directions, markdown } as any },
+        }),
+      );
+      await eventlog.emit({
+        organizationId,
+        projectId,
+        dailyRunId: runId,
+        workflowRunId,
+        agentStepId: stepId,
+        type: 'PLANNER_DIRECTIONS_PROPOSED',
+        actor: { kind: 'agent', id: stepId, agentKind: agentDef.kind },
+        payload: { directions, markdown },
+      });
+    } else {
+      const planMarkdown = markdown;
+      await withTenant(organizationId, (tx) =>
+        tx.agentStep.update({
+          where: { id: stepId },
+          data: { output: { planMarkdown } as any },
+        }),
+      );
+      await eventlog.emit({
+        organizationId,
+        projectId,
+        dailyRunId: runId,
+        workflowRunId,
+        agentStepId: stepId,
+        type: 'PLAN_PROPOSED',
+        actor: { kind: 'agent', id: stepId, agentKind: agentDef.kind },
+        payload: { planMarkdown },
+      });
+    }
   }
 
   // After the loop: open PRs for any active changesets that don't have one
@@ -1699,6 +1740,32 @@ async function synthesizeAgentInput(
   agentDef: { kind: string },
   _cfg: MergecrewConfig,
 ): Promise<unknown> {
+  // Discovery mode for the planner (#492). When a project has no
+  // queued intent AND no prior changesets, there is no concrete task
+  // to plan against — the default planner prompt would degenerate to
+  // "please give me instructions." Instead we set a `mode: 'discovery'`
+  // flag and the runner (caller below) swaps in
+  // PLANNER_DISCOVERY_SYSTEM_PROMPT so the planner explores the repo
+  // and proposes three candidate first runs. The orchestrator routes
+  // on `output.mode === 'discovery'` to terminate the chain.
+  if (agentDef.kind === PLANNER_AGENT_KIND) {
+    const [queuedIntents, priorChangesets] = await Promise.all([
+      withTenant(organizationId, (tx) =>
+        tx.intentInboxItem.count({ where: { projectId, status: 'queued' } }),
+      ),
+      withTenant(organizationId, (tx) => tx.changeset.count({ where: { projectId } })),
+    ]);
+    if (queuedIntents === 0 && priorChangesets === 0) {
+      return {
+        runId,
+        agentRef,
+        mode: 'discovery',
+        instruction:
+          'No task has been queued yet for this project. Explore the repo and propose three candidate first runs.',
+      };
+    }
+  }
+
   // Reviewer agents (#334) consume the planner's plan AND the coder's
   // changeset to produce a structured verdict. If the runner already
   // detected an out-of-scope edit (#333 emit), include that signal in

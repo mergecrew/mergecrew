@@ -67,6 +67,11 @@ export const CAREFUL_GRAPH: GraphDefinition = {
       reviewer: { agentRef: 'reviewer' },
     },
     edges: [
+      // First-run discovery (#492). When the planner ran without any
+      // seed task and emitted candidate directions instead of a plan,
+      // the orchestrator routes to __end__ on this signal so the
+      // coder + reviewer don't fan out against an empty plan.
+      { from: 'planner', to: GRAPH_END, when: 'discovery' },
       { from: 'planner', to: 'coder' },
       { from: 'coder', to: 'reviewer' },
       { from: 'reviewer', to: 'coder', when: 'requestChanges' },
@@ -207,9 +212,16 @@ export function findNextGraphNode(
     const match = candidates.find((e) => e.when === signal);
     if (match) return match.to;
   }
-  // #348 default for the reviewer node: assume approve until verdict
-  // parsing lands in #349. Picks the explicit approve edge if present
-  // so a careful-profile run terminates cleanly today.
+  // No signal (or signal matched nothing) → pick the default edge —
+  // the one with no `when` condition. Lets a node have an unconditional
+  // happy-path edge plus one or more labeled diversions (e.g. the
+  // planner's `discovery` diversion in #492 + default → coder).
+  const defaultEdge = candidates.find((e) => e.when === undefined);
+  if (defaultEdge) return defaultEdge.to;
+  // #348 legacy default for the reviewer (and any custom graph that
+  // labels every edge): assume `approve`. Kept for back-compat — the
+  // reviewer's verdict-parsing (#349) supplies the real signal in
+  // production, so this only fires when callers pass no signal at all.
   const approve = candidates.find((e) => e.when === 'approve');
   if (approve) return approve.to;
   return null;

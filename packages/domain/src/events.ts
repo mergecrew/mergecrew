@@ -43,6 +43,13 @@ export const TimelineEventType = z.enum([
   // markdown plan; the coder consumes it. REVIEW_APPROVED /
   // REVIEW_CHANGES_REQUESTED gate the changeset before PR open.
   'PLAN_PROPOSED',
+  // First-run discovery (#492). The planner ran without a concrete task
+  // (no queued intent, no prior changeset, no reviewer feedback) and
+  // produced 3 candidate directions instead of a single plan. The
+  // workflow terminates after this — the operator picks one of the
+  // directions and triggers a fresh run with that direction as the
+  // seed goal.
+  'PLANNER_DIRECTIONS_PROPOSED',
   'REVIEW_APPROVED',
   'REVIEW_CHANGES_REQUESTED',
   // Multi-agent loop-back exhaustion (#349). Fires when the reviewer

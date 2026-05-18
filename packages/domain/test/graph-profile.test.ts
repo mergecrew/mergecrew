@@ -203,16 +203,26 @@ describe('findGraphEntryNode (#348)', () => {
 
 describe('findNextGraphNode (#348)', () => {
   it('returns the single successor when there is exactly one outgoing edge', () => {
-    expect(findNextGraphNode(CAREFUL_GRAPH, 'planner')).toBe('coder');
     expect(findNextGraphNode(CAREFUL_GRAPH, 'coder')).toBe('reviewer');
+  });
+
+  it('picks the default (unlabeled) edge when no signal is supplied', () => {
+    // Planner now has a labeled `discovery` edge + a default → coder
+    // edge (#492). Default behavior without a signal goes to coder.
+    expect(findNextGraphNode(CAREFUL_GRAPH, 'planner')).toBe('coder');
   });
 
   it('routes by `when` signal when multiple edges share a `from`', () => {
     expect(findNextGraphNode(CAREFUL_GRAPH, 'reviewer', 'approve')).toBe(GRAPH_END);
     expect(findNextGraphNode(CAREFUL_GRAPH, 'reviewer', 'requestChanges')).toBe('coder');
+    // Planner's discovery diversion (#492) terminates the chain.
+    expect(findNextGraphNode(CAREFUL_GRAPH, 'planner', 'discovery')).toBe(GRAPH_END);
   });
 
-  it('falls back to the approve edge when no signal is supplied (#348 minimal behavior)', () => {
+  it('falls back to the approve edge when no signal is supplied AND no default edge exists', () => {
+    // Reviewer has no default edge — both outbound edges are labeled.
+    // Pre-#492 the function fell through to `approve`; that fallback is
+    // kept for back-compat with any custom graph that labels every edge.
     expect(findNextGraphNode(CAREFUL_GRAPH, 'reviewer')).toBe(GRAPH_END);
   });
 
