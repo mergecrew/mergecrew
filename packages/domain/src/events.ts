@@ -67,6 +67,15 @@ export const TimelineEventType = z.enum([
   // UI timeline + a future digest line that calls out red runs
   // without making the operator open the agent step.
   'QA_VERDICT',
+  // DesignReviewer agent verdict (#522, V2.af roster). Fires after
+  // the DesignReviewer stage parses the dev-deploy screenshot.
+  // Payload carries the structured verdict (`looks_correct` |
+  // `visual_regression`), the screenshot URL the agent captured,
+  // and the list of one-line findings. The run-detail UI surfaces
+  // `visual_regression` as a warning chip; `looks_correct` with a
+  // single `vision not available` finding is the no-vision fallback
+  // path and is rendered neutrally.
+  'DESIGN_REVIEW_VERDICT',
   // Multi-agent loop-back exhaustion (#349). Fires when the reviewer
   // has requested changes more times than REVIEW_LOOP_CAP allows
   // (default 3 coder rounds). The run falls through to normal

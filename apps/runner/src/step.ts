@@ -63,7 +63,9 @@ import {
   FRONTEND_ENGINEER_AGENT_KIND,
   QA_AGENT_KIND,
   SRE_AGENT_KIND,
+  DESIGN_REVIEWER_AGENT_KIND,
   PLANNER_DISCOVERY_SYSTEM_PROMPT,
+  parseDesignReviewVerdict,
   parsePlanPaths,
   parsePlannerDirections,
   parsePmSpec,
@@ -1018,6 +1020,39 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
       type: 'QA_VERDICT',
       actor: { kind: 'agent', id: stepId, agentKind: agentDef.kind },
       payload: { verdict, summary, failureExcerpts },
+    });
+  }
+
+  // DesignReviewer post-process (#522, V2.af roster). Parse the
+  // structured visual-review verdict, persist on agent_steps.output,
+  // and emit DESIGN_REVIEW_VERDICT. A parser failure resolves to the
+  // no-vision fallback — `looks_correct` with a `vision not available`
+  // finding — so a malformed output doesn't surface a false-positive
+  // regression chip on the run-detail UI.
+  if (
+    agentDef.kind === DESIGN_REVIEWER_AGENT_KIND &&
+    outcome.kind === 'completed' &&
+    typeof outcome.output === 'string'
+  ) {
+    const parsed = parseDesignReviewVerdict(outcome.output);
+    const verdict: 'looks_correct' | 'visual_regression' = parsed?.verdict ?? 'looks_correct';
+    const screenshotUrl = parsed?.screenshotUrl ?? '';
+    const findings = parsed?.findings ?? (parsed ? [] : ['vision not available']);
+    await withTenant(organizationId, (tx) =>
+      tx.agentStep.update({
+        where: { id: stepId },
+        data: { output: { verdict, screenshotUrl, findings } as any },
+      }),
+    );
+    await eventlog.emit({
+      organizationId,
+      projectId,
+      dailyRunId: runId,
+      workflowRunId,
+      agentStepId: stepId,
+      type: 'DESIGN_REVIEW_VERDICT',
+      actor: { kind: 'agent', id: stepId, agentKind: agentDef.kind },
+      payload: { verdict, screenshotUrl, findings },
     });
   }
 
@@ -2208,6 +2243,46 @@ async function synthesizeAgentInput(
       agentRef,
       instruction: `You are the ${role}. Implement the ${portion} portion of the supplied spec. The ${sibling} is running in parallel — leave ${siblingScope} to them.`,
       spec,
+    };
+  }
+
+  // DesignReviewer agent input (#522, V2.af roster). Runs in the
+  // parallel observation stage after SRE. Pulls the dev URL from the
+  // most-recent SRE step's `output.deployment.url` so the agent
+  // doesn't have to re-resolve via `deploy.url_for_branch` for the
+  // happy path. Falls back to null so the agent's no-vision /
+  // no-deploy branch (system prompt prescribes a fallback verdict)
+  // still parses cleanly.
+  if (agentDef.kind === DESIGN_REVIEWER_AGENT_KIND) {
+    const sreStep = await withTenant(organizationId, (tx) =>
+      tx.agentStep.findFirst({
+        where: {
+          workflowRun: { dailyRunId: runId },
+          agentKind: SRE_AGENT_KIND,
+          status: 'completed',
+          output: { not: undefined },
+        },
+        orderBy: { finishedAt: 'desc' },
+        select: { output: true },
+      }),
+    );
+    const devUrl =
+      (sreStep?.output as { deployment?: { url?: string | null } } | null)
+        ?.deployment?.url ?? null;
+    const cs = await withTenant(organizationId, (tx) =>
+      tx.changeset.findFirst({
+        where: { projectId, dailyRunId: runId },
+        orderBy: { updatedAt: 'desc' },
+        select: { id: true, branch: true, title: true },
+      }),
+    );
+    return {
+      runId,
+      agentRef,
+      instruction:
+        'You are the Design Reviewer agent. Capture a screenshot of the supplied dev URL via web.screenshot_url, pass it to design.review_screenshot for visual diff, and emit the structured VERDICT block prescribed by your system prompt. When the dev URL is null or no vision-capable model is configured, emit the no-vision fallback verdict.',
+      devUrl,
+      changeset: cs,
     };
   }
 
