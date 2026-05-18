@@ -209,7 +209,7 @@ export default async function ProjectSettings({
 
       <Section
         title="Deploy targets"
-        description="Where the runner promotes changesets. dev / staging / prod each pick an adapter (GitHub Actions, Vercel, …). The dev target also drives the post-PR auto-deploy on each daily run."
+        description="Where the runner promotes changesets. Each row picks an adapter (GitHub Actions, Vercel, …). The dev target drives the post-PR auto-deploy on each daily run; the prod target is the promotion destination."
       >
         <DeployTargetForm
           slug={slug}

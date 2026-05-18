@@ -22,7 +22,11 @@ export interface DeployTargetRow {
   config: Record<string, unknown>;
 }
 
-const DEFAULT_KINDS: Kind[] = ['dev', 'staging', 'prod'];
+// (#500 phase 1) Default to dev + prod — most teams don't run a
+// staging environment, and the empty staging row was visual noise.
+// Existing projects that already have a saved staging target keep it
+// visible via the `union with initial[].kind` below.
+const DEFAULT_KINDS: Kind[] = ['dev', 'prod'];
 
 /**
  * V2.z deploy-target editor (#266).
@@ -62,9 +66,19 @@ export function DeployTargetForm({
    */
   baseBranch?: string;
 }) {
+  // Union the requested kinds with any extra kinds already saved on
+  // the project (#500). This keeps an existing staging row visible
+  // after the default flipped from dev/staging/prod → dev/prod — the
+  // operator who wired staging earlier doesn't suddenly lose access
+  // to it. Preserves stable display order: dev → staging → prod →
+  // anything else.
+  const ORDER: Kind[] = ['dev', 'staging', 'prod'];
+  const renderedKinds = Array.from(new Set<Kind>([...kinds, ...initial.map((t) => t.kind)])).sort(
+    (a, b) => ORDER.indexOf(a) - ORDER.indexOf(b),
+  );
   return (
     <div className="space-y-4">
-      {kinds.map((kind) => (
+      {renderedKinds.map((kind) => (
         <KindRow
           key={kind}
           slug={slug}
