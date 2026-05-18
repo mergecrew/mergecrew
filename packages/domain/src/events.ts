@@ -76,6 +76,13 @@ export const TimelineEventType = z.enum([
   // single `vision not available` finding is the no-vision fallback
   // path and is rendered neutrally.
   'DESIGN_REVIEW_VERDICT',
+  // Observation agent smoke report (#523, V2.af roster). Fires after
+  // the Observation stage smoke-checks the dev URL. Payload carries
+  // `verdict` (`healthy` | `unhealthy`), the observed HTTP status
+  // code, the request latency in ms, and the list of one-line
+  // findings. Unhealthy verdicts trigger a follow-up rollback intent
+  // (the agent files it via the tracker skill before terminating).
+  'OBSERVATION_REPORT',
   // Multi-agent loop-back exhaustion (#349). Fires when the reviewer
   // has requested changes more times than REVIEW_LOOP_CAP allows
   // (default 3 coder rounds). The run falls through to normal

@@ -64,8 +64,10 @@ import {
   QA_AGENT_KIND,
   SRE_AGENT_KIND,
   DESIGN_REVIEWER_AGENT_KIND,
+  OBSERVATION_AGENT_KIND,
   PLANNER_DISCOVERY_SYSTEM_PROMPT,
   parseDesignReviewVerdict,
+  parseObservationReport,
   parsePlanPaths,
   parsePlannerDirections,
   parsePmSpec,
@@ -1053,6 +1055,39 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
       type: 'DESIGN_REVIEW_VERDICT',
       actor: { kind: 'agent', id: stepId, agentKind: agentDef.kind },
       payload: { verdict, screenshotUrl, findings },
+    });
+  }
+
+  // Observation post-process (#523, V2.af roster). Parse the
+  // structured smoke-check report, persist on agent_steps.output,
+  // and emit OBSERVATION_REPORT. A parser failure resolves to the
+  // no-deploy fallback (`healthy` + zeros + `no dev deploy`) so a
+  // malformed agent reply doesn't false-positive a rollback intent.
+  if (
+    agentDef.kind === OBSERVATION_AGENT_KIND &&
+    outcome.kind === 'completed' &&
+    typeof outcome.output === 'string'
+  ) {
+    const parsed = parseObservationReport(outcome.output);
+    const verdict: 'healthy' | 'unhealthy' = parsed?.verdict ?? 'healthy';
+    const statusCode = parsed?.statusCode ?? 0;
+    const latencyMs = parsed?.latencyMs ?? 0;
+    const findings = parsed?.findings ?? (parsed ? [] : ['no dev deploy']);
+    await withTenant(organizationId, (tx) =>
+      tx.agentStep.update({
+        where: { id: stepId },
+        data: { output: { verdict, statusCode, latencyMs, findings } as any },
+      }),
+    );
+    await eventlog.emit({
+      organizationId,
+      projectId,
+      dailyRunId: runId,
+      workflowRunId,
+      agentStepId: stepId,
+      type: 'OBSERVATION_REPORT',
+      actor: { kind: 'agent', id: stepId, agentKind: agentDef.kind },
+      payload: { verdict, statusCode, latencyMs, findings },
     });
   }
 
@@ -2243,6 +2278,38 @@ async function synthesizeAgentInput(
       agentRef,
       instruction: `You are the ${role}. Implement the ${portion} portion of the supplied spec. The ${sibling} is running in parallel — leave ${siblingScope} to them.`,
       spec,
+    };
+  }
+
+  // Observation agent input (#523, V2.af roster). Runs in the
+  // parallel observation stage alongside DesignReviewer / BugTriage
+  // / DocWriter. Distinct from DesignReviewer: Observation does an
+  // HTTP-level smoke check (does the page respond, 2xx, expected
+  // keywords) — DesignReviewer does the visual-level check. Pulls
+  // the dev URL from the SRE step's `output.deployment.url` so the
+  // agent doesn't have to re-resolve.
+  if (agentDef.kind === OBSERVATION_AGENT_KIND) {
+    const sreStep = await withTenant(organizationId, (tx) =>
+      tx.agentStep.findFirst({
+        where: {
+          workflowRun: { dailyRunId: runId },
+          agentKind: SRE_AGENT_KIND,
+          status: 'completed',
+          output: { not: undefined },
+        },
+        orderBy: { finishedAt: 'desc' },
+        select: { output: true },
+      }),
+    );
+    const devUrl =
+      (sreStep?.output as { deployment?: { url?: string | null } } | null)
+        ?.deployment?.url ?? null;
+    return {
+      runId,
+      agentRef,
+      instruction:
+        'You are the Observation agent. Run web.smoke_check against the supplied dev URL, assert HTTP 2xx, and emit the structured VERDICT block prescribed by your system prompt. When the dev URL is null, emit the no-deploy fallback verdict. If the smoke check fails, file a synthetic intent describing the failure before terminating.',
+      devUrl,
     };
   }
 
