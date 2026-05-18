@@ -62,7 +62,7 @@ jobs:
       # native arch (e.g. amd64 runner producing an arm64 image, or any
       # multi-arch build). No-op when platforms == runner arch.
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
