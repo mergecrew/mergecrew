@@ -28,7 +28,7 @@
     "screenshots": "tsx scripts/screenshots/capture.ts"
   },
   "devDependencies": {
-    "@types/node": "^25.7.0",
+    "@types/node": "^25.9.0",
     "dotenv": "^17.4.2",
     "dotenv-cli": "^8.0.0",
     "eslint": "^9.12.0",
