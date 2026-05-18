@@ -30,6 +30,7 @@ const PLANNER_KIND = 'Planner';
 // need a constant here.
 const DISCOVERY_KIND = 'Discovery';
 const QA_KIND = 'QA';
+const PM_KIND = 'PM';
 import { emailEnabledFromEnv } from '@mergecrew/adapters-comms';
 import { syncLifecycleFromRepo } from './lifecycle-sync.js';
 import { dispatchSlackDigest } from './digest-slack.js';
@@ -431,27 +432,41 @@ export class Orchestrator {
       return false;
     }
 
-    // Loop-back guard (#349, generalized for #350). When a reviewer-kind
-    // step routes to a coder-kind node, count completed coder-kind
-    // steps in this workflow run. The cap is env-set (REVIEW_LOOP_CAP,
-    // default 3) — one initial coder pass + up to two retries.
+    // Loop-back guard (#349 careful, #520 roster). When a verdict-step
+    // routes back to a work-step, count completed work-step rounds in
+    // this workflow run. The cap is env-set (REVIEW_LOOP_CAP, default
+    // 3) — one initial work pass + up to two retries.
+    //
+    // Two loop shapes share the cap:
+    //   * careful: Reviewer → Coder (count coder rounds)
+    //   * roster:  QA → PM (count PM rounds — PM revises the spec,
+    //              engineers re-implement against the new spec)
     const nextAgents = getNodeAgents(node);
     const nextAgentDef = resolveAgentByRef(cfg.agents, nextAgents[0] ?? '');
     const nextKind = nextAgentDef?.kind;
-    if (step.agentKind === REVIEWER_KIND && nextKind === CODER_KIND) {
-      const coderRounds = await withTenant(organizationId, (tx) =>
+    const isCarefulLoop = step.agentKind === REVIEWER_KIND && nextKind === CODER_KIND;
+    const isRosterLoop = step.agentKind === QA_KIND && nextKind === PM_KIND;
+    if (isCarefulLoop || isRosterLoop) {
+      const countedKind = isCarefulLoop ? CODER_KIND : PM_KIND;
+      const rounds = await withTenant(organizationId, (tx) =>
         tx.agentStep.count({
           where: {
             workflowRunId,
-            agentKind: CODER_KIND,
+            agentKind: countedKind,
             status: { in: ['done', 'failed', 'cancelled'] },
           },
         }),
       );
       const cap = Number(process.env.REVIEW_LOOP_CAP ?? 3);
-      if (coderRounds >= cap) {
+      if (rounds >= cap) {
         const output = step.output as
-          | { verdict?: string; reasoning?: string; requestedChanges?: string[] }
+          | {
+              verdict?: string;
+              reasoning?: string;
+              requestedChanges?: string[];
+              summary?: string;
+              failureExcerpts?: string[];
+            }
           | null;
         await this.deps.eventlog.emit({
           organizationId,
@@ -461,16 +476,25 @@ export class Orchestrator {
           agentStepId: stepId,
           type: 'REVIEW_LOOP_EXHAUSTED',
           actor: { kind: 'system' },
-          payload: {
-            coderRounds,
-            cap,
-            lastReviewerReasoning: output?.reasoning ?? null,
-            lastReviewerRequestedChanges: output?.requestedChanges ?? [],
-          },
+          payload: isCarefulLoop
+            ? {
+                kind: 'careful',
+                coderRounds: rounds,
+                cap,
+                lastReviewerReasoning: output?.reasoning ?? null,
+                lastReviewerRequestedChanges: output?.requestedChanges ?? [],
+              }
+            : {
+                kind: 'roster',
+                pmRounds: rounds,
+                cap,
+                lastQaSummary: output?.summary ?? null,
+                lastQaFailureExcerpts: output?.failureExcerpts ?? [],
+              },
         });
         this.deps.logger.info(
-          { runId, workflowRunId, coderRounds, cap },
-          'careful loop exhausted: routing changeset to human review without further coder retries',
+          { runId, workflowRunId, loop: isCarefulLoop ? 'careful' : 'roster', rounds, cap },
+          'loop exhausted: routing changeset to human review without further retries',
         );
         return false;
       }

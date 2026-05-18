@@ -59,6 +59,14 @@ export const TimelineEventType = z.enum([
   // to the intent that drove it. Engineer agents downstream read the
   // most recent PM_SPEC_PROPOSED in the workflow run as their input.
   'PM_SPEC_PROPOSED',
+  // QA agent verdict (#520, V2.af roster). Fires after the QA stage
+  // parses the engineers' changeset. Payload carries the structured
+  // verdict (`tests_pass` | `tests_fail`), the one-line summary, and
+  // the list of failure excerpts. The orchestrator already routes on
+  // `output.verdict` (see #516 graph wiring); this event is for the
+  // UI timeline + a future digest line that calls out red runs
+  // without making the operator open the agent step.
+  'QA_VERDICT',
   // Multi-agent loop-back exhaustion (#349). Fires when the reviewer
   // has requested changes more times than REVIEW_LOOP_CAP allows
   // (default 3 coder rounds). The run falls through to normal

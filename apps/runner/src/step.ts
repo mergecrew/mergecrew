@@ -61,10 +61,12 @@ import {
   PM_AGENT_KIND,
   BACKEND_ENGINEER_AGENT_KIND,
   FRONTEND_ENGINEER_AGENT_KIND,
+  QA_AGENT_KIND,
   PLANNER_DISCOVERY_SYSTEM_PROMPT,
   parsePlanPaths,
   parsePlannerDirections,
   parsePmSpec,
+  parseQaVerdict,
   parseReviewerVerdict,
   type ParsedPmSpec,
   type PmSpecTarget,
@@ -979,6 +981,43 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
         },
       });
     }
+  }
+
+  // QA agent post-process (#520, V2.af roster). Parse the structured
+  // verdict out of the agent's final text, persist it on
+  // `agent_steps.output` (the orchestrator's dispatchGraphNext already
+  // reads `output.verdict` to route tests_pass → deploy_dev vs.
+  // tests_fail → pm), and emit QA_VERDICT for the timeline. A parser
+  // failure resolves to `tests_fail` with the raw output passed
+  // through as the summary so the loop-back has substance to work
+  // from — same defensive default as the reviewer parser.
+  if (
+    agentDef.kind === QA_AGENT_KIND &&
+    outcome.kind === 'completed' &&
+    typeof outcome.output === 'string'
+  ) {
+    const parsed = parseQaVerdict(outcome.output);
+    const verdict: 'tests_pass' | 'tests_fail' = parsed?.verdict ?? 'tests_fail';
+    const summary =
+      parsed?.summary ??
+      `qa output did not match the expected verdict shape; raw output below:\n\n${outcome.output.slice(0, 2000)}`;
+    const failureExcerpts = parsed?.failureExcerpts ?? [];
+    await withTenant(organizationId, (tx) =>
+      tx.agentStep.update({
+        where: { id: stepId },
+        data: { output: { verdict, summary, failureExcerpts } as any },
+      }),
+    );
+    await eventlog.emit({
+      organizationId,
+      projectId,
+      dailyRunId: runId,
+      workflowRunId,
+      agentStepId: stepId,
+      type: 'QA_VERDICT',
+      actor: { kind: 'agent', id: stepId, agentKind: agentDef.kind },
+      payload: { verdict, summary, failureExcerpts },
+    });
   }
 
   // After the loop: open PRs for any active changesets that don't have one
@@ -2101,6 +2140,44 @@ async function synthesizeAgentInput(
       runId,
       agentRef,
       instruction: `You are the ${role}. Implement the ${portion} portion of the supplied spec. The ${sibling} is running in parallel — leave ${siblingScope} to them.`,
+      spec,
+    };
+  }
+
+  // QA agent input (#520, V2.af roster). QA reads the in-flight
+  // changeset the engineers produced — branch name, the file paths
+  // recorded on the risk-score breakdown — and the PM spec the
+  // changeset was built against so the agent can compare delivered
+  // work against acceptance criteria. The actual test execution
+  // happens through the build/test skills (read-only as far as the
+  // repo is concerned); this branch just stages the context.
+  if (agentDef.kind === QA_AGENT_KIND) {
+    const spec = await loadPmSpecForRun(organizationId, runId);
+    const cs = await withTenant(organizationId, (tx) =>
+      tx.changeset.findFirst({
+        where: {
+          projectId,
+          dailyRunId: runId,
+          status: { in: ['proposed', 'building', 'testing', 'tests_failed', 'pr_open'] },
+        },
+        orderBy: { updatedAt: 'desc' },
+        select: { id: true, title: true, branch: true, riskScoreBreakdown: true },
+      }),
+    );
+    return {
+      runId,
+      agentRef,
+      instruction:
+        'You are the QA agent. Verify the engineers\' changeset by running install, typecheck, lint, unit tests, and integration tests in order. Emit the structured VERDICT block prescribed by your system prompt. Do not edit files.',
+      changeset: cs
+        ? {
+            id: cs.id,
+            title: cs.title,
+            branch: cs.branch,
+            filesChanged:
+              (cs.riskScoreBreakdown as { paths?: string[] } | null)?.paths ?? [],
+          }
+        : null,
       spec,
     };
   }
