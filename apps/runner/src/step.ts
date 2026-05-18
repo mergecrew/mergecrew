@@ -238,23 +238,35 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   // there is no ConnectedRepo (or no GitHub App creds) — an agent can't
   // plan or code against a phantom repo, and silently planning over an
   // empty workspace is what produced the original "0 paths" symptom.
-  const bootstrap = await bootstrapWorkspace({
-    workspacePath,
-    vcs,
-    fetchConnectedRepo: async () => {
-      const row = await withTenant(organizationId, (tx) =>
-        tx.connectedRepo.findUnique({ where: { projectId } }),
-      );
-      if (!row) return null;
-      return {
-        installationId: row.installationId,
-        repoId: row.repoId,
-        repoFullName: row.repoFullName,
-        defaultBranch: effectiveBaseBranch(row),
-      };
-    },
-    logger,
-  });
+  //
+  // Stub / demo mode (#191, #374) short-circuits the LLM and returns
+  // canned outcomes inside `runAgentStep`. Those paths don't read the
+  // workspace at all, so the bootstrap (which requires a real
+  // ConnectedRepo + GitHub App creds) is bypassed. This is what keeps
+  // the e2e-loop smoke test and the demo-mode "Run now" button working
+  // against the seeded demo project, which has no real repo connection.
+  const stubMode =
+    process.env.MERGECREW_AGENT_STUB === '1' ||
+    process.env.MERGECREW_DEMO_MODE === '1';
+  const bootstrap = stubMode
+    ? ({ kind: 'reused' } as const)
+    : await bootstrapWorkspace({
+        workspacePath,
+        vcs,
+        fetchConnectedRepo: async () => {
+          const row = await withTenant(organizationId, (tx) =>
+            tx.connectedRepo.findUnique({ where: { projectId } }),
+          );
+          if (!row) return null;
+          return {
+            installationId: row.installationId,
+            repoId: row.repoId,
+            repoFullName: row.repoFullName,
+            defaultBranch: effectiveBaseBranch(row),
+          };
+        },
+        logger,
+      });
   if (bootstrap.kind === 'failed') {
     const failureReason =
       bootstrap.reason === 'clone_failed'
