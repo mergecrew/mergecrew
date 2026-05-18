@@ -78,14 +78,14 @@ export function InceptionForm({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
+      <div>
         <Button onClick={onRun} disabled={pending} variant="primary">
           {pending ? 'Analyzing…' : result ? 'Re-analyze' : 'Analyze repository'}
         </Button>
-        <span className="text-xs text-zinc-500">
+        <p className="mt-2 text-xs text-zinc-500">
           Clones the repo into a temp workspace, scans for frameworks, scripts,
           and deploy workflows. No writes.
-        </span>
+        </p>
       </div>
 
       {error && (
