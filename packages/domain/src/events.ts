@@ -83,6 +83,14 @@ export const TimelineEventType = z.enum([
   // findings. Unhealthy verdicts trigger a follow-up rollback intent
   // (the agent files it via the tracker skill before terminating).
   'OBSERVATION_REPORT',
+  // BugTriage agent report (#524, V2.af roster). Fires after the
+  // BugTriage stage scans post-deploy errors and queues intents for
+  // new fingerprints. Payload carries `{ errorsScanned, intentsQueued,
+  // intentIds }` so the run-detail UI can show how many follow-ups
+  // were filed without joining to intent_inbox_items. Closes the
+  // autonomous-improvement loop: deploy → error → queued intent →
+  // tomorrow's Discovery picks it up.
+  'BUG_TRIAGE_REPORT',
   // Multi-agent loop-back exhaustion (#349). Fires when the reviewer
   // has requested changes more times than REVIEW_LOOP_CAP allows
   // (default 3 coder rounds). The run falls through to normal
