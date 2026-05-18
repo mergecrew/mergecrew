@@ -137,12 +137,23 @@ describe('roster system prompts (#514)', () => {
     expect(QA_SYSTEM_PROMPT).toContain('VERDICT: tests_fail');
   });
 
-  it('PM prompt asks for title / motivation / scope / acceptance criteria', () => {
-    // Pins the output shape #517 (PM agent) will parse.
+  it('PM prompt asks for title / target / motivation / scope / acceptance criteria', () => {
+    // Pins the output shape #517 (PM agent) + #518 (target tag) will parse.
     expect(PM_SYSTEM_PROMPT).toMatch(/title/i);
+    expect(PM_SYSTEM_PROMPT).toMatch(/## Target/);
     expect(PM_SYSTEM_PROMPT).toMatch(/motivation/i);
     expect(PM_SYSTEM_PROMPT).toMatch(/scope/i);
     expect(PM_SYSTEM_PROMPT).toMatch(/acceptance criteria/i);
+  });
+
+  it('BackendEngineer prompt describes the spec/skip input contract (#518 D3)', () => {
+    // The runner short-circuits BE when PM tags a spec `target: frontend`
+    // by setting `skip: true` on the input. The prompt must teach the
+    // agent to emit `SKIPPED:` in that branch instead of running the
+    // implementation workflow against a frontend-only spec.
+    expect(BACKEND_ENGINEER_SYSTEM_PROMPT).toMatch(/skip/i);
+    expect(BACKEND_ENGINEER_SYSTEM_PROMPT).toContain('SKIPPED:');
+    expect(BACKEND_ENGINEER_SYSTEM_PROMPT).toMatch(/spec/i);
   });
 });
 
