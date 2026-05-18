@@ -59,6 +59,7 @@ import {
   CODER_AGENT_KIND,
   REVIEWER_AGENT_KIND,
   PM_AGENT_KIND,
+  BACKEND_ENGINEER_AGENT_KIND,
   PLANNER_DISCOVERY_SYSTEM_PROMPT,
   parsePlanPaths,
   parsePlannerDirections,
@@ -2052,6 +2053,46 @@ async function synthesizeAgentInput(
     return { runId, instruction: 'Translate discovery output into 1–3 prioritized intents with one-paragraph specs.' };
   }
 
+  // BackendEngineer (#518, V2.af roster). Reads the most recent PM
+  // spec in this run and implements the backend portion. If PM tagged
+  // the spec `target: frontend`, we short-circuit with `skip: true`
+  // so the agent emits a one-line `SKIPPED:` and exits without making
+  // changes — fan-in still resolves cleanly because the step
+  // `completes`. The agent runs without a spec only on a misconfigured
+  // graph (no PM stage upstream); we surface that as a skip too rather
+  // than letting the LLM invent work.
+  if (agentDef.kind === BACKEND_ENGINEER_AGENT_KIND) {
+    const spec = await loadPmSpecForRun(organizationId, runId);
+    if (!spec) {
+      return {
+        runId,
+        agentRef,
+        instruction:
+          'No PM spec is available for this run. Emit a single line `SKIPPED: no_pm_spec` and stop.',
+        skip: true,
+        skipReason: 'no_pm_spec',
+      };
+    }
+    if (spec.target === 'frontend') {
+      return {
+        runId,
+        agentRef,
+        instruction:
+          'PM tagged this spec `target: frontend` — there is no backend work in scope. Emit a single line `SKIPPED: target_mismatch` and stop.',
+        skip: true,
+        skipReason: 'target_mismatch',
+        spec,
+      };
+    }
+    return {
+      runId,
+      agentRef,
+      instruction:
+        'You are the Backend Engineer. Implement the server-side portion of the supplied spec. The Frontend Engineer is running in parallel — leave UI changes to them.',
+      spec,
+    };
+  }
+
   // PM agent input (#517, V2.af roster). Consumes the oldest queued
   // intent and scopes it into a spec the engineer agents read. Mirrors
   // the planner-seed-goal path (#493) below — the two are mutually
@@ -2140,6 +2181,53 @@ async function synthesizeAgentInput(
     instruction: `You are the ${agentRef} agent. Plan and execute your scoped task.`,
     ...(reviewerFeedback ? { reviewerFeedback } : {}),
   };
+}
+
+/**
+ * Load the most recent PM spec persisted in this daily run (#518).
+ *
+ * The PM agent post-process writes `{ spec, markdown, sourceIntentId }`
+ * onto `agent_steps.output` (see PM_AGENT_KIND post-process above).
+ * Engineer agents call this helper to retrieve the structured spec —
+ * the markdown is kept on the row for UI display but we return only
+ * the parsed shape so consumers don't re-parse it.
+ *
+ * Returns `null` when no completed PM step exists in the run, or when
+ * the most recent one parsed to `null` (SPEC_GAP). The caller is
+ * expected to treat both cases the same: no engineering work to do.
+ */
+async function loadPmSpecForRun(
+  organizationId: string,
+  runId: string,
+): Promise<ParsedPmSpec | null> {
+  const pmStep = await withTenant(organizationId, (tx) =>
+    tx.agentStep.findFirst({
+      where: {
+        workflowRun: { dailyRunId: runId },
+        agentKind: PM_AGENT_KIND,
+        status: 'completed',
+        output: { not: undefined },
+      },
+      orderBy: { finishedAt: 'desc' },
+      select: { output: true },
+    }),
+  );
+  const persisted = pmStep?.output as
+    | { spec?: ParsedPmSpec | null; markdown?: string }
+    | null
+    | undefined;
+  if (!persisted) return null;
+  // Prefer the parsed shape — but if the PM step ran before #518
+  // shipped, the persisted spec lacks `target`. Re-parse the markdown
+  // in that case so callers always get the new field. Re-parse also
+  // covers the SPEC_GAP path (spec === null but markdown present).
+  if (persisted.spec && (persisted.spec as ParsedPmSpec).target) {
+    return persisted.spec;
+  }
+  if (persisted.markdown) {
+    return parsePmSpec(persisted.markdown);
+  }
+  return null;
 }
 
 async function loadReviewerFeedback(

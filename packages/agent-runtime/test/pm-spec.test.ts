@@ -7,9 +7,12 @@ import { describe, expect, it } from 'vitest';
 import { parsePmSpec, STUB_PM_SPEC } from '../src/loop.js';
 
 describe('parsePmSpec — canonical shape (matches PM_SYSTEM_PROMPT)', () => {
-  it('parses title / motivation / scope / acceptance criteria', () => {
+  it('parses title / target / motivation / scope / acceptance criteria', () => {
     const md = [
       '# Add a /healthz endpoint',
+      '',
+      '## Target',
+      'backend',
       '',
       '## Motivation',
       'The container probe in docker-compose.prod.yml expects /healthz but the api currently 404s.',
@@ -25,6 +28,7 @@ describe('parsePmSpec — canonical shape (matches PM_SYSTEM_PROMPT)', () => {
     const result = parsePmSpec(md);
     expect(result).toEqual({
       title: 'Add a /healthz endpoint',
+      target: 'backend',
       motivation:
         'The container probe in docker-compose.prod.yml expects /healthz but the api currently 404s.',
       scope: 'Backend only. Add the route handler in apps/api; no frontend work needed.',
@@ -40,9 +44,54 @@ describe('parsePmSpec — canonical shape (matches PM_SYSTEM_PROMPT)', () => {
     const result = parsePmSpec(STUB_PM_SPEC);
     expect(result).not.toBeNull();
     expect(result!.title).toContain('Stub spec');
+    expect(result!.target).toBe('both');
     expect(result!.motivation.length).toBeGreaterThan(0);
     expect(result!.scope.length).toBeGreaterThan(0);
     expect(result!.acceptanceCriteria.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('parsePmSpec — Target tag drives engineer dispatch (#518 D3)', () => {
+  const baseSections = [
+    '## Motivation',
+    'm',
+    '',
+    '## Scope',
+    's',
+    '',
+    '## Acceptance criteria',
+    '- one',
+  ];
+
+  it('parses `backend` target', () => {
+    const md = ['# t', '', '## Target', 'backend', '', ...baseSections].join('\n');
+    expect(parsePmSpec(md)?.target).toBe('backend');
+  });
+
+  it('parses `frontend` target', () => {
+    const md = ['# t', '', '## Target', 'frontend', '', ...baseSections].join('\n');
+    expect(parsePmSpec(md)?.target).toBe('frontend');
+  });
+
+  it('parses `both` target', () => {
+    const md = ['# t', '', '## Target', 'both', '', ...baseSections].join('\n');
+    expect(parsePmSpec(md)?.target).toBe('both');
+  });
+
+  it('defaults to `both` when the Target section is missing', () => {
+    // Failure mode is "ran an unnecessary engineer," not "skipped a needed one".
+    const md = ['# t', '', ...baseSections].join('\n');
+    expect(parsePmSpec(md)?.target).toBe('both');
+  });
+
+  it('tolerates surrounding markdown decoration on the target value', () => {
+    const md = ['# t', '', '## Target', '**backend**', '', ...baseSections].join('\n');
+    expect(parsePmSpec(md)?.target).toBe('backend');
+  });
+
+  it('falls back to `both` when the target value is unrecognized', () => {
+    const md = ['# t', '', '## Target', 'mobile', '', ...baseSections].join('\n');
+    expect(parsePmSpec(md)?.target).toBe('both');
   });
 });
 
