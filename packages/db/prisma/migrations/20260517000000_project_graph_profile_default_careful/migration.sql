@@ -1,0 +1,15 @@
+-- First-run experience (#491). Flip the default for new projects from
+-- 'fast' (parallel planner/coder/reviewer fan-out) to 'careful' (serial
+-- planner → coder → reviewer chain).
+--
+-- On a freshly-onboarded project with no backlog the parallel default
+-- guarantees a broken first run: the coder and reviewer race the
+-- planner and synthesize their inputs from an empty `agent_steps.output`
+-- table, producing 'PLAN_GAP'/'no plan' outputs immediately. The
+-- careful graph in `apps/orchestrator/src/orchestrator.ts`
+-- (resolveProjectGraph) already chains the three agents serially.
+--
+-- Existing rows are deliberately NOT touched — every operator that has
+-- explicitly chosen 'fast' (or hasn't and we don't know which) keeps
+-- their current setting. Only the default for NEW project rows changes.
+alter table projects alter column graph_profile set default 'careful';

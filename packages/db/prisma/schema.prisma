@@ -217,12 +217,14 @@ model Project {
   autoMergeThreshold Int   @default(50)  @map("auto_merge_threshold")
   sensitivePaths     Json  @default("[\"**/config/**\", \"**/auth/**\", \"**/*.sql\"]") @map("sensitive_paths")
   /// Multi-agent graph profile (#336).
-  ///   - 'fast': single-agent legacy path (V1 behavior). Default.
-  ///   - 'careful': planner -> coder -> reviewer with loop-back.
+  ///   - 'fast': single-agent legacy path (V1 behavior).
+  ///   - 'careful': planner -> coder -> reviewer with loop-back. Default
+  ///     since #491 — a fresh project has no backlog, so 'fast''s
+  ///     parallel fan-out guarantees a broken first run.
   ///   - 'custom': use `graphYaml` below.
-  /// Existing projects keep V1 behavior on upgrade — operators opt in
-  /// to 'careful'/'custom' per project.
-  graphProfile       String @default("fast") @map("graph_profile")
+  /// The default flip only affects projects created after the
+  /// migration; existing rows keep whatever the operator chose.
+  graphProfile       String @default("careful") @map("graph_profile")
   /// YAML body for graphProfile='custom'. Parsed + validated against
   /// the Graph schema in @mergecrew/domain on every write. Null
   /// otherwise. Operator-editable from project settings.
