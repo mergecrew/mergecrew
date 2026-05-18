@@ -60,15 +60,15 @@ export function SmokeTestForm({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
+      <div>
         <Button onClick={onRun} disabled={pending} variant="primary">
           {pending ? 'Running…' : result ? 'Re-run' : 'Run smoke test'}
         </Button>
-        <span className="text-xs text-zinc-500">
+        <p className="mt-2 text-xs text-zinc-500">
           Opens a draft PR with a marker file, dispatches dev deploy, waits
           for completion (5-min timeout). Non-destructive — the PR is left
           open for you to close.
-        </span>
+        </p>
       </div>
 
       {pending && (
