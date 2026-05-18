@@ -65,7 +65,9 @@ import {
   SRE_AGENT_KIND,
   DESIGN_REVIEWER_AGENT_KIND,
   OBSERVATION_AGENT_KIND,
+  BUG_TRIAGE_AGENT_KIND,
   PLANNER_DISCOVERY_SYSTEM_PROMPT,
+  parseBugTriageReport,
   parseDesignReviewVerdict,
   parseObservationReport,
   parsePlanPaths,
@@ -1088,6 +1090,87 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
       type: 'OBSERVATION_REPORT',
       actor: { kind: 'agent', id: stepId, agentKind: agentDef.kind },
       payload: { verdict, statusCode, latencyMs, findings },
+    });
+  }
+
+  // BugTriage post-process (#524, V2.af roster). Parse the JSON
+  // report, create one intent_inbox_item per intent (with a
+  // sourceKey of `bug-triage:<fingerprint>` for cross-run dedup),
+  // persist the report on agent_steps.output, and emit
+  // BUG_TRIAGE_REPORT. Same defensive default as the other
+  // observation-stage post-processes: parser failure → zero-intent
+  // report so a malformed agent reply doesn't silently dead-end.
+  if (
+    agentDef.kind === BUG_TRIAGE_AGENT_KIND &&
+    outcome.kind === 'completed' &&
+    typeof outcome.output === 'string'
+  ) {
+    const parsed = parseBugTriageReport(outcome.output);
+    const errorsScanned = parsed?.scanned ?? 0;
+    const intentIds: string[] = [];
+    if (parsed) {
+      for (const intent of parsed.intents) {
+        // sourceKey-based dedup: if a queued intent for this
+        // fingerprint already exists in this project, skip it.
+        // Prevents tomorrow's BugTriage from re-filing the same
+        // fingerprint the operator hasn't picked up yet. The
+        // agent's memory-based dedup covers the common case; this
+        // is the defense-in-depth check.
+        const sourceKey = intent.fingerprint
+          ? `bug-triage:${intent.fingerprint}`
+          : null;
+        if (sourceKey) {
+          const existing = await withTenant(organizationId, (tx) =>
+            tx.intentInboxItem.findFirst({
+              where: { projectId, sourceKey, status: 'queued' },
+              select: { id: true },
+            }),
+          );
+          if (existing) continue;
+        }
+        const body = intent.body
+          ? `${intent.title}\n\n${intent.body}`
+          : intent.title;
+        const row = await withTenant(organizationId, (tx) =>
+          tx.intentInboxItem.create({
+            data: {
+              organizationId,
+              projectId,
+              body,
+              sourceKey,
+              status: 'queued',
+            },
+            select: { id: true },
+          }),
+        );
+        intentIds.push(row.id);
+      }
+    }
+    await withTenant(organizationId, (tx) =>
+      tx.agentStep.update({
+        where: { id: stepId },
+        data: {
+          output: {
+            errorsScanned,
+            intentsQueued: intentIds.length,
+            intentIds,
+          } as any,
+        },
+      }),
+    );
+    await eventlog.emit({
+      organizationId,
+      projectId,
+      dailyRunId: runId,
+      workflowRunId,
+      agentStepId: stepId,
+      type: 'BUG_TRIAGE_REPORT',
+      actor: { kind: 'agent', id: stepId, agentKind: agentDef.kind },
+      payload: {
+        errorsScanned,
+        intentsQueued: intentIds.length,
+        intentIds,
+      },
     });
   }
 
