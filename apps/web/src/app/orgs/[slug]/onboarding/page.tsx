@@ -1,10 +1,12 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { Card, LinkButton } from '@/components/ui';
 import { InlineLlmStep } from '@/components/onboarding-inline-llm';
 import { CreateProjectForm } from '@/components/onboarding/create-project-form';
+import { SeedGoalCard } from '@/components/onboarding/seed-goal-card';
 import { WizardRow, type WizardRowStatus } from '@/components/onboarding/wizard-row';
 import { RepoForm } from '../projects/[projectSlug]/settings/repo-form';
 import { DeployTargetForm, type DeployTargetRow } from '../projects/[projectSlug]/settings/deploy-target-form';
@@ -122,6 +124,36 @@ async function createFirstProjectAction(formData: FormData) {
   revalidatePath(`/orgs/${slug}/onboarding`);
 }
 
+// Seed-goal capture (#493). Final wizard step: short free-form
+// description of what mergecrew should work on first. Persisted as a
+// queued IntentInboxItem so the planner picks it up on the next run
+// (see `synthesizeAgentInput` in apps/runner/src/step.ts) and produces
+// a real plan instead of asking the LLM "what would you like me to
+// do?". A "Save and run" click also fires the manual run so the
+// operator sees output immediately; we redirect to the run-detail
+// page so the timeline streams in front of them.
+async function createSeedGoalAndRunAction(formData: FormData) {
+  'use server';
+  const slug = String(formData.get('orgSlug') ?? '');
+  const projectSlug = String(formData.get('projectSlug') ?? '').trim();
+  const goal = String(formData.get('goal') ?? '').trim();
+  if (!slug || !projectSlug || !goal) return;
+  const session = await requireSession();
+  await api(`/v1/orgs/${slug}/projects/${projectSlug}/intent-inbox`, {
+    method: 'POST',
+    body: JSON.stringify({ body: goal }),
+    session,
+  }).catch(() => undefined);
+  const r = await api<{ runId: string }>(
+    `/v1/orgs/${slug}/projects/${projectSlug}/runs`,
+    { method: 'POST', body: JSON.stringify({}), session },
+  ).catch(() => null);
+  if (r?.runId) {
+    redirect(`/orgs/${slug}/projects/${projectSlug}/runs/${r.runId}`);
+  }
+  redirect(`/orgs/${slug}/projects/${projectSlug}`);
+}
+
 export default async function OnboardingPage({
   params,
   searchParams,
@@ -208,21 +240,19 @@ export default async function OnboardingPage({
         </p>
       </header>
 
-      {state.complete && (
+      {state.complete && projectSlug && (
+        <SeedGoalCard
+          orgSlug={slug}
+          projectSlug={projectSlug}
+          action={createSeedGoalAndRunAction}
+        />
+      )}
+      {state.complete && !projectSlug && (
         <Card className="border-emerald-200 bg-emerald-50/50 dark:border-emerald-700/40 dark:bg-emerald-950/30">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <div className="font-medium">You&apos;re all set</div>
-              <p className="text-sm text-zinc-700 dark:text-zinc-200">
-                Trigger your first run from the project page — agents will plan, code, and review against the connected repo.
-              </p>
-            </div>
-            {projectSlug && (
-              <LinkButton href={`/orgs/${slug}/projects/${projectSlug}`} variant="primary">
-                Go to {projectSlug}
-              </LinkButton>
-            )}
-          </div>
+          <div className="font-medium">You&apos;re all set</div>
+          <p className="text-sm text-zinc-700 dark:text-zinc-200">
+            Setup complete. Visit the project page to trigger a run.
+          </p>
         </Card>
       )}
 

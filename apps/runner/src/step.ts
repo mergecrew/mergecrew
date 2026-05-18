@@ -1908,6 +1908,39 @@ async function synthesizeAgentInput(
     return { runId, instruction: 'Translate discovery output into 1–3 prioritized intents with one-paragraph specs.' };
   }
 
+  // Planner seed goal (#493). When the onboarding wizard captured a
+  // first-task description, it persists as a queued IntentInboxItem.
+  // The planner consumes the oldest queued intent on its next run and
+  // plans against the goal text instead of asking the LLM "what would
+  // you like me to do?". The intent is flipped to `picked_up` with
+  // `pickedUpRunId = runId` atomically so a parallel/retry run doesn't
+  // re-consume the same goal. Other agentRefs (discovery, pm,
+  // engineers) keep their own paths.
+  if (agentDef.kind === PLANNER_AGENT_KIND) {
+    const intent = await withTenant(organizationId, (tx) =>
+      tx.intentInboxItem.findFirst({
+        where: { projectId, status: 'queued' },
+        orderBy: { createdAt: 'asc' },
+      }),
+    );
+    if (intent) {
+      await withTenant(organizationId, (tx) =>
+        tx.intentInboxItem.update({
+          where: { id: intent.id },
+          data: { status: 'picked_up', pickedUpRunId: runId },
+        }),
+      );
+      return {
+        runId,
+        agentRef,
+        instruction:
+          'A seed goal was captured during onboarding. Plan against it — produce a structured "Files to touch" plan exactly as the default planner prompt asks.',
+        seedGoal: intent.body,
+        seedGoalIntentId: intent.id,
+      };
+    }
+  }
+
   // Implementing agents on a tests_failed loop or PR review pass should see
   // the open reviewer comments so they can address them directly. Looks at
   // the most-recently-updated active changeset in this run; resolved
