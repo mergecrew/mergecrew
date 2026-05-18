@@ -48,15 +48,14 @@ A `Skill` instance is registered with the `SkillExecutor` at runner startup. The
 
 The loop is a LangGraph `StateGraph` with two nodes (`agent`, `tools`) and conditional edges between them. Source: `packages/agent-runtime/src/loop.ts`.
 
-```
-              ┌────────┐ tool_calls > 0  ┌────────┐
-   START ───▶ │ agent  │ ──────────────▶ │ tools  │
-              │  node  │ ◀────────────── │  node  │
-              └────────┘                 └────────┘
-                  │                          │
-                  │ tool_calls = 0           │ outcome set
-                  ▼                          ▼
-                 END                        END
+```mermaid
+stateDiagram-v2
+    [*] --> agent
+    agent --> tools: tool_calls > 0
+    tools --> agent: ToolMessage appended<br/>(iteration++)
+    agent --> [*]: tool_calls = 0<br/>(done)
+    agent --> [*]: budget / iteration cap<br/>(outcome set)
+    tools --> [*]: rate_limited, policy_block,<br/>budget_exceeded
 ```
 
 **State** (`packages/agent-runtime/src/loop.ts:60-77`):

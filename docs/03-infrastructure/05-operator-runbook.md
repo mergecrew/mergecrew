@@ -86,6 +86,24 @@ Mergecrew checks the org-level gates at *step entry* so one LLM call can't push 
 
 **Source.** `packages/adapters-vcs/src/github.ts` (`cloneIntoWorkspace`). Installation row: `connected_repos` table.
 
+### PR opens but reviewer verdict never reaches GitHub
+<a id="reviewer-verdict-missing"></a>
+
+**Symptom.** The changeset has an LLM reviewer verdict on the Mergecrew run-detail page but the PR on GitHub still shows zero reviews; or the PR stays in draft state even after an `approve` verdict.
+
+**Likely cause.** `openPullRequest` opens the PR as a draft. After the reviewer agent runs, the runner calls `postReview(...)` to publish the verdict and — only on `approve` — `markReadyForReview(...)` to flip out of draft. Both calls are **best-effort**; the runner logs and continues on failure rather than blocking the changeset. Common reasons either call fails:
+
+- GitHub App permissions are too narrow. `postReview` needs **Pull requests: read & write**; without it GitHub returns `403 Resource not accessible by integration`.
+- Adapter is not GitHub. `gitea` and `gitlab` providers today implement these methods as warning-and-resolve no-ops, so the reviewer verdict simply doesn't surface in the host's UI.
+- PR was closed or merged between the reviewer call and the runner posting — GitHub returns `422`.
+
+**Recovery.**
+1. Search the runner logs for `postReview` or `markReadyForReview`. A failure logs the underlying error inline with the changeset's run id.
+2. If it's a permission issue, update the GitHub App permissions (Pull requests → read & write) and re-authorize the installation. The next run will succeed.
+3. The Mergecrew UI is always the source of truth — the GitHub-side surfacing is an enrichment, not the primary record. A missed `postReview` doesn't lose data.
+
+**Source.** Call sites in `apps/runner/src/step.ts` (search for `postReview`). Adapter implementations in `packages/adapters-vcs/src/{github,gitlab,gitea}.ts`. Method contracts in `packages/adapters-vcs/src/types.ts` (`PostReviewOpts`, `InlineReviewComment`).
+
 ### Prisma migrate fails on startup
 <a id="prisma-migrate-failed"></a>
 

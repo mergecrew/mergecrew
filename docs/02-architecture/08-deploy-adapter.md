@@ -40,7 +40,7 @@ type DeployStatus =
   | { kind: 'cancelled' };
 ```
 
-> Adapters for AWS-direct / Fly / Render are Planned, not implemented. The `id` literal in `types.ts` may include them as forward-looking placeholders, but no provider class exists.
+> Six adapters ship in `packages/adapters-deploy/src/`: `github-actions`, `vercel`, `netlify`, `render`, `fly`, `railway`, and `aws-direct`. See [`06-deploy-targets-cookbook.md`](../03-infrastructure/06-deploy-targets-cookbook.md) for copy-paste configs and per-adapter capability details.
 
 ## Adapter 1 — GitHub Actions (the AWS bridge)
 
@@ -109,7 +109,7 @@ The adapter does not stream every line of logs into the timeline (that would be 
 
 When Mergecrew scaffolds a new project, the default deploy is Vercel for the Next.js front-end and either:
 - Vercel Functions for the NestJS back-end (if the back-end fits in serverless), or
-- Render / Fly / Railway (Planned).
+- One of the long-running container adapters: `render`, `fly`, `railway`, or `aws-direct`. The cookbook has the relevant config shapes.
 
 For greenfield: Vercel for everything, with a managed Postgres (Neon).
 

@@ -18,6 +18,7 @@ Each entry is symptom → likely cause → recovery → source of truth. If a sy
 | Need to rotate `KMS_MASTER_KEY` | [Rotate KMS](#rotate-kms) |
 | Need to backup the DB | [Backup + restore Postgres](#backup-postgres) |
 | Migrating from Ollama to Anthropic mid-project | [Switch LLM provider](#switch-llm) |
+| Configure outbound email (digests, magic-link) | [Configure outbound email](#configure-email) |
 | Worker stuck, want to restart safely | [Restart a worker without losing in-flight runs](#safe-restart) |
 
 ---
@@ -208,6 +209,35 @@ docker compose up -d
 ```
 
 The pg_dump above captures schema + data. The pgvector embeddings come through transparently. RLS policies survive because they're DDL.
+
+### Configure outbound email (Resend or SMTP)
+<a id="configure-email"></a>
+
+Mergecrew sends two kinds of outbound email: magic-link sign-ins and the daily digest. Both share one provider config in `packages/adapters-comms/src/env.ts`. Two transports are wired today: SMTP and Resend.
+
+**Resend (recommended for self-hosted small teams):**
+
+```env
+EMAIL_PROVIDER=resend
+RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxxxxx
+MERGECREW_EMAIL_FROM=noreply@yourdomain.com  # must be a verified Resend domain
+```
+
+**SMTP (for an existing relay or self-hosted MTA):**
+
+```env
+EMAIL_PROVIDER=smtp
+SMTP_URL=smtps://user:pass@smtp.example.com:465
+MERGECREW_EMAIL_FROM=noreply@yourdomain.com
+```
+
+`EMAIL_PROVIDER=auto` (default) picks Resend if `RESEND_API_KEY` is set, otherwise SMTP. Setting neither disables email entirely — the orchestrator's `emailEnabledFromEnv()` gate short-circuits the digest worker and magic-link send, so no jobs queue up waiting for a configuration that will never arrive.
+
+**Verify:** trigger a magic-link login (`/login` → "Continue with email") and watch `apps/api` logs for `magicLink: sent`. A Resend misconfiguration surfaces as a 403 in the logs; an SMTP misconfiguration as an ETIMEDOUT or `auth failed`. The `EmailClient` doesn't retry — there's no inbox spam if a config is wrong.
+
+**Source.** `packages/adapters-comms/src/email.ts`, `packages/adapters-comms/src/env.ts`.
+
+---
 
 ### Switch LLM provider for an existing project
 <a id="switch-llm"></a>

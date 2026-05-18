@@ -91,6 +91,8 @@ Configuration is driven by environment variables (`.env.example` is the source o
 - **Auth.** `MERGECREW_DEV_AUTO_LOGIN` (default `true` outside production), `MERGECREW_DEV_USER_EMAIL`, `BFF_TRUST_TOKEN` (shared header the API uses to trust the BFF on `/v1/auth/exchange`), `JWT_SECRET`, `NEXTAUTH_SECRET`. Optional GitHub / Google OAuth for real sign-in.
 - **Integrations.** `GITHUB_APP_*`, `VERCEL_TOKEN`, etc. — empty in dev, filled in for self-hosted deployments that need them.
 - **LLM (optional).** `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OLLAMA_URL`, `BEDROCK_REGION`. These are convenience defaults; per-org BYOK is set through the API.
+- **Demo mode.** `MERGECREW_DEMO_MODE=1` (default on the `docker-compose.full.yml` path) makes every agent step return a deterministic stub instead of calling an LLM, so the full multi-agent loop, PR opening, deploy, and digest all run end-to-end with no keys configured. Set `MERGECREW_DEMO_MODE=0` once a real LLM provider is registered. The web UI shows an amber "demo mode" banner whenever the flag is on so the mode is unambiguous.
+- **Email.** Two providers wired today, both BYOK: SMTP and Resend. Set `SMTP_URL=smtps://user:pass@host:port` for SMTP, or `RESEND_API_KEY` for Resend. `EMAIL_PROVIDER` (`smtp` / `resend` / `auto`) picks one explicitly; `auto` (default) prefers Resend when only the API key is set. `MERGECREW_EMAIL_FROM` overrides the sender (default `noreply@mergecrew.dev`). Source of truth: `packages/adapters-comms/src/env.ts`.
 - **Encryption.** `KMS_MASTER_KEY` (32-byte base64) wraps per-tenant data keys for credential storage.
 - **Observability.** `OTEL_EXPORTER_OTLP_ENDPOINT`, `LOG_LEVEL`. Optional.
 

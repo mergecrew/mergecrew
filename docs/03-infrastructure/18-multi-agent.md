@@ -18,7 +18,7 @@ The coder gets a smaller context than V1's monolithic agent — it doesn't carry
 
 ## Picking a graph profile
 
-Set this per project: **Settings → Agent graph → fast / careful / custom**. Default is **fast** on every project (existing projects keep V1 behavior on upgrade).
+Set this per project: **Settings → Agent graph → fast / careful / custom**. Default is **careful** for new projects (#491) — a freshly-onboarded project has no backlog, so the parallel `fast` fan-out guarantees a broken first run. Projects that existed before the default flip keep whatever the operator chose; operators ready to trade quality for throughput can flip to `fast` from the Lifecycle page.
 
 | Profile | When to pick | Trade-off |
 |---|---|---|
@@ -30,12 +30,25 @@ The `careful` graph definition lives in `@mergecrew/domain/graph-profile.ts` as 
 
 ## Reviewer loop
 
+```mermaid
+flowchart LR
+    Start([__start__]) --> Plan[planner<br/>read-only tools]
+    Plan -->|planMarkdown| Code[coder<br/>full edit surface]
+    Code -->|diff| Draft[[VCS: open draft PR]]
+    Draft --> Rev{reviewer<br/>read-only}
+    Rev -- request_changes<br/>up to REVIEW_LOOP_CAP --> Code
+    Rev -- approve --> Post[[VCS: postReview approve<br/>+ markReadyForReview]]
+    Post --> End([__end__])
+
+    classDef agent fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    classDef gate fill:#fef3c7,stroke:#d97706,color:#92400e
+    classDef vcs fill:#ede9fe,stroke:#7c3aed,color:#4c1d95
+    class Plan,Code agent
+    class Rev gate
+    class Draft,Post vcs
 ```
-planner → coder → reviewer
-                    │
-                    ├─ approve         → __end__ (open PR)
-                    └─ request_changes → coder (retry with feedback)
-```
+
+The draft-PR + reviewer-verdict surfacing is best-effort: a `postReview` failure (auth, draft-unsupported adapter) is logged and the run continues. See [`02-architecture/07-vcs-adapter.md`](../02-architecture/07-vcs-adapter.md#draft-pr--reviewer-verdict-surfacing) for the adapter contract.
 
 The default loop cap is **3 rounds** (one initial coder pass plus up to 2 retries), tunable via `REVIEW_LOOP_CAP`. After exhaustion the run records `REVIEW_LOOP_EXHAUSTED` with the reviewer's last `reasoning` + `requestedChanges` in the event payload, then the workflow advances normally — the changeset surfaces on its existing path (Changesets list / inbox / Slack) with no further coder retries. The timeline event on the run-detail page is where to read what the LLM reviewer was unhappy about.
 
@@ -195,7 +208,7 @@ the shape.
 
 ## Migration notes
 
-Existing projects default to **`fast`** on upgrade — no behavior change without an explicit operator action. Old fixture YAMLs (no `kind:` field) load as `kind: end-to-end`.
+Projects created before #491 kept the **`fast`** default they were assigned at creation time — the migration only flipped the column default for new rows, no UPDATE was issued. Existing operators see no behavior change without an explicit Settings → Agent graph action. Old fixture YAMLs (no `kind:` field) load as `kind: end-to-end`.
 
 Flipping a project to **`careful`** in Settings → Agent graph wires planner → coder → reviewer automatically. The orchestrator falls back to `STOCK_AGENTS_BY_REF` for any of the three kinds the operator hasn't defined in their `mergecrew.yaml`; operator-defined agents with matching agentRefs win over the stock fallback. **`custom`** parses the YAML body, validates it against the project's lifecycle agentRefs at save time, and runs the same chain dispatch (entry node → successor nodes; reviewer verdict drives routing on conditional edges).
 

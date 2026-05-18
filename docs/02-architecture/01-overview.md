@@ -2,66 +2,41 @@
 
 ## Component map
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                              Browser (Next.js)                       │
-│  Pages · Server Components · SSE client · Tailwind · lucide-react    │
-└─────────────────┬────────────────────────────────────────────────────┘
-                  │ HTTPS (REST + SSE)
-┌─────────────────▼────────────────────────────────────────────────────┐
-│                         BFF: Next.js Route Handlers                  │
-│      Auth (NextAuth) · per-org session · SSR data fetching           │
-└─────────────────┬────────────────────────────────────────────────────┘
-                  │ HTTP + Bearer JWT (BFF_TRUST_TOKEN exchange)
-┌─────────────────▼────────────────────────────────────────────────────┐
-│                    Mergecrew API (NestJS, multi-tenant)              │
-│   Modules: Auth · Org · Project · Lifecycle · Run · Approval ·       │
-│            Changeset · Timeline · Cost · Integration · LLM           │
-└──┬───────────┬───────────────┬──────────────┬─────────────┬──────────┘
-   │           │               │              │             │
-   ▼           ▼               ▼              ▼             ▼
-┌──────┐  ┌─────────┐  ┌──────────────┐  ┌────────┐  ┌────────────┐
-│Postg │  │ Redis   │  │  Object      │  │ Vector │  │ Outbound   │
-│res   │  │ (BullMQ,│  │  store       │  │ store  │  │ webhooks   │
-│(RLS) │  │ pubsub, │  │ (artifacts,  │  │(pgvec, │  │ (Slack,    │
-│      │  │ rate    │  │  transcripts,│  │ shared │  │ email,     │
-│      │  │ buckets)│  │  diffs)      │  │ w/ PG) │  │ analytics) │
-└──────┘  └─────────┘  └──────────────┘  └────────┘  └────────────┘
+```mermaid
+graph TD
+    Browser[Browser — Next.js<br/>Server Components, SSE client]
+    BFF[BFF — Next.js Route Handlers<br/>NextAuth, per-org session, SSR]
+    API[Mergecrew API — NestJS<br/>Auth · Org · Project · Lifecycle · Run ·<br/>Approval · Changeset · Timeline · Cost · LLM]
+    PG[(Postgres<br/>RLS-enforced)]
+    Redis[(Redis<br/>BullMQ, pubsub, rate buckets)]
+    Blob[(Object store<br/>artifacts, transcripts, diffs)]
+    Vec[(Vector store<br/>pgvector, shares PG)]
+    Hooks[Outbound webhooks<br/>Slack, email, analytics]
+    Orch[Orchestrator<br/>BullMQ workers + durable engine]
+    Runner[Runner<br/>BullMQ consumer of runner.step<br/>hosts agent-runtime + skills + llm router<br/>per-step git workspace]
+    Ext[External providers<br/>Anthropic · OpenAI · Bedrock · Ollama<br/>GitHub · GitHub Actions · Vercel · Linear · Sentry · Slack]
 
-   ▲                                                  ▲
-   │                                                  │
-   │              ┌────────────────────────────┐      │
-   └──────────────│  Orchestrator (NestJS-free  ├──────┘
-                  │  BullMQ workers + custom    │
-                  │  durable engine on Postgres)│
-                  └─────────┬───────────────────┘
-                            │ schedules + dispatches
-                            ▼
-                  ┌────────────────────────────┐
-                  │   Runner (BullMQ consumer  │
-                  │   on `runner.step` queue)  │
-                  │                            │
-                  │   Each runner step hosts:  │
-                  │   - @mergecrew/agent-      │
-                  │     runtime (LangGraph)    │
-                  │   - @mergecrew/skills      │
-                  │     executor               │
-                  │   - @mergecrew/llm router  │
-                  │   - per-step git workspace │
-                  └─────────┬──────────────────┘
-                            │ tool calls (network)
-                            ▼
-                  ┌────────────────────────────┐
-                  │   External providers:      │
-                  │   - Anthropic API          │
-                  │   - OpenAI API             │
-                  │   - AWS Bedrock            │
-                  │   - Ollama (HTTP)          │
-                  │   - GitHub API             │
-                  │   - GitHub Actions         │
-                  │   - Vercel API             │
-                  │   - Linear, Sentry, Slack  │
-                  └────────────────────────────┘
+    Browser -->|HTTPS REST + SSE| BFF
+    BFF -->|JWT + BFF_TRUST_TOKEN| API
+    API --> PG
+    API --> Redis
+    API --> Blob
+    API --> Vec
+    API --> Hooks
+    Orch <--> PG
+    Orch <--> Redis
+    Orch -->|dispatch runner.step| Runner
+    Runner -->|step-reply| Orch
+    Runner -->|tool calls| Ext
+
+    classDef edge fill:#eef2ff,stroke:#4f46e5,color:#312e81
+    classDef svc fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    classDef store fill:#fef3c7,stroke:#d97706,color:#92400e
+    classDef ext fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    class Browser,BFF edge
+    class API,Orch,Runner svc
+    class PG,Redis,Blob,Vec store
+    class Hooks,Ext ext
 ```
 
 ## Layering
@@ -97,10 +72,10 @@ mergecrew/
     llm/                  LangChain BaseChatModel factory + CapabilityRouter
     skills/               Skill SDK + ~25 stock skills
     agent-runtime/        LangGraph StateGraph (agent + tools nodes)
-    adapters-vcs/         GitHubProvider
-    adapters-deploy/      GitHubActionsProvider, VercelProvider
+    adapters-vcs/         GitHubProvider, GitLabProvider, GiteaProvider
+    adapters-deploy/      github-actions, vercel, netlify, render, fly, railway, aws-direct
     adapters-tracker/     LinearProvider, GitHubIssuesProvider
-    adapters-comms/       SlackProvider, EmailProvider
+    adapters-comms/       SlackProvider, EmailProvider (SMTP + Resend)
     db/                   Prisma schema, migrations, RLS, withTenant/withSystem
     eventlog/             Append-only timeline event types & repository
     config-yaml/          mergecrew.yaml parser/validator
@@ -121,6 +96,33 @@ Mergecrew runs as four backend services plus the web app, each independently sca
 - `worker-cron` — Polls `Schedule` rows on an interval (`WORKER_CRON_TICK_MS`, default 60s) and enqueues `run.due` jobs when a project's cron is due. See `apps/worker-cron/src/main.ts`.
 
 ## Data flow: a run, end to end
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Cron as worker-cron
+    participant Orch as orchestrator
+    participant Run as runner
+    participant Agent as agent-runtime<br/>(LangGraph)
+    participant LLM as LLM provider
+    participant DB as Postgres
+    participant Bus as Redis pubsub → SSE
+
+    Cron->>Orch: enqueue run.due
+    Orch->>DB: create DailyRun + WorkflowRun
+    Orch->>Run: dispatch runner.step
+    Run->>Agent: runAgentStep()
+    loop until tool_calls = 0 or budget/iteration cap
+        Agent->>LLM: bound.invoke(messages)
+        LLM-->>Agent: AIMessage + usage_metadata
+        Agent->>Agent: execute tool calls via SkillExecutor
+    end
+    Run->>Orch: enqueue orchestrator.step-reply
+    Orch->>DB: persist new state, evaluate next step
+    Orch->>Bus: emit timeline events
+    Bus-->>Run: SSE clients receive updates
+    Note over Orch,Run: rate_limited → delayed resume on orchestrator.rate-limit.resume<br/>gated_reject → pause branch until human approval/rejection
+```
 
 1. `worker-cron` finds a due `Schedule` and enqueues `run.due` with `{organizationId, projectId}`.
 2. The orchestrator's `run.due` worker creates a `DailyRun` + initial `WorkflowRun` and dispatches the first agent step onto the `runner.step` queue.

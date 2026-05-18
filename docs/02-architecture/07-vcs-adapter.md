@@ -25,6 +25,8 @@ interface VcsProvider {
   // PRs
   openPullRequest(repo: ConnectedRepoRef, opts: PullRequestOpts): Promise<PullRequest>;
   commentOnPullRequest(repo: ConnectedRepoRef, prNumber: number, body: string): Promise<void>;
+  postReview(repo: ConnectedRepoRef, prNumber: number, opts: PostReviewOpts): Promise<void>;
+  markReadyForReview(repo: ConnectedRepoRef, prNumber: number): Promise<void>;
   mergePullRequest(repo: ConnectedRepoRef, prNumber: number, opts: MergeOpts): Promise<MergeResult>;
   revertPullRequest(repo: ConnectedRepoRef, prNumber: number): Promise<{ revertPrNumber: number }>;
   closePullRequest(repo: ConnectedRepoRef, prNumber: number): Promise<void>;
@@ -123,6 +125,16 @@ PRs include:
 - A "Test plan" checklist.
 - A "Risk" callout (sensitive paths, irreversible operations, schema changes).
 - A "Mergecrew metadata" footer (run id, changeset id, links to the timeline and transcript).
+
+### Draft PR + reviewer verdict surfacing
+
+`openPullRequest` opens the changeset's PR as a **draft**. The reviewer agent's verdict is then surfaced natively in the host's review UI rather than only in Mergecrew:
+
+1. The runner calls `postReview(repo, prNumber, { event, body, comments? })` with the reviewer's verdict — `'approve'`, `'request_changes'`, or `'comment'`. On GitHub this becomes a real review entry visible in the PR's Reviews tab; inline comments map to per-line review comments.
+2. If the verdict is `'approve'`, the runner then calls `markReadyForReview(repo, prNumber)` to flip the draft PR to ready-for-review. A human reviewer arrives on a PR that already has an LLM review attached and only sees diffs the LLM was confident about.
+3. Both calls are **best-effort** — the runner logs and continues on failure rather than blocking the changeset. Adapters that don't yet support draft-PR review (`gitea`, `gitlab` today) implement the methods as warning-and-resolve no-ops.
+
+Call sites: `apps/runner/src/step.ts` (look for `postReview`); shapes in `packages/adapters-vcs/src/types.ts` (`PostReviewOpts`, `InlineReviewComment`).
 
 ### Authorship and attribution
 
