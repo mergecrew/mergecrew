@@ -3,6 +3,7 @@ import { api, apiOr404 } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { hasRole } from '@/lib/role';
 import { Card, LinkButton } from '@/components/ui';
+import { TabStrip, type TabDef } from '@/components/tabs';
 import { GeneralForm } from './general-form';
 import { RepoForm } from './repo-form';
 import { TrackerForm } from './tracker-form';
@@ -21,17 +22,25 @@ import { RiskScoreForm } from './risk-score-form';
 import { RecentRollbacks } from './recent-rollbacks';
 import { GraphProfileForm } from './graph-profile-form';
 
+const TABS: TabDef[] = [
+  { id: 'setup', label: 'Setup' },
+  { id: 'pipeline', label: 'Pipeline' },
+  { id: 'guardrails', label: 'Guardrails' },
+  { id: 'tools', label: 'Tools' },
+];
+
 export default async function ProjectSettings({
   params,
   searchParams,
 }: {
   params: Promise<{ slug: string; projectSlug: string }>;
-  searchParams: Promise<{ installation_id?: string; from?: string }>;
+  searchParams: Promise<{ installation_id?: string; from?: string; tab?: string }>;
 }) {
   const { slug, projectSlug } = await params;
   const sp = await searchParams;
   const installedInstallationId =
     sp.from === 'github_install' && sp.installation_id ? sp.installation_id : null;
+  const activeTab = TABS.some((t) => t.id === sp.tab) ? (sp.tab as string) : 'setup';
   const session = await requireSession();
   const project = await apiOr404<{
     name: string;
@@ -150,243 +159,261 @@ export default async function ProjectSettings({
     );
   }
 
+  const settingsPath = `/orgs/${slug}/projects/${projectSlug}/settings`;
+
   return (
     <main className="mx-auto max-w-3xl space-y-6 p-6">
       <h1 className="text-xl font-semibold">Settings</h1>
+      <TabStrip tabs={TABS} active={activeTab} pathname={settingsPath} />
 
-      {/* Pointer to org-level LLM (#498). Operators landed here looking
-          for model + API key config; without this they couldn't tell
-          that providers / profiles are org-scoped and live on a
-          different page. */}
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">
-        Looking for model + API key config? LLM providers and profiles
-        are org-shared.{' '}
-        <a
-          href={`/orgs/${slug}/settings#llm`}
-          className="text-accent underline decoration-dotted"
-        >
-          Manage at the org level →
-        </a>
-      </p>
+      {activeTab === 'setup' && (
+        <>
+          {/* Pointer to org-level LLM (#498). Operators landed here
+              looking for model + API key config; without this they
+              couldn't tell providers / profiles are org-scoped and
+              live on a different page. */}
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            Looking for model + API key config? LLM providers and profiles
+            are org-shared.{' '}
+            <a
+              href={`/orgs/${slug}/settings#llm`}
+              className="text-accent underline decoration-dotted"
+            >
+              Manage at the org level →
+            </a>
+          </p>
 
-      <Section
-        title="General"
-        description="Identity of the project. The description is shown to agents during runs and to humans on the project overview."
-      >
-        <GeneralForm
-          slug={slug}
-          projectSlug={projectSlug}
-          initialName={project.name}
-          initialDescription={project.description ?? ''}
-          archived={Boolean(project.archivedAt)}
-        />
-      </Section>
-
-      <Section
-        title="Integrations"
-        description="External systems Mergecrew connects to on this project's behalf."
-      >
-        <Subsection
-          title="Repository"
-          description="The Git repository the agents work against."
-        >
-          <RepoForm
-            slug={slug}
-            projectSlug={projectSlug}
-            initial={project.connectedRepo ?? null}
-            installedInstallationId={installedInstallationId}
-            availableRepos={availableRepos}
-          />
-        </Subsection>
-
-        <Subsection
-          title="Issue tracker"
-          description="Lets discovery agents read issues and Bug Triage create new ones. The token is encrypted at rest as the project secret TRACKER_TOKEN."
-        >
-          <TrackerForm
-            slug={slug}
-            projectSlug={projectSlug}
-            initial={tracker ?? null}
-          />
-        </Subsection>
-
-        <Subsection
-          title="Error tracker"
-          description="Lets the Observation agent read recent crash and exception data. The token is encrypted at rest as the project secret ERROR_TRACKER_TOKEN."
-        >
-          <ErrorTargetForm
-            slug={slug}
-            projectSlug={projectSlug}
-            initial={errorTarget ?? null}
-          />
-        </Subsection>
-      </Section>
-
-      <Section
-        title="Deploy targets"
-        description="Where the runner promotes changesets. Each row picks an adapter (GitHub Actions, Vercel, …). The dev target drives the post-PR auto-deploy on each daily run; the prod target is the promotion destination."
-      >
-        <DeployTargetForm
-          slug={slug}
-          projectSlug={projectSlug}
-          initial={targets.items}
-        />
-      </Section>
-
-      <Section
-        title="Promotion strategy"
-        description="How the human-approved subset of dev changesets graduates to prod. mergecrew cherry-picks approved changes onto a release ref; this picker controls what triggers your CI's prod deploy from that ref."
-      >
-        <PromotionStrategyForm
-          slug={slug}
-          projectSlug={projectSlug}
-          orgSlug={slug}
-          initial={promotionStrategy}
-          defaultReleaseBranch={
-            project.connectedRepo?.basePrBranch?.trim() ||
-            project.connectedRepo?.defaultBranch
-          }
-        />
-      </Section>
-
-      <Section
-        title="Schedule"
-        description="When the project's daily run fires. Cron is evaluated in the configured timezone by the worker-cron tick."
-      >
-        <ScheduleForm
-          initial={schedule}
-          canEdit={canEdit}
-          onSave={async (input) => {
-            'use server';
-            try {
-              await api(`/v1/orgs/${slug}/projects/${projectSlug}/schedule`, {
-                method: 'PATCH',
-                body: JSON.stringify(input),
-                session: await requireSession(),
-              });
-              revalidatePath(`/orgs/${slug}/projects/${projectSlug}/settings`);
-              return { ok: true };
-            } catch (e: any) {
-              return { ok: false, error: String(e?.message ?? e) };
-            }
-          }}
-        />
-      </Section>
-
-      <Section
-        title="Project Inception"
-        description="Detect the stack, scripts, and deploy workflows by scanning a fresh clone of the connected repo. Use the draft mergecrew.yaml as the starting point for the first daily run."
-      >
-        <InceptionForm
-          slug={slug}
-          projectSlug={projectSlug}
-          hasRepo={Boolean(project.connectedRepo)}
-        />
-      </Section>
-
-      <Section
-        title="Onboarding smoke test"
-        description="Confirms the round-trip: opens a no-op PR, dispatches the dev deploy, waits for completion, returns the URL. Run this once after configuring the repo + dev deploy target."
-      >
-        <SmokeTestForm
-          slug={slug}
-          projectSlug={projectSlug}
-          ready={Boolean(project.connectedRepo) && targets.items.some((t) => t.kind === 'dev')}
-          blockedReason={
-            !project.connectedRepo
-              ? 'Connect a repository first.'
-              : !targets.items.some((t) => t.kind === 'dev')
-                ? 'Configure a dev deploy target first.'
-                : undefined
-          }
-        />
-      </Section>
-
-      <Section
-        title="Auto-promote rules"
-        description="Allowlist patterns that let qualifying changesets skip the manual approval gate (e.g. docs-only diffs, dep patch bumps)."
-      >
-        <a
-          href={`/orgs/${slug}/projects/${projectSlug}/settings/auto-promote`}
-          className="text-sm underline"
-        >
-          Manage rules →
-        </a>
-      </Section>
-
-      <Section
-        title="Agent graph"
-        description="How runs dispatch agents. fast = single-agent V1 behavior; careful = planner → coder → reviewer with loop-back; custom = your own YAML."
-      >
-        <GraphProfileForm
-          slug={slug}
-          projectSlug={projectSlug}
-          initialProfile={project.graphProfile}
-          initialYaml={project.graphYaml}
-          canEdit={canEdit}
-        />
-      </Section>
-
-      <Section
-        title="Guardrails"
-        description="Safety controls that constrain what the agent loop is allowed to do on this project."
-      >
-        <div className="space-y-6">
-          <DryRunForm
-            slug={slug}
-            projectSlug={projectSlug}
-            initialDryRun={project.dryRun}
-            canEdit={canEdit}
-          />
-          <div className="border-t pt-4 dark:border-zinc-800">
-            <h3 className="text-sm font-medium">Blast-radius limits</h3>
-            <div className="mt-2">
-              <BlastRadiusForm
-                slug={slug}
-                projectSlug={projectSlug}
-                initialMaxFiles={project.maxFilesChanged}
-                initialMaxLines={project.maxLinesChanged}
-                initialDeniedPaths={project.deniedPaths ?? []}
-                canEdit={canEdit}
-              />
-            </div>
-          </div>
-          <div className="border-t pt-4 dark:border-zinc-800">
-            <h3 className="text-sm font-medium">Risk-score gate</h3>
-            <div className="mt-2">
-              <RiskScoreForm
-                slug={slug}
-                projectSlug={projectSlug}
-                initialThreshold={project.autoMergeThreshold}
-                initialSensitivePaths={project.sensitivePaths ?? []}
-                canEdit={canEdit}
-              />
-            </div>
-          </div>
-          <div className="border-t pt-4 dark:border-zinc-800">
-            <div className="flex items-baseline justify-between">
-              <h3 className="text-sm font-medium">Recent rollbacks</h3>
-              <a
-                href="https://github.com/mergecrew/mergecrew/blob/main/docs/03-infrastructure/12-rollback.md"
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs text-zinc-500 underline decoration-dotted hover:text-zinc-700 dark:hover:text-zinc-300"
-              >
-                Rollback guide →
-              </a>
-            </div>
-            <p className="mt-1 mb-2 text-xs text-zinc-500">
-              Last three merged changesets undone via the one-click rollback button. Each row
-              links to the changeset and its revert PR.
-            </p>
-            <RecentRollbacks
+          <Section
+            title="General"
+            description="Identity of the project. The description is shown to agents during runs and to humans on the project overview."
+          >
+            <GeneralForm
               slug={slug}
               projectSlug={projectSlug}
-              rollbacks={recentRollbacks.items}
+              initialName={project.name}
+              initialDescription={project.description ?? ''}
+              archived={Boolean(project.archivedAt)}
             />
+          </Section>
+
+          <Section
+            title="Integrations"
+            description="External systems Mergecrew connects to on this project's behalf."
+          >
+            <Subsection
+              title="Repository"
+              description="The Git repository the agents work against."
+            >
+              <RepoForm
+                slug={slug}
+                projectSlug={projectSlug}
+                initial={project.connectedRepo ?? null}
+                installedInstallationId={installedInstallationId}
+                availableRepos={availableRepos}
+              />
+            </Subsection>
+
+            <Subsection
+              title="Issue tracker"
+              description="Lets discovery agents read issues and Bug Triage create new ones. The token is encrypted at rest as the project secret TRACKER_TOKEN."
+            >
+              <TrackerForm
+                slug={slug}
+                projectSlug={projectSlug}
+                initial={tracker ?? null}
+              />
+            </Subsection>
+
+            <Subsection
+              title="Error tracker"
+              description="Lets the Observation agent read recent crash and exception data. The token is encrypted at rest as the project secret ERROR_TRACKER_TOKEN."
+            >
+              <ErrorTargetForm
+                slug={slug}
+                projectSlug={projectSlug}
+                initial={errorTarget ?? null}
+              />
+            </Subsection>
+          </Section>
+
+          <Section
+            title="Schedule"
+            description="When the project's daily run fires. Cron is evaluated in the configured timezone by the worker-cron tick."
+          >
+            <ScheduleForm
+              initial={schedule}
+              canEdit={canEdit}
+              onSave={async (input) => {
+                'use server';
+                try {
+                  await api(`/v1/orgs/${slug}/projects/${projectSlug}/schedule`, {
+                    method: 'PATCH',
+                    body: JSON.stringify(input),
+                    session: await requireSession(),
+                  });
+                  revalidatePath(`/orgs/${slug}/projects/${projectSlug}/settings`);
+                  return { ok: true };
+                } catch (e: any) {
+                  return { ok: false, error: String(e?.message ?? e) };
+                }
+              }}
+            />
+          </Section>
+        </>
+      )}
+
+      {activeTab === 'pipeline' && (
+        <>
+          <Section
+            title="Deploy targets"
+            description="Where the runner promotes changesets. Each row picks an adapter (GitHub Actions, Vercel, …). The dev target drives the post-PR auto-deploy on each daily run; the prod target is the promotion destination."
+          >
+            <DeployTargetForm
+              slug={slug}
+              projectSlug={projectSlug}
+              initial={targets.items}
+            />
+          </Section>
+
+          <Section
+            title="Promotion strategy"
+            description="How the human-approved subset of dev changesets graduates to prod. mergecrew cherry-picks approved changes onto a release ref; this picker controls what triggers your CI's prod deploy from that ref."
+          >
+            <PromotionStrategyForm
+              slug={slug}
+              projectSlug={projectSlug}
+              orgSlug={slug}
+              initial={promotionStrategy}
+              defaultReleaseBranch={
+                project.connectedRepo?.basePrBranch?.trim() ||
+                project.connectedRepo?.defaultBranch
+              }
+            />
+          </Section>
+
+          <Section
+            title="Agent graph"
+            description="How runs dispatch agents. fast = single-agent V1 behavior; careful = planner → coder → reviewer with loop-back; custom = your own YAML."
+          >
+            <GraphProfileForm
+              slug={slug}
+              projectSlug={projectSlug}
+              initialProfile={project.graphProfile}
+              initialYaml={project.graphYaml}
+              canEdit={canEdit}
+            />
+          </Section>
+        </>
+      )}
+
+      {activeTab === 'guardrails' && (
+        <Section
+          title="Guardrails"
+          description="Safety controls that constrain what the agent loop is allowed to do on this project."
+        >
+          <div className="space-y-6">
+            <DryRunForm
+              slug={slug}
+              projectSlug={projectSlug}
+              initialDryRun={project.dryRun}
+              canEdit={canEdit}
+            />
+            <div className="border-t pt-4 dark:border-zinc-800">
+              <h3 className="text-sm font-medium">Blast-radius limits</h3>
+              <div className="mt-2">
+                <BlastRadiusForm
+                  slug={slug}
+                  projectSlug={projectSlug}
+                  initialMaxFiles={project.maxFilesChanged}
+                  initialMaxLines={project.maxLinesChanged}
+                  initialDeniedPaths={project.deniedPaths ?? []}
+                  canEdit={canEdit}
+                />
+              </div>
+            </div>
+            <div className="border-t pt-4 dark:border-zinc-800">
+              <h3 className="text-sm font-medium">Risk-score gate</h3>
+              <div className="mt-2">
+                <RiskScoreForm
+                  slug={slug}
+                  projectSlug={projectSlug}
+                  initialThreshold={project.autoMergeThreshold}
+                  initialSensitivePaths={project.sensitivePaths ?? []}
+                  canEdit={canEdit}
+                />
+              </div>
+            </div>
+            <div className="border-t pt-4 dark:border-zinc-800">
+              <h3 className="text-sm font-medium">Auto-promote rules</h3>
+              <p className="mt-1 text-xs text-zinc-500">
+                Allowlist patterns that let qualifying changesets skip the manual approval gate
+                (e.g. docs-only diffs, dep patch bumps).
+              </p>
+              <a
+                href={`/orgs/${slug}/projects/${projectSlug}/settings/auto-promote`}
+                className="mt-2 inline-block text-sm underline"
+              >
+                Manage rules →
+              </a>
+            </div>
+            <div className="border-t pt-4 dark:border-zinc-800">
+              <div className="flex items-baseline justify-between">
+                <h3 className="text-sm font-medium">Recent rollbacks</h3>
+                <a
+                  href="https://github.com/mergecrew/mergecrew/blob/main/docs/03-infrastructure/12-rollback.md"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-zinc-500 underline decoration-dotted hover:text-zinc-700 dark:hover:text-zinc-300"
+                >
+                  Rollback guide →
+                </a>
+              </div>
+              <p className="mt-1 mb-2 text-xs text-zinc-500">
+                Last three merged changesets undone via the one-click rollback button. Each row
+                links to the changeset and its revert PR.
+              </p>
+              <RecentRollbacks
+                slug={slug}
+                projectSlug={projectSlug}
+                rollbacks={recentRollbacks.items}
+              />
+            </div>
           </div>
-        </div>
-      </Section>
+        </Section>
+      )}
+
+      {activeTab === 'tools' && (
+        <>
+          <Section
+            title="Project Inception"
+            description="Detect the stack, scripts, and deploy workflows by scanning a fresh clone of the connected repo. Use the draft mergecrew.yaml as the starting point for the first daily run."
+          >
+            <InceptionForm
+              slug={slug}
+              projectSlug={projectSlug}
+              hasRepo={Boolean(project.connectedRepo)}
+            />
+          </Section>
+
+          <Section
+            title="Onboarding smoke test"
+            description="Confirms the round-trip: opens a no-op PR, dispatches the dev deploy, waits for completion, returns the URL. Run this once after configuring the repo + dev deploy target."
+          >
+            <SmokeTestForm
+              slug={slug}
+              projectSlug={projectSlug}
+              ready={Boolean(project.connectedRepo) && targets.items.some((t) => t.kind === 'dev')}
+              blockedReason={
+                !project.connectedRepo
+                  ? 'Connect a repository first.'
+                  : !targets.items.some((t) => t.kind === 'dev')
+                    ? 'Configure a dev deploy target first.'
+                    : undefined
+              }
+            />
+          </Section>
+        </>
+      )}
     </main>
   );
 }
