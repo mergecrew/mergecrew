@@ -7,11 +7,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   CAREFUL_GRAPH,
+  ROSTER_GRAPH,
   GRAPH_END,
   findGraphEntryNode,
   findNextGraphNode,
+  getNodeAgents,
   parseAndValidateGraphYaml,
   validateGraphDefinition,
+  GraphDefinitionSchema,
   type GraphDefinition,
 } from '../src/graph-profile.js';
 
@@ -35,7 +38,10 @@ describe('CAREFUL_GRAPH (the built-in careful profile)', () => {
       availableAgentRefs: ['planner', 'coder'], // no reviewer
     });
     expect(issues).toHaveLength(1);
-    expect(issues[0]!.path).toBe('graph.nodes.reviewer.agentRef');
+    // Path points at the node, not at the field, because the same
+    // validator now covers multi-agent `agents: []` nodes where an
+    // individual agentRef would have no stable field path (#516).
+    expect(issues[0]!.path).toBe('graph.nodes.reviewer');
   });
 });
 
@@ -289,5 +295,138 @@ graph:
     // Reviewer routes based on its verdict signal.
     expect(findNextGraphNode(g, 'review', 'requestChanges')).toBe('code');
     expect(findNextGraphNode(g, 'review', 'approve')).toBe(GRAPH_END);
+  });
+});
+
+describe('ROSTER_GRAPH (#516 — multi-stage / multi-agent profile)', () => {
+  it('is structurally valid on its own terms', () => {
+    expect(validateGraphDefinition(ROSTER_GRAPH)).toEqual([]);
+  });
+
+  it('is valid when checked against a lifecycle that defines the roster agents', () => {
+    expect(
+      validateGraphDefinition(ROSTER_GRAPH, {
+        availableAgentRefs: [
+          'discovery',
+          'pm',
+          'backend_engineer',
+          'frontend_engineer',
+          'qa',
+          'sre',
+          'observation',
+          'design_reviewer',
+          'bug_triage',
+          'doc_writer',
+        ],
+      }),
+    ).toEqual([]);
+  });
+
+  it('flags every missing agent across both single- and multi-agent nodes', () => {
+    // Lifecycle missing one parallel agent (`frontend_engineer`) and
+    // the QA node entirely. Both should be reported — the multi-agent
+    // node reports one issue per missing member.
+    const issues = validateGraphDefinition(ROSTER_GRAPH, {
+      availableAgentRefs: [
+        'discovery',
+        'pm',
+        'backend_engineer',
+        'sre',
+        'observation',
+        'design_reviewer',
+        'bug_triage',
+        'doc_writer',
+      ],
+    });
+    expect(issues.length).toBe(2);
+    expect(issues.some((i) => /frontend_engineer/.test(i.message))).toBe(true);
+    expect(issues.some((i) => /qa/.test(i.message))).toBe(true);
+  });
+
+  it('starts at discovery and ends at observation → __end__', () => {
+    expect(findGraphEntryNode(ROSTER_GRAPH)).toBe('discovery');
+    expect(findNextGraphNode(ROSTER_GRAPH, 'observation')).toBe(GRAPH_END);
+  });
+
+  it('routes discovery → pm by default and → __end__ on the discovery signal (first-run behavior)', () => {
+    expect(findNextGraphNode(ROSTER_GRAPH, 'discovery')).toBe('pm');
+    expect(findNextGraphNode(ROSTER_GRAPH, 'discovery', 'discovery')).toBe(GRAPH_END);
+  });
+
+  it('routes qa via its verdict signal (tests_pass → deploy_dev, tests_fail → pm loopback)', () => {
+    expect(findNextGraphNode(ROSTER_GRAPH, 'qa', 'tests_pass')).toBe('deploy_dev');
+    expect(findNextGraphNode(ROSTER_GRAPH, 'qa', 'tests_fail')).toBe('pm');
+  });
+
+  it('declares the parallel-stage policies per D2 of #516', () => {
+    // Strict: a failed engineer fails the stage (implementation).
+    // Lenient: a failed reporter doesn't gate the others (observation).
+    expect(ROSTER_GRAPH.graph.nodes.implementation?.policy).toBe('strict');
+    expect(ROSTER_GRAPH.graph.nodes.observation?.policy).toBe('lenient');
+  });
+
+  it('exposes the multi-agent rosters via getNodeAgents', () => {
+    // Single-agent nodes normalize cleanly.
+    expect(getNodeAgents(ROSTER_GRAPH.graph.nodes.discovery!)).toEqual(['discovery']);
+    expect(getNodeAgents(ROSTER_GRAPH.graph.nodes.pm!)).toEqual(['pm']);
+    expect(getNodeAgents(ROSTER_GRAPH.graph.nodes.qa!)).toEqual(['qa']);
+    expect(getNodeAgents(ROSTER_GRAPH.graph.nodes.deploy_dev!)).toEqual(['sre']);
+    // Multi-agent nodes return their declared parallel set.
+    expect(getNodeAgents(ROSTER_GRAPH.graph.nodes.implementation!)).toEqual([
+      'backend_engineer',
+      'frontend_engineer',
+    ]);
+    expect(getNodeAgents(ROSTER_GRAPH.graph.nodes.observation!)).toEqual([
+      'observation',
+      'design_reviewer',
+      'bug_triage',
+      'doc_writer',
+    ]);
+  });
+});
+
+describe('GraphNodeSchema XOR refinement (#516)', () => {
+  it('accepts a single-agent node (agentRef only)', () => {
+    const parsed = GraphDefinitionSchema.safeParse({
+      version: 1,
+      graph: {
+        nodes: { only: { agentRef: 'planner' } },
+        edges: [{ from: 'only', to: GRAPH_END }],
+      },
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('accepts a multi-agent node (agents array only)', () => {
+    const parsed = GraphDefinitionSchema.safeParse({
+      version: 1,
+      graph: {
+        nodes: { only: { agents: ['planner', 'reviewer'] } },
+        edges: [{ from: 'only', to: GRAPH_END }],
+      },
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('rejects a node that declares both agentRef and agents (ambiguous)', () => {
+    const parsed = GraphDefinitionSchema.safeParse({
+      version: 1,
+      graph: {
+        nodes: { both: { agentRef: 'planner', agents: ['planner'] } },
+        edges: [{ from: 'both', to: GRAPH_END }],
+      },
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('rejects a node that declares neither agentRef nor agents (empty)', () => {
+    const parsed = GraphDefinitionSchema.safeParse({
+      version: 1,
+      graph: {
+        nodes: { empty: {} },
+        edges: [{ from: 'empty', to: GRAPH_END }],
+      },
+    });
+    expect(parsed.success).toBe(false);
   });
 });

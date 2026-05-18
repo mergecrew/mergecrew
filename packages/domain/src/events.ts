@@ -59,6 +59,13 @@ export const TimelineEventType = z.enum([
   // unchanged, with the reviewer's last requestedChanges in the
   // payload so the human reviewer sees what the LLM reviewer flagged.
   'REVIEW_LOOP_EXHAUSTED',
+  // Roster graph profile (#516). STAGE_FAILED fires when a strict-policy
+  // multi-agent stage has at least one failed member after fan-in — the
+  // run stops advancing and the changeset surfaces to humans. Payload
+  // carries the stage name, the policy that triggered, and the count
+  // breakdown so the UI can render which agent failed without separate
+  // queries.
+  'STAGE_FAILED',
   // gate
   'GATE_REACHED',
   'HUMAN_APPROVED',

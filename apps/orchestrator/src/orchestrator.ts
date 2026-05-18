@@ -6,9 +6,11 @@ import type { Eventlog } from '@mergecrew/eventlog';
 import type { GraphDefinition, MergecrewConfig } from '@mergecrew/domain';
 import {
   CAREFUL_GRAPH,
+  ROSTER_GRAPH,
   GRAPH_END,
   findGraphEntryNode,
   findNextGraphNode,
+  getNodeAgents,
   newRunIdForDate,
   parseAndValidateGraphYaml,
   resolveAgentByRef,
@@ -18,10 +20,16 @@ import {
 // Mirrors agent-runtime's exported kind constants. Inlined here (rather
 // than imported from `@mergecrew/agent-runtime`) so the orchestrator
 // doesn't pull the langgraph runtime into its dependency tree just to
-// branch on three string literals.
+// branch on a handful of string literals.
 const REVIEWER_KIND = 'Reviewer';
 const CODER_KIND = 'Coder';
 const PLANNER_KIND = 'Planner';
+// Roster kinds the dispatcher routes on (#516, V2.af). The full
+// catalog lives in `@mergecrew/agent-runtime`; only the kinds whose
+// outputs the orchestrator switches on (or whose loop caps it counts)
+// need a constant here.
+const DISCOVERY_KIND = 'Discovery';
+const QA_KIND = 'QA';
 import { emailEnabledFromEnv } from '@mergecrew/adapters-comms';
 import { syncLifecycleFromRepo } from './lifecycle-sync.js';
 import { dispatchSlackDigest } from './digest-slack.js';
@@ -259,6 +267,7 @@ export class Orchestrator {
     ctx: { runId: string; workflowRunId: string },
   ): GraphDefinition | null {
     if (project?.graphProfile === 'careful') return CAREFUL_GRAPH;
+    if (project?.graphProfile === 'roster') return ROSTER_GRAPH;
     if (project?.graphProfile === 'custom') {
       if (!project.graphYaml) {
         this.deps.logger.warn(
@@ -327,22 +336,87 @@ export class Orchestrator {
     const graph = this.resolveProjectGraph(project, cfg, { runId, workflowRunId });
     if (!graph) return false;
 
-    // Reviewer verdict → routing signal. We branch on agentKind (not
+    // Per-kind routing signals. We branch on agentKind (not
     // graphNodeKey) so a custom graph using arbitrary node names still
-    // routes correctly as long as its reviewer node binds to an agent
-    // of kind 'Reviewer'.
+    // routes correctly as long as its node binds to an agent of the
+    // expected kind.
     let signal: string | undefined;
     if (step.agentKind === REVIEWER_KIND) {
       const verdict = (step.output as { verdict?: string } | null)?.verdict;
       signal = verdict === 'approve' ? 'approve' : 'requestChanges';
-    } else if (step.agentKind === PLANNER_KIND) {
-      // Planner discovery mode (#492). The runner persists
-      // `output.mode = 'discovery'` when there was no seed task and the
-      // planner produced candidate directions instead of a plan. The
-      // CAREFUL_GRAPH `discovery` edge then terminates the chain so the
-      // coder + reviewer don't fan out against an empty plan.
+    } else if (step.agentKind === QA_KIND) {
+      // Roster QA verdict (#516, V2.af). QA emits
+      // `output.verdict = 'tests_pass' | 'tests_fail'`; the ROSTER_GRAPH
+      // edges route on these signals — tests_pass → deploy_dev,
+      // tests_fail → pm (PM-loopback per D3 of #516). Defaults to
+      // `tests_fail` if the verdict is missing so a malformed QA output
+      // routes back to PM rather than silently advancing to deploy.
+      const verdict = (step.output as { verdict?: string } | null)?.verdict;
+      signal = verdict === 'tests_pass' ? 'tests_pass' : 'tests_fail';
+    } else if (step.agentKind === PLANNER_KIND || step.agentKind === DISCOVERY_KIND) {
+      // Discovery mode (#492 careful / #516 roster). The runner
+      // persists `output.mode = 'discovery'` when there was no seed
+      // task and the agent produced candidate directions instead of a
+      // plan. Both graphs route on the `discovery` signal to terminate
+      // the chain so downstream agents don't fan out against an empty
+      // plan.
       const mode = (step.output as { mode?: string } | null)?.mode;
       if (mode === 'discovery') signal = 'discovery';
+    }
+
+    // Fan-in for multi-agent nodes (D1 of #516). When the completed
+    // step belongs to a node that dispatches multiple parallel agents
+    // (e.g. Implementation = BackendEngineer + FrontendEngineer), wait
+    // for ALL members to terminate before resolving the outgoing edge.
+    // Returning true here keeps the chain "in flight" without queuing
+    // a successor — the next sibling's reply will re-enter here and
+    // either re-wait or advance.
+    const currentNode = graph.graph.nodes[step.graphNodeKey];
+    if (!currentNode) return false;
+    const currentAgents = getNodeAgents(currentNode);
+    if (currentAgents.length > 1) {
+      // Count terminal-state sibling steps on this node in this run.
+      const siblingStatuses = await withTenant(organizationId, (tx) =>
+        tx.agentStep.findMany({
+          where: { workflowRunId, graphNodeKey: step.graphNodeKey },
+          select: { status: true },
+        }),
+      );
+      const terminal = siblingStatuses.filter((s) =>
+        ['done', 'failed', 'cancelled'].includes(s.status),
+      ).length;
+      if (terminal < currentAgents.length) {
+        // Waiting on siblings to land. Don't dispatch anything new,
+        // but tell the caller the chain isn't done.
+        return true;
+      }
+      // All terminal. Apply policy (D2).
+      const failed = siblingStatuses.filter((s) =>
+        ['failed', 'cancelled'].includes(s.status),
+      ).length;
+      const policy = currentNode.policy ?? 'strict';
+      if (policy === 'strict' && failed > 0) {
+        await this.deps.eventlog.emit({
+          organizationId,
+          projectId,
+          dailyRunId: runId,
+          workflowRunId,
+          type: 'STAGE_FAILED',
+          actor: { kind: 'system' },
+          payload: {
+            stage: step.graphNodeKey,
+            policy: 'strict',
+            failed,
+            total: currentAgents.length,
+          },
+        });
+        this.deps.logger.info(
+          { runId, workflowRunId, stage: step.graphNodeKey, failed, total: currentAgents.length },
+          'strict stage failed — routing to human review without advancing',
+        );
+        return false;
+      }
+      // Lenient policy, or strict with no failures: advance.
     }
 
     const nextKey = findNextGraphNode(graph, step.graphNodeKey, signal);
@@ -361,7 +435,8 @@ export class Orchestrator {
     // step routes to a coder-kind node, count completed coder-kind
     // steps in this workflow run. The cap is env-set (REVIEW_LOOP_CAP,
     // default 3) — one initial coder pass + up to two retries.
-    const nextAgentDef = resolveAgentByRef(cfg.agents, node.agentRef);
+    const nextAgents = getNodeAgents(node);
+    const nextAgentDef = resolveAgentByRef(cfg.agents, nextAgents[0] ?? '');
     const nextKind = nextAgentDef?.kind;
     if (step.agentKind === REVIEWER_KIND && nextKind === CODER_KIND) {
       const coderRounds = await withTenant(organizationId, (tx) =>
@@ -401,15 +476,21 @@ export class Orchestrator {
       }
     }
 
-    await this.dispatchAgentStep(
-      organizationId,
-      projectId,
-      runId,
-      workflowRunId,
-      node.agentRef,
-      cfg,
-      { graphNodeKey: nextKey },
-    );
+    // Dispatch every agent in the next node. Single-agent nodes
+    // produce one job; multi-agent nodes (Implementation, Observation
+    // in ROSTER_GRAPH) fan out one job per declared agent and the
+    // fan-in above gates the advance until all members terminate.
+    for (const ref of nextAgents) {
+      await this.dispatchAgentStep(
+        organizationId,
+        projectId,
+        runId,
+        workflowRunId,
+        ref,
+        cfg,
+        { graphNodeKey: nextKey },
+      );
+    }
     return true;
   }
 
@@ -421,6 +502,11 @@ export class Orchestrator {
    * its agent can't be resolved — neither should happen on a project
    * created through the normal settings UI (the validator catches both
    * at save time), but a hand-edited DB row could land here.
+   *
+   * Multi-agent entry nodes (#516, V2.af) fan out a job per declared
+   * `agents` member — currently ROSTER_GRAPH's entry is single-agent
+   * (`discovery`) but the loop here keeps the dispatcher correct if a
+   * future custom graph declares a multi-agent entry.
    */
   private async dispatchGraphEntry(
     organizationId: string,
@@ -440,15 +526,17 @@ export class Orchestrator {
       return;
     }
     const node = graph.graph.nodes[entry]!;
-    await this.dispatchAgentStep(
-      organizationId,
-      projectId,
-      runId,
-      workflowRunId,
-      node.agentRef,
-      cfg,
-      { graphNodeKey: entry },
-    );
+    for (const ref of getNodeAgents(node)) {
+      await this.dispatchAgentStep(
+        organizationId,
+        projectId,
+        runId,
+        workflowRunId,
+        ref,
+        cfg,
+        { graphNodeKey: entry },
+      );
+    }
   }
 
   private async dispatchAgentStep(
