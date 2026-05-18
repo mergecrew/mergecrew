@@ -20,8 +20,8 @@ import { parse as parseYaml } from 'yaml';
 
 export const GRAPH_END = '__end__';
 
-export type GraphProfile = 'fast' | 'careful' | 'custom';
-export const GraphProfile = z.enum(['fast', 'careful', 'custom']);
+export type GraphProfile = 'fast' | 'careful' | 'roster' | 'custom';
+export const GraphProfile = z.enum(['fast', 'careful', 'roster', 'custom']);
 
 /**
  * Conditional edge: routes from `from` to one of `options` based on
@@ -35,14 +35,56 @@ export const GraphEdgeSchema = z.object({
 });
 export type GraphEdge = z.infer<typeof GraphEdgeSchema>;
 
-export const GraphNodeSchema = z.object({
-  /**
-   * Key into the project's lifecycle `agents` map. Resolved at runtime
-   * to a concrete AgentDefinition.
-   */
-  agentRef: z.string().min(1),
-});
+/**
+ * Fan-in failure semantics for a multi-agent node (D2 of #516):
+ * - `strict` (default): the stage fails if any of its parallel agents
+ *   fails. Implementation stages should use this — half a feature is
+ *   worse than no feature.
+ * - `lenient`: the stage succeeds if at least one agent succeeded.
+ *   Post-deploy reporters (Observation, BugTriage, DocWriter,
+ *   DesignReviewer) should use this — none of them gating each other
+ *   is the whole point of running them in parallel.
+ */
+export const FanInPolicy = z.enum(['strict', 'lenient']);
+export type FanInPolicy = z.infer<typeof FanInPolicy>;
+
+export const GraphNodeSchema = z
+  .object({
+    /**
+     * Key into the project's lifecycle `agents` map. Single-agent
+     * convenience — the dispatcher normalizes `{ agentRef: 'foo' }`
+     * to `{ agents: ['foo'] }` internally. Set exactly one of
+     * `agentRef` / `agents`.
+     */
+    agentRef: z.string().min(1).optional(),
+    /**
+     * Parallel multi-agent node (D1 of #516, V2.af). Every listed
+     * agent is dispatched concurrently when the graph enters this
+     * node; `dispatchGraphNext` waits for all of them to terminate
+     * before resolving the outgoing edge. Single-element arrays are
+     * equivalent to `agentRef` — use whichever reads better.
+     */
+    agents: z.array(z.string().min(1)).min(1).optional(),
+    /**
+     * Fan-in failure semantics (D2). Defaults to `strict`. Ignored
+     * for single-agent nodes (one step, one outcome).
+     */
+    policy: FanInPolicy.optional(),
+  })
+  .refine(
+    (n) => Boolean(n.agentRef) !== Boolean(n.agents),
+    'GraphNode requires exactly one of `agentRef` (single-agent) or `agents` (parallel multi-agent).',
+  );
 export type GraphNode = z.infer<typeof GraphNodeSchema>;
+
+/**
+ * Normalize a graph node into the explicit `agents: string[]` form,
+ * so dispatchers don't have to branch on `agentRef` vs `agents` at
+ * every call site.
+ */
+export function getNodeAgents(node: GraphNode): string[] {
+  return node.agents ?? (node.agentRef ? [node.agentRef] : []);
+}
 
 export const GraphDefinitionSchema = z.object({
   version: z.literal(1),
@@ -52,6 +94,62 @@ export const GraphDefinitionSchema = z.object({
   }),
 });
 export type GraphDefinition = z.infer<typeof GraphDefinitionSchema>;
+
+/**
+ * `roster` profile (#516, V2.af). The original mergecrew design
+ * materialized as a graph: Discovery → PM → Implementation (BE+FE
+ * parallel) → QA → DeployDev (SRE) → Observation (4 reporters in
+ * parallel) → end. QA's verdict routes either to deploy_dev on pass
+ * or back to PM on fail (PM-loopback per D3 of #516) — re-running PM
+ * lets it revise the spec, and the engineers re-implement against the
+ * new spec. The reviewer-style loop cap (`REVIEW_LOOP_CAP`, default 3)
+ * applies to this cycle too; exhaustion routes to a human gate (handled
+ * by the orchestrator).
+ *
+ * Multi-agent nodes (`implementation`, `observation`) carry an explicit
+ * `policy` (D2): implementation is `strict` (any engineer failure
+ * fails the stage — half a feature isn't a feature); observation is
+ * `lenient` (post-deploy reporters shouldn't gate each other).
+ *
+ * The node keys deliberately match the YAML workflow ids in
+ * `DEFAULT_MERGECREW_YAML` so the lifecycle viewer (#527) can render
+ * them with the same labels operators see in YAML.
+ */
+export const ROSTER_GRAPH: GraphDefinition = {
+  version: 1,
+  graph: {
+    nodes: {
+      discovery: { agentRef: 'discovery' },
+      pm: { agentRef: 'pm' },
+      implementation: {
+        agents: ['backend_engineer', 'frontend_engineer'],
+        policy: 'strict',
+      },
+      qa: { agentRef: 'qa' },
+      deploy_dev: { agentRef: 'sre' },
+      observation: {
+        agents: ['observation', 'design_reviewer', 'bug_triage', 'doc_writer'],
+        policy: 'lenient',
+      },
+    },
+    edges: [
+      // Discovery short-circuits to end when the run had no queued
+      // intent and the agent produced candidate directions instead of
+      // a spec to act on. Mirrors the careful-graph behavior (#492).
+      { from: 'discovery', to: GRAPH_END, when: 'discovery' },
+      { from: 'discovery', to: 'pm' },
+      { from: 'pm', to: 'implementation' },
+      { from: 'implementation', to: 'qa' },
+      // QA verdict routes the run forward or loops back to PM for
+      // spec revision (D3). Loop cap is enforced by the orchestrator
+      // using the existing `REVIEW_LOOP_CAP` constant.
+      { from: 'qa', to: 'deploy_dev', when: 'tests_pass' },
+      { from: 'qa', to: 'pm', when: 'tests_fail' },
+      { from: 'deploy_dev', to: 'observation' },
+      { from: 'observation', to: GRAPH_END },
+    ],
+  },
+};
 
 /**
  * `careful` profile, materialized as a graph definition. Used by the
@@ -152,15 +250,19 @@ export function validateGraphDefinition(
     });
   }
 
-  // 4. agentRefs resolve against the project's lifecycle.
+  // 4. agentRefs resolve against the project's lifecycle. Every agent
+  //    in `getNodeAgents()` (single-agent `agentRef` or multi-agent
+  //    `agents`) is checked against the project's available refs.
   if (opts.availableAgentRefs) {
     const available = new Set(opts.availableAgentRefs);
     for (const [nodeKey, node] of Object.entries(def.graph.nodes)) {
-      if (!available.has(node.agentRef)) {
-        issues.push({
-          path: `graph.nodes.${nodeKey}.agentRef`,
-          message: `agentRef "${node.agentRef}" does not exist in this project's lifecycle agents`,
-        });
+      for (const ref of getNodeAgents(node)) {
+        if (!available.has(ref)) {
+          issues.push({
+            path: `graph.nodes.${nodeKey}`,
+            message: `agentRef "${ref}" does not exist in this project's lifecycle agents`,
+          });
+        }
       }
     }
   }
