@@ -405,8 +405,15 @@ function Subsection({
   description?: string;
   children: React.ReactNode;
 }) {
+  // Subsections inside the Integrations card stack vertically with a
+  // divider between each. The forms below (RepoForm, TrackerForm,
+  // ErrorTargetForm) end with a save button at the bottom with no
+  // trailing margin, so the divider previously sat flush against the
+  // button (#499). pt-6 + pb-6 gives the divider equal breathing room
+  // on both sides; the first/last carve-outs keep the Card padding
+  // from doubling up at the edges.
   return (
-    <div className="space-y-2 border-t pt-4 first:border-t-0 first:pt-0 dark:border-zinc-800">
+    <div className="space-y-2 border-t pb-6 pt-6 first:border-t-0 first:pt-0 last:pb-0 dark:border-zinc-800">
       <div>
         <h3 className="font-medium">{title}</h3>
         {description && <p className="text-xs text-zinc-500">{description}</p>}
