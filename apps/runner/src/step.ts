@@ -60,12 +60,14 @@ import {
   REVIEWER_AGENT_KIND,
   PM_AGENT_KIND,
   BACKEND_ENGINEER_AGENT_KIND,
+  FRONTEND_ENGINEER_AGENT_KIND,
   PLANNER_DISCOVERY_SYSTEM_PROMPT,
   parsePlanPaths,
   parsePlannerDirections,
   parsePmSpec,
   parseReviewerVerdict,
   type ParsedPmSpec,
+  type PmSpecTarget,
 } from '@mergecrew/agent-runtime';
 import { transcriptStoreFromEnv } from '@mergecrew/transcript-store';
 import type { CancellationCoordinator } from './cancellation.js';
@@ -2053,15 +2055,27 @@ async function synthesizeAgentInput(
     return { runId, instruction: 'Translate discovery output into 1–3 prioritized intents with one-paragraph specs.' };
   }
 
-  // BackendEngineer (#518, V2.af roster). Reads the most recent PM
-  // spec in this run and implements the backend portion. If PM tagged
-  // the spec `target: frontend`, we short-circuit with `skip: true`
-  // so the agent emits a one-line `SKIPPED:` and exits without making
-  // changes — fan-in still resolves cleanly because the step
-  // `completes`. The agent runs without a spec only on a misconfigured
-  // graph (no PM stage upstream); we surface that as a skip too rather
-  // than letting the LLM invent work.
-  if (agentDef.kind === BACKEND_ENGINEER_AGENT_KIND) {
+  // BackendEngineer (#518) / FrontendEngineer (#519), V2.af roster.
+  // Both consume the most recent PM spec in this run and implement
+  // their half of it. PM tags the spec `target: backend | frontend |
+  // both`; the engineer whose target doesn't match short-circuits
+  // with `skip: true` so the agent emits a one-line `SKIPPED:` and
+  // exits without making changes — fan-in still resolves cleanly
+  // because the step `completes`. The agents run without a spec only
+  // on a misconfigured graph (no PM stage upstream); we surface that
+  // as a skip too rather than letting the LLM invent work.
+  if (
+    agentDef.kind === BACKEND_ENGINEER_AGENT_KIND ||
+    agentDef.kind === FRONTEND_ENGINEER_AGENT_KIND
+  ) {
+    const isBackend = agentDef.kind === BACKEND_ENGINEER_AGENT_KIND;
+    const myTarget: PmSpecTarget = isBackend ? 'backend' : 'frontend';
+    const otherTarget: PmSpecTarget = isBackend ? 'frontend' : 'backend';
+    const role = isBackend ? 'Backend Engineer' : 'Frontend Engineer';
+    const portion = isBackend ? 'server-side' : 'UI';
+    const sibling = isBackend ? 'Frontend Engineer' : 'Backend Engineer';
+    const siblingScope = isBackend ? 'UI changes' : 'server code';
+
     const spec = await loadPmSpecForRun(organizationId, runId);
     if (!spec) {
       return {
@@ -2073,12 +2087,11 @@ async function synthesizeAgentInput(
         skipReason: 'no_pm_spec',
       };
     }
-    if (spec.target === 'frontend') {
+    if (spec.target === otherTarget) {
       return {
         runId,
         agentRef,
-        instruction:
-          'PM tagged this spec `target: frontend` — there is no backend work in scope. Emit a single line `SKIPPED: target_mismatch` and stop.',
+        instruction: `PM tagged this spec \`target: ${otherTarget}\` — there is no ${myTarget} work in scope. Emit a single line \`SKIPPED: target_mismatch\` and stop.`,
         skip: true,
         skipReason: 'target_mismatch',
         spec,
@@ -2087,8 +2100,7 @@ async function synthesizeAgentInput(
     return {
       runId,
       agentRef,
-      instruction:
-        'You are the Backend Engineer. Implement the server-side portion of the supplied spec. The Frontend Engineer is running in parallel — leave UI changes to them.',
+      instruction: `You are the ${role}. Implement the ${portion} portion of the supplied spec. The ${sibling} is running in parallel — leave ${siblingScope} to them.`,
       spec,
     };
   }

@@ -155,6 +155,16 @@ describe('roster system prompts (#514)', () => {
     expect(BACKEND_ENGINEER_SYSTEM_PROMPT).toContain('SKIPPED:');
     expect(BACKEND_ENGINEER_SYSTEM_PROMPT).toMatch(/spec/i);
   });
+
+  it('FrontendEngineer prompt describes the spec/skip input contract (#519, mirror of #518 D3)', () => {
+    // Same contract as BE on the opposite half. The runner sets
+    // `skip: true` when PM tags `target: backend` so the FE agent
+    // emits a `SKIPPED:` line and exits instead of running the
+    // implementation workflow against a backend-only spec.
+    expect(FRONTEND_ENGINEER_SYSTEM_PROMPT).toMatch(/skip/i);
+    expect(FRONTEND_ENGINEER_SYSTEM_PROMPT).toContain('SKIPPED:');
+    expect(FRONTEND_ENGINEER_SYSTEM_PROMPT).toMatch(/spec/i);
+  });
 });
 
 describe('READ_ONLY_AGENT_KINDS coverage (#514)', () => {
