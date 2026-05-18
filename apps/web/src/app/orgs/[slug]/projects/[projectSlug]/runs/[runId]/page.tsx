@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation';
 import { api, apiOr404 } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { hasRole } from '@/lib/role';
@@ -6,6 +7,10 @@ import { DensityToggle } from '@/components/density-toggle';
 import { densityClasses, getDensity } from '@/lib/preferences';
 import { LiveTimeline, ReplayTimeline } from './live-timeline';
 import { ForceCancelButton } from './cancel-button';
+import {
+  DiscoveryDirectionsPicker,
+  type DiscoveryDirection,
+} from './discovery-directions-picker';
 
 interface ToolCall {
   id: string;
@@ -95,6 +100,43 @@ export default async function RunPage({
   const dc = densityClasses(density);
   const canForceCancel = await hasRole(slug, session, 'admin');
 
+  // Discovery directions picker (#507). If any agent step on this run
+  // produced `output.mode === 'discovery'`, surface its directions as
+  // pickable cards above the agent panel. We hide the buttons once any
+  // intent exists on the project — picking creates one, so this is a
+  // simple "already picked" guard.
+  const discoveryDirections = extractDiscoveryDirections(detail);
+  let intentsExist = false;
+  if (discoveryDirections.length > 0) {
+    const intents = await api<{ items: unknown[] }>(
+      `/v1/orgs/${slug}/projects/${projectSlug}/intent-inbox`,
+      { session },
+    ).catch(() => ({ items: [] as unknown[] }));
+    intentsExist = intents.items.length > 0;
+  }
+
+  async function pickDirectionAction(formData: FormData) {
+    'use server';
+    const title = String(formData.get('title') ?? '').trim();
+    const rationale = String(formData.get('rationale') ?? '').trim();
+    if (!title) return;
+    const body = rationale ? `${title}\n\n${rationale}` : title;
+    const s = await requireSession();
+    await api(`/v1/orgs/${slug}/projects/${projectSlug}/intent-inbox`, {
+      method: 'POST',
+      body: JSON.stringify({ body }),
+      session: s,
+    }).catch(() => undefined);
+    const r = await api<{ runId: string }>(
+      `/v1/orgs/${slug}/projects/${projectSlug}/runs`,
+      { method: 'POST', body: JSON.stringify({}), session: s },
+    ).catch(() => null);
+    if (r?.runId) {
+      redirect(`/orgs/${slug}/projects/${projectSlug}/runs/${r.runId}`);
+    }
+    redirect(`/orgs/${slug}/projects/${projectSlug}`);
+  }
+
   return (
     <main className={`mx-auto max-w-4xl ${dc.gapBlock} ${dc.pad}`}>
       <header className="flex flex-wrap items-start justify-between gap-3">
@@ -128,6 +170,14 @@ export default async function RunPage({
           )}
         </div>
       </header>
+
+      {discoveryDirections.length > 0 && (
+        <DiscoveryDirectionsPicker
+          directions={discoveryDirections}
+          action={pickDirectionAction}
+          picked={intentsExist}
+        />
+      )}
 
       <AgentPanel detail={detail} />
 
@@ -496,6 +546,24 @@ function fmtDuration(start: string | null, end: string | null): string {
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
   return `${Math.floor(ms / 60_000)}m ${Math.floor((ms % 60_000) / 1000)}s`;
+}
+
+// Pull discovery-mode directions off whichever agent step on this run
+// produced them (#492 persists `output = { mode: 'discovery', directions,
+// markdown }`). Returns [] when no step ran in discovery mode — i.e. the
+// run had a real seed task and the picker shouldn't render.
+function extractDiscoveryDirections(d: RunDetail): DiscoveryDirection[] {
+  for (const w of d.workflows) {
+    for (const s of w.agentSteps) {
+      const out = s.output as
+        | { mode?: string; directions?: DiscoveryDirection[] }
+        | null;
+      if (out?.mode === 'discovery' && Array.isArray(out.directions)) {
+        return out.directions;
+      }
+    }
+  }
+  return [];
 }
 
 function computeTotals(d: RunDetail) {
