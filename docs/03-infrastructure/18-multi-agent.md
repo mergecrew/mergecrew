@@ -18,7 +18,7 @@ The coder gets a smaller context than V1's monolithic agent — it doesn't carry
 
 ## Picking a graph profile
 
-Set this per project: **Settings → Agent graph → fast / careful / custom**. Default is **fast** on every project (existing projects keep V1 behavior on upgrade).
+Set this per project: **Settings → Agent graph → fast / careful / custom**. Default is **careful** for new projects (#491) — a freshly-onboarded project has no backlog, so the parallel `fast` fan-out guarantees a broken first run. Projects that existed before the default flip keep whatever the operator chose; operators ready to trade quality for throughput can flip to `fast` from the Lifecycle page.
 
 | Profile | When to pick | Trade-off |
 |---|---|---|
@@ -208,7 +208,7 @@ the shape.
 
 ## Migration notes
 
-Existing projects default to **`fast`** on upgrade — no behavior change without an explicit operator action. Old fixture YAMLs (no `kind:` field) load as `kind: end-to-end`.
+Projects created before #491 kept the **`fast`** default they were assigned at creation time — the migration only flipped the column default for new rows, no UPDATE was issued. Existing operators see no behavior change without an explicit Settings → Agent graph action. Old fixture YAMLs (no `kind:` field) load as `kind: end-to-end`.
 
 Flipping a project to **`careful`** in Settings → Agent graph wires planner → coder → reviewer automatically. The orchestrator falls back to `STOCK_AGENTS_BY_REF` for any of the three kinds the operator hasn't defined in their `mergecrew.yaml`; operator-defined agents with matching agentRefs win over the stock fallback. **`custom`** parses the YAML body, validates it against the project's lifecycle agentRefs at save time, and runs the same chain dispatch (entry node → successor nodes; reviewer verdict drives routing on conditional edges).
 

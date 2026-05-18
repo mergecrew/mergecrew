@@ -12,7 +12,10 @@ export type RouteSpec = {
 };
 
 const ORG = process.env.MERGECREW_SCREENSHOT_ORG ?? 'demo';
-const PROJECT = process.env.MERGECREW_SCREENSHOT_PROJECT ?? 'acme';
+// The compose stack seeds `demo` org with a `demo-saas` project (see
+// packages/db/src/demo-project-seed.ts → DEMO_PROJECT_SLUG). Override
+// via MERGECREW_SCREENSHOT_PROJECT when capturing a different project.
+const PROJECT = process.env.MERGECREW_SCREENSHOT_PROJECT ?? 'demo-saas';
 
 export const ROUTES: RouteSpec[] = [
   {
