@@ -15,7 +15,7 @@
     "@mergecrew/eventlog": "workspace:*",
     "@mergecrew/llm": "workspace:*",
     "@mergecrew/skills": "workspace:*",
-    "@langchain/core": "^1.1.45",
+    "@langchain/core": "^1.1.46",
     "@langchain/langgraph": "^1.3.0"
   },
   "devDependencies": {
