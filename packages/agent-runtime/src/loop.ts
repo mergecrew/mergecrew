@@ -1156,6 +1156,114 @@ function parseTextVerdict(text: string): ParsedReviewerVerdict | null {
  * of text. Named distinctly from the planner's `extractSection` so the
  * two don't drift.
  */
+export interface ParsedQaVerdict {
+  verdict: 'tests_pass' | 'tests_fail';
+  summary: string;
+  failureExcerpts: string[];
+}
+
+/**
+ * Parse the QA agent's final text message into a structured verdict (#520).
+ *
+ * The QA system prompt prescribes:
+ *   ```
+ *   VERDICT: tests_pass
+ *   SUMMARY: <one-line aggregate>
+ *   ```
+ * or
+ *   ```
+ *   VERDICT: tests_fail
+ *   SUMMARY: <one-line aggregate>
+ *   FAILURES:
+ *   - <step>: <one-line excerpt>
+ *   ```
+ *
+ * Returns null when the text doesn't follow any recognizable shape — the
+ * runner treats that as an effective `tests_fail` so a malformed verdict
+ * can't accidentally advance a broken changeset to deploy_dev. Tolerates
+ * the same drift modes as `parseReviewerVerdict`: JSON output, markdown
+ * decoration on keywords, numbered failure bullets, leading prose.
+ */
+export function parseQaVerdict(text: string): ParsedQaVerdict | null {
+  if (!text || text.trim().length === 0) return null;
+  return parseJsonQaVerdict(text) ?? parseTextQaVerdict(text);
+}
+
+function parseJsonQaVerdict(text: string): ParsedQaVerdict | null {
+  const stripped = text.replace(/```(?:json)?\s*([\s\S]*?)```/g, '$1');
+  for (const candidate of balancedJsonObjects(stripped)) {
+    let obj: any;
+    try {
+      obj = JSON.parse(candidate);
+    } catch {
+      continue;
+    }
+    if (!obj || typeof obj !== 'object') continue;
+    const rawVerdict =
+      typeof obj.verdict === 'string'
+        ? obj.verdict
+        : typeof obj.VERDICT === 'string'
+          ? obj.VERDICT
+          : null;
+    if (!rawVerdict) continue;
+    const verdict = rawVerdict.trim().toLowerCase();
+    if (verdict !== 'tests_pass' && verdict !== 'tests_fail') continue;
+    const summary =
+      typeof obj.summary === 'string'
+        ? obj.summary.trim()
+        : typeof obj.SUMMARY === 'string'
+          ? obj.SUMMARY.trim()
+          : '';
+    const rawFailures =
+      Array.isArray(obj.failureExcerpts)
+        ? obj.failureExcerpts
+        : Array.isArray(obj.failure_excerpts)
+          ? obj.failure_excerpts
+          : Array.isArray(obj.failures)
+            ? obj.failures
+            : Array.isArray(obj.FAILURES)
+              ? obj.FAILURES
+              : [];
+    const failureExcerpts = rawFailures
+      .filter((x: unknown): x is string => typeof x === 'string')
+      .map((s: string) => s.trim())
+      .filter((s: string) => s.length > 0);
+    return { verdict, summary, failureExcerpts };
+  }
+  return null;
+}
+
+function parseTextQaVerdict(text: string): ParsedQaVerdict | null {
+  const verdictMatch = text.match(
+    /\bVERDICT\b\s*[*_`]*\s*[:=→-]+\s*[*_`"'\s]*(tests_pass|tests_fail)\b/i,
+  );
+  if (!verdictMatch?.[1]) return null;
+  const verdict = verdictMatch[1].toLowerCase() as 'tests_pass' | 'tests_fail';
+  const summary = extractQaSection(text, 'SUMMARY');
+  const failuresBlock = extractQaSection(text, 'FAILURES');
+  const failureExcerpts: string[] = [];
+  if (failuresBlock) {
+    for (const line of failuresBlock.split('\n')) {
+      const item = line.match(/^\s*(?:[-*+]|\d+[.)])\s+(.+)$/);
+      if (item?.[1]) failureExcerpts.push(item[1].trim());
+    }
+  }
+  return { verdict, summary, failureExcerpts };
+}
+
+function extractQaSection(text: string, key: string): string {
+  const re = new RegExp(
+    String.raw`\b${key}\b\s*[*_` + '`' + String.raw`]*\s*[:=→-]+\s*([\s\S]*?)(?:\n\s*(?:[*_]*\b(?:VERDICT|SUMMARY|FAILURES)\b|` + '```' + String.raw`)|$)`,
+    'i',
+  );
+  const m = text.match(re);
+  if (!m?.[1]) return '';
+  return m[1]
+    .replace(/^[*_`"'\s]+/, '')
+    .replace(/[*_`"'\s]+$/, '')
+    .trim();
+}
+
 function extractVerdictSection(text: string, key: string): string {
   const re = new RegExp(
     String.raw`\b${key}\b\s*[*_` + '`' + String.raw`]*\s*[:=→-]+\s*([\s\S]*?)(?:\n\s*(?:[*_]*\b(?:VERDICT|REASONING|REQUESTED_CHANGES)\b|` + '```' + String.raw`)|$)`,
