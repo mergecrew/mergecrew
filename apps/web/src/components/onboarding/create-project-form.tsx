@@ -50,7 +50,7 @@ export function CreateProjectForm({
             setName(v);
             if (!slugTouched) setSlug(slugify(v));
           }}
-          placeholder="Control Plane"
+          placeholder="Acme Billing"
           className="mt-1 w-full rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700"
         />
       </label>
@@ -64,7 +64,7 @@ export function CreateProjectForm({
             setSlugTouched(true);
             setSlug(slugify(e.target.value));
           }}
-          placeholder="control-plane"
+          placeholder="acme-billing"
           className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
         />
         <span className="mt-1 block text-xs text-zinc-500">
