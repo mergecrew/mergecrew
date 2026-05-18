@@ -91,6 +91,15 @@ export const TimelineEventType = z.enum([
   // autonomous-improvement loop: deploy → error → queued intent →
   // tomorrow's Discovery picks it up.
   'BUG_TRIAGE_REPORT',
+  // DocWriter agent report (#525, V2.af roster). Fires after the
+  // DocWriter stage decides whether the run's changeset needs a
+  // docs follow-up. Payload carries `{ verdict, filesChanged,
+  // summary }`; verdict is `docs_updated` when files were edited
+  // on a sibling commit and `no_op` when no user-facing change
+  // warranted a doc update. The actual edits live on the sibling
+  // commit the agent produced via `repo.write_file` —
+  // ensureChangesetForCommit records that separately.
+  'DOC_WRITER_REPORT',
   // Multi-agent loop-back exhaustion (#349). Fires when the reviewer
   // has requested changes more times than REVIEW_LOOP_CAP allows
   // (default 3 coder rounds). The run falls through to normal
