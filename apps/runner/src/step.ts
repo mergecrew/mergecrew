@@ -65,6 +65,11 @@ import {
 } from '@mergecrew/agent-runtime';
 import { transcriptStoreFromEnv } from '@mergecrew/transcript-store';
 import type { CancellationCoordinator } from './cancellation.js';
+import {
+  workspaceRoot as resolveWorkspaceRoot,
+  workspacePathForRun,
+  bootstrapWorkspace,
+} from './workspace.js';
 
 interface StepArgs {
   organizationId: string;
@@ -200,26 +205,96 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
       }
     : { id: 'default', name: 'default', preferenceOrder: [], capabilityRouting: {} };
 
-  // Workspace per-step. In dev defaults to a tmp dir; in prod set
+  // Per-run shared workspace. In dev defaults to a tmp dir; in prod set
   // RUNNER_WORKSPACE_ROOT to an ephemeral, writable location (e.g. the
   // container's /var/mergecrew/work mount).
   //
-  // mode 0700 because if multiple org workers ever share a host the
-  // workspace will contain decrypted secrets, repo checkouts, and tool
-  // outputs — none of which should be readable by other users on the
-  // box. `recursive: true` only sets the mode on the leaf, so we mkdir
-  // the root with the same mode first to keep the whole chain locked.
-  const workspaceRoot =
-    process.env.RUNNER_WORKSPACE_ROOT ?? path.join(process.env.TMPDIR ?? '/tmp', 'mergecrew-work');
-  await fs.mkdir(workspaceRoot, { recursive: true, mode: 0o700 });
-  const workspacePath = path.join(workspaceRoot, runId, stepId);
+  // One workspace per dailyRun — the first step in a run clones the
+  // connected repo into it; subsequent steps reuse the same working tree
+  // (so the coder sees the planner's branch, the reviewer sees the
+  // coder's diff, etc). Cleanup is run-terminal: orchestrator.completeRun
+  // and api.cancel enqueue a `runner.workspace-cleanup` job that rms the
+  // directory once the run reaches a terminal state.
+  //
+  // mode 0700: the workspace contains decrypted secrets, the repo
+  // checkout, and tool outputs — none readable to other users on the
+  // host. `recursive: true` only sets the mode on the leaf, so we mkdir
+  // the root with the same mode first to lock the whole chain.
+  await fs.mkdir(resolveWorkspaceRoot(), { recursive: true, mode: 0o700 });
+  const workspacePath = workspacePathForRun(runId);
   await fs.mkdir(workspacePath, { recursive: true, mode: 0o700 });
 
-  // VCS adapter from env (only used by skills that touch the repo).
+  // VCS adapter from env (used by the workspace bootstrap below and by
+  // skills that touch the repo).
   const ghCreds = getGitHubAppCredentials();
   let vcs: VcsProvider | undefined;
   if (ghCreds) {
     vcs = new GitHubProvider(ghCreds);
+  }
+
+  // Workspace bootstrap (idempotent, runs once per dailyRun). The first
+  // step to land for this run finds an empty workspace and clones the
+  // connected repo; subsequent steps see `.git` and skip. Fail fast when
+  // there is no ConnectedRepo (or no GitHub App creds) — an agent can't
+  // plan or code against a phantom repo, and silently planning over an
+  // empty workspace is what produced the original "0 paths" symptom.
+  //
+  // Stub / demo mode (#191, #374) short-circuits the LLM and returns
+  // canned outcomes inside `runAgentStep`. Those paths don't read the
+  // workspace at all, so the bootstrap (which requires a real
+  // ConnectedRepo + GitHub App creds) is bypassed. This is what keeps
+  // the e2e-loop smoke test and the demo-mode "Run now" button working
+  // against the seeded demo project, which has no real repo connection.
+  const stubMode =
+    process.env.MERGECREW_AGENT_STUB === '1' ||
+    process.env.MERGECREW_DEMO_MODE === '1';
+  const bootstrap = stubMode
+    ? ({ kind: 'reused' } as const)
+    : await bootstrapWorkspace({
+        workspacePath,
+        vcs,
+        fetchConnectedRepo: async () => {
+          const row = await withTenant(organizationId, (tx) =>
+            tx.connectedRepo.findUnique({ where: { projectId } }),
+          );
+          if (!row) return null;
+          return {
+            installationId: row.installationId,
+            repoId: row.repoId,
+            repoFullName: row.repoFullName,
+            defaultBranch: effectiveBaseBranch(row),
+          };
+        },
+        logger,
+      });
+  if (bootstrap.kind === 'failed') {
+    const failureReason =
+      bootstrap.reason === 'clone_failed'
+        ? `clone_failed: ${bootstrap.message.slice(0, 500)}`
+        : bootstrap.reason;
+    await withTenant(organizationId, (tx) =>
+      tx.agentStep.update({
+        where: { id: stepId },
+        data: {
+          status: 'failed',
+          failureReason,
+          finishedAt: new Date(),
+          heartbeatAt: null,
+        },
+      }),
+    );
+    await eventlog.emit({
+      organizationId,
+      projectId,
+      dailyRunId: runId,
+      workflowRunId,
+      agentStepId: stepId,
+      type: 'AGENT_STEP_FAILED',
+      actor: { kind: 'system' },
+      payload: { reason: bootstrap.reason, agentRef, message: bootstrap.message },
+    });
+    stopHeartbeat();
+    return { kind: 'failed', reason: bootstrap.reason };
   }
 
   // Deploy adapter selection: pick the dev target, decide adapter from its config.
@@ -918,8 +993,10 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     }
   }
 
-  // Cleanup workspace.
-  await fs.rm(workspacePath, { recursive: true, force: true }).catch(() => {});
+  // Workspace cleanup is run-terminal, not step-terminal — see the
+  // `runner.workspace-cleanup` worker. Subsequent steps in this run
+  // reuse the same /<workspaceRoot>/<runId>/ tree so the coder can see
+  // the planner's branch, the reviewer can see the coder's diff, etc.
 
   // Stop liveness heartbeat — the step is terminal.
   stopHeartbeat();

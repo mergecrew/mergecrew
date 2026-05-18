@@ -12,6 +12,7 @@ import { withTenant } from '@mergecrew/db';
 import { runStep } from './step.js';
 import { CancellationCoordinator } from './cancellation.js';
 import { startProbeServer } from './probe-server.js';
+import { cleanupWorkspace, WORKSPACE_CLEANUP_QUEUE } from './workspace.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
@@ -75,6 +76,20 @@ const worker = new Worker(
   { connection: conn, concurrency, autorun: true },
 );
 
+// Run-terminal workspace cleanup. The orchestrator (on done) and the API
+// (on cancel) enqueue one job per terminated run; the handler rms the
+// per-run workspace dir. Concurrency is intentionally low — these are
+// rare events and a slow rm shouldn't starve the step worker.
+const cleanupWorker = new Worker(
+  WORKSPACE_CLEANUP_QUEUE,
+  async (job: Job) => {
+    const data = job.data as { runId: string };
+    if (!data?.runId) return;
+    await cleanupWorkspace({ runId: data.runId, logger });
+  },
+  { connection: conn, concurrency: 2, autorun: true },
+);
+
 worker.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, err: String(err?.message ?? err) }, 'step worker failed');
   // If runStep threw before reaching its terminal cleanup, the heartbeat
@@ -114,6 +129,7 @@ async function shutdown() {
   probeServer.close();
   await Promise.all([
     worker.close(),
+    cleanupWorker.close(),
     pubsub.close(),
     replyQueue.close(),
     fanoutQueue.close(),

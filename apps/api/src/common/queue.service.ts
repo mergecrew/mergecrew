@@ -6,6 +6,7 @@ export type QueueName =
   | 'run.due'
   | 'orchestrator.dispatch'
   | 'runner.step'
+  | 'runner.workspace-cleanup'
   | 'orchestrator.gate.resume'
   | 'orchestrator.rate-limit.resume'
   | 'webhook.inbound'

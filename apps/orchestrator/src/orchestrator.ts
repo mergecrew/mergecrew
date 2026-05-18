@@ -42,6 +42,7 @@ export class Orchestrator {
   private digestSlack: Queue;
   private digestEmail: Queue;
   private orgCapWaitQueue: Queue;
+  private workspaceCleanupQueue: Queue;
 
   private dispatchQueue: Queue;
 
@@ -52,6 +53,7 @@ export class Orchestrator {
     this.digestEmail = new Queue('digest.email', { connection: deps.connection });
     this.dispatchQueue = new Queue('orchestrator.dispatch', { connection: deps.connection });
     this.orgCapWaitQueue = new Queue('orchestrator.org-cap-wait', { connection: deps.connection });
+    this.workspaceCleanupQueue = new Queue('runner.workspace-cleanup', { connection: deps.connection });
   }
 
   // ─── 1. Run start ───────────────────────────────────────────────────────
@@ -831,6 +833,17 @@ export class Orchestrator {
       actor: { kind: 'system' },
       payload: {},
     });
+    // Run-terminal workspace cleanup. The runner's `runner.workspace-cleanup`
+    // worker rms /<workspaceRoot>/<runId>/ best-effort. Cancel/fail paths
+    // enqueue from their own call sites (api.run.cancel, etc).
+    await this.workspaceCleanupQueue
+      .add('cleanup', { runId }, { removeOnComplete: 1000, removeOnFail: 1000 })
+      .catch((err) =>
+        this.deps.logger.warn(
+          { runId, err: err?.message ?? err },
+          'workspace-cleanup: enqueue failed; workspace will leak until next sweep',
+        ),
+      );
     void telemetry.emit(organizationId, 'run.completed', { status: 'done' });
   }
 

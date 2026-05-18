@@ -63,10 +63,10 @@ Covered fully in `docs/02-architecture/03-multi-tenancy.md`. Five layers (RLS, N
 
 ## Code execution sandboxing
 
-The runner executes user-derived workloads (agent-driven file edits, test commands). Out of the box the OSS code provides per-changeset workspace isolation, per-step wall-clock and abort-signal handling, and `--ignore-scripts` defaults. Stronger containment is hosted-tier or operator-supplied:
+The runner executes user-derived workloads (agent-driven file edits, test commands). Out of the box the OSS code provides per-run workspace isolation, per-step wall-clock and abort-signal handling, and `--ignore-scripts` defaults. Stronger containment is hosted-tier or operator-supplied:
 
 - Per-step wall-clock limit (default 20 minutes) — implemented.
-- Workspace scoped to `/var/mergecrew/work/{run_id}/{cs_id}` and torn down at step end — implemented.
+- Workspace scoped to `/var/mergecrew/work/{run_id}/`, cloned at run start and torn down on terminal run state via the `runner.workspace-cleanup` queue — implemented.
 - `npm install` runs with `--ignore-scripts` by default; the agent must explicitly request scripts to run — implemented.
 
 Hosted-tier / operator-supplied (not enforced by OSS code):
