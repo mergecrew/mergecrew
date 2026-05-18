@@ -19,10 +19,13 @@
  *   7. Resolve and print the dev URL.
  *
  * Required env:
- *   GITHUB_APP_ID            — the GitHub App's numeric id
- *   GITHUB_APP_PRIVATE_KEY   — the App's PEM (literal contents, not a path)
- *   INSTALLATION_ID          — the App's installation on the test repo's org
- *   REPO_FULL_NAME           — e.g. "mergecrew/dogfood-target"
+ *   GITHUB_APP_ID                  — the GitHub App's numeric id
+ *   GITHUB_APP_PRIVATE_KEY_FILE    — path to the .pem (preferred)
+ *     OR
+ *   GITHUB_APP_PRIVATE_KEY         — the App's PEM inline (real newlines or
+ *                                    `\n`-escaped on a single line)
+ *   INSTALLATION_ID                — the App's installation on the test repo's org
+ *   REPO_FULL_NAME                 — e.g. "mergecrew/dogfood-target"
  *
  * Optional env:
  *   DEFAULT_BRANCH           — defaults to "main"
@@ -46,7 +49,7 @@
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { GitHubProvider } from '@mergecrew/adapters-vcs';
+import { GitHubProvider, requireGitHubAppCredentials } from '@mergecrew/adapters-vcs';
 import { GitHubActionsProvider } from '@mergecrew/adapters-deploy';
 
 function requireEnv(name: string): string {
@@ -59,8 +62,7 @@ function requireEnv(name: string): string {
 }
 
 async function main(): Promise<void> {
-  const appId = requireEnv('GITHUB_APP_ID');
-  const privateKey = requireEnv('GITHUB_APP_PRIVATE_KEY');
+  const ghCreds = requireGitHubAppCredentials('v0.5 dogfood smoke');
   const installationId = requireEnv('INSTALLATION_ID');
   const repoFullName = requireEnv('REPO_FULL_NAME');
   const defaultBranch = process.env.DEFAULT_BRANCH ?? 'main';
@@ -76,8 +78,8 @@ async function main(): Promise<void> {
   const branch = `mergecrew-smoke/${new Date().toISOString().replace(/[:.]/g, '-')}`;
   const correlationId = `smoke-${Date.now().toString(36)}`;
 
-  const vcs = new GitHubProvider({ appId, privateKey });
-  const deploy = new GitHubActionsProvider({ appId, privateKey });
+  const vcs = new GitHubProvider(ghCreds);
+  const deploy = new GitHubActionsProvider(ghCreds);
 
   const repoRef = { installationId, repoFullName, defaultBranch };
   const targetRef = {

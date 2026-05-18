@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { applyGraphEdits, type GraphEdit } from '@mergecrew/config-yaml';
-import { GitHubProvider } from '@mergecrew/adapters-vcs';
+import { GitHubProvider, getGitHubAppCredentials } from '@mergecrew/adapters-vcs';
 import { effectiveBaseBranch } from '@mergecrew/db';
 import { NotFoundError, ValidationError } from '@mergecrew/domain';
 import { PrismaService } from '../../common/prisma.service.js';
@@ -72,16 +72,14 @@ export class LifecyclePrService {
         `lifecycle PRs only support github today; this repo uses ${repo.vcsProvider}`,
       );
     }
-    if (!process.env.GITHUB_APP_ID || !process.env.GITHUB_APP_PRIVATE_KEY) {
+    const creds = getGitHubAppCredentials();
+    if (!creds) {
       throw new ValidationError(
         'lifecycle PRs require GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY',
       );
     }
 
-    const vcs = new GitHubProvider({
-      appId: process.env.GITHUB_APP_ID,
-      privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
-    });
+    const vcs = new GitHubProvider(creds);
     const baseBranch = effectiveBaseBranch(repo);
     const repoRef = {
       installationId: repo.installationId,
@@ -169,13 +167,11 @@ export class LifecyclePrService {
     if (!project) throw new NotFoundError('project not found');
     const repo = project.connectedRepo;
     if (!repo || repo.vcsProvider !== 'github') return { baseHash: null };
-    if (!process.env.GITHUB_APP_ID || !process.env.GITHUB_APP_PRIVATE_KEY) {
+    const creds = getGitHubAppCredentials();
+    if (!creds) {
       return { baseHash: null };
     }
-    const vcs = new GitHubProvider({
-      appId: process.env.GITHUB_APP_ID,
-      privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
-    });
+    const vcs = new GitHubProvider(creds);
     try {
       const baseBranch = effectiveBaseBranch(repo);
       const file = await vcs.getFileAt(

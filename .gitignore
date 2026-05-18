@@ -8,6 +8,8 @@ coverage/
 .env
 .env.local
 .env.*.local
+secrets/
+*.pem
 *.log
 .DS_Store
 .idea/

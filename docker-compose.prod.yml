@@ -43,6 +43,10 @@ services:
   # `resources.limits` block in the relevant manifest. Same numbers carry
   # over directly.
 
+  # `./secrets:/app/secrets:ro` is mounted on every service that constructs a
+  # `GitHubProvider` — drop the App's `.pem` there and set
+  # `GITHUB_APP_PRIVATE_KEY_FILE=/app/secrets/github-app.pem` in `.env` to
+  # avoid pasting a multi-line PEM into env vars.
   api:
     build:
       context: .
@@ -56,6 +60,8 @@ services:
     networks: [internal]
     ports:
       - '127.0.0.1:${API_HOST_PORT:-4000}:4000'
+    volumes:
+      - ./secrets:/app/secrets:ro
     depends_on:
       redis: { condition: service_healthy }
     deploy:
@@ -75,6 +81,8 @@ services:
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     networks: [internal]
+    volumes:
+      - ./secrets:/app/secrets:ro
     depends_on:
       redis: { condition: service_healthy }
     deploy:
@@ -94,6 +102,8 @@ services:
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     networks: [internal]
+    volumes:
+      - ./secrets:/app/secrets:ro
     depends_on:
       redis: { condition: service_healthy }
     deploy:

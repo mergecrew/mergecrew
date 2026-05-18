@@ -1,6 +1,6 @@
 import { Controller, ForbiddenException, Headers, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
-import { GitHubProvider } from '@mergecrew/adapters-vcs';
+import { GitHubProvider, getGitHubAppCredentials } from '@mergecrew/adapters-vcs';
 import { QueueService } from '../../common/queue.service.js';
 
 @Controller('v1/webhooks/github')
@@ -11,13 +11,11 @@ export class GitHubWebhookController {
 
   private gh(): GitHubProvider {
     if (this._gh) return this._gh;
-    if (!process.env.GITHUB_APP_ID || !process.env.GITHUB_APP_PRIVATE_KEY) {
+    const creds = getGitHubAppCredentials();
+    if (!creds) {
       throw new ForbiddenException('GitHub App not configured');
     }
-    this._gh = new GitHubProvider({
-      appId: process.env.GITHUB_APP_ID,
-      privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
-    });
+    this._gh = new GitHubProvider(creds);
     return this._gh;
   }
 

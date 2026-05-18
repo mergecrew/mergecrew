@@ -36,7 +36,7 @@ import {
   type LlmProfile,
 } from '@mergecrew/llm';
 import { stockSkills, buildHttpSkill, SkillExecutor, type SkillExecutionContext } from '@mergecrew/skills';
-import { GitHubProvider, type VcsProvider } from '@mergecrew/adapters-vcs';
+import { GitHubProvider, getGitHubAppCredentials, type VcsProvider } from '@mergecrew/adapters-vcs';
 import {
   AwsDirectProvider,
   ExternalCiProvider,
@@ -216,12 +216,10 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   await fs.mkdir(workspacePath, { recursive: true, mode: 0o700 });
 
   // VCS adapter from env (only used by skills that touch the repo).
+  const ghCreds = getGitHubAppCredentials();
   let vcs: VcsProvider | undefined;
-  if (process.env.GITHUB_APP_ID && process.env.GITHUB_APP_PRIVATE_KEY) {
-    vcs = new GitHubProvider({
-      appId: process.env.GITHUB_APP_ID,
-      privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
-    });
+  if (ghCreds) {
+    vcs = new GitHubProvider(ghCreds);
   }
 
   // Deploy adapter selection: pick the dev target, decide adapter from its config.
@@ -233,11 +231,8 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     // No vendor token / API call — adapter is a passthrough that returns
     // the configured URL. Always selectable; needs no env (#467).
     deploy = new ExternalCiProvider();
-  } else if (dt?.adapterId === 'github-actions' && process.env.GITHUB_APP_ID && process.env.GITHUB_APP_PRIVATE_KEY) {
-    deploy = new GitHubActionsProvider({
-      appId: process.env.GITHUB_APP_ID,
-      privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
-    });
+  } else if (dt?.adapterId === 'github-actions' && ghCreds) {
+    deploy = new GitHubActionsProvider(ghCreds);
   } else if (dt?.adapterId === 'vercel' && process.env.VERCEL_TOKEN) {
     deploy = new VercelProvider({ token: process.env.VERCEL_TOKEN });
   } else if (dt?.adapterId === 'netlify' && process.env.NETLIFY_TOKEN) {

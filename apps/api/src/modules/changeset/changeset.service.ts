@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { NotFoundError, GateRequiredError, ValidationError, type DecisionKind } from '@mergecrew/domain';
-import { GitHubProvider, type PullRequestFile } from '@mergecrew/adapters-vcs';
+import { GitHubProvider, getGitHubAppCredentials, type PullRequestFile } from '@mergecrew/adapters-vcs';
 import { effectiveBaseBranch } from '@mergecrew/db';
 import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
@@ -172,13 +172,11 @@ export class ChangesetService {
     if (!repo) {
       throw new ValidationError('project has no connected repo — cannot fetch diff');
     }
-    if (!process.env.GITHUB_APP_ID || !process.env.GITHUB_APP_PRIVATE_KEY) {
+    const creds = getGitHubAppCredentials();
+    if (!creds) {
       throw new ValidationError('GitHub App not configured on this server');
     }
-    const provider = new GitHubProvider({
-      appId: process.env.GITHUB_APP_ID,
-      privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
-    });
+    const provider = new GitHubProvider(creds);
     const files = await provider.getPullRequestFiles(
       {
         installationId: repo.installationId,
@@ -232,13 +230,11 @@ export class ChangesetService {
     if (!repo) {
       throw new ValidationError('project has no connected repo — cannot open revert PR');
     }
-    if (!process.env.GITHUB_APP_ID || !process.env.GITHUB_APP_PRIVATE_KEY) {
+    const creds = getGitHubAppCredentials();
+    if (!creds) {
       throw new ValidationError('GitHub App not configured on this server');
     }
-    const provider = new GitHubProvider({
-      appId: process.env.GITHUB_APP_ID,
-      privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
-    });
+    const provider = new GitHubProvider(creds);
     const repoRef = {
       installationId: repo.installationId,
       repoId: repo.repoId ?? undefined,
