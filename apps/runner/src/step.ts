@@ -756,7 +756,14 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   ) {
     const parsed = parseReviewerVerdict(outcome.output);
     const verdict = parsed?.verdict ?? 'request_changes';
-    const reasoning = parsed?.reasoning ?? 'reviewer output did not match the expected verdict shape';
+    // When the parser bails the safe default is `request_changes`, but
+    // returning an empty reasoning makes the coder retry blind. Pass the
+    // raw reviewer text through (truncated) so the retry has substance
+    // to work from — without it the review→code loop dead-spirals at
+    // the cap with no actual feedback.
+    const reasoning =
+      parsed?.reasoning ??
+      `reviewer output did not match the expected verdict shape; raw output below:\n\n${outcome.output.slice(0, 2000)}`;
     const requestedChanges = parsed?.requestedChanges ?? [];
     await withTenant(organizationId, (tx) =>
       tx.agentStep.update({
