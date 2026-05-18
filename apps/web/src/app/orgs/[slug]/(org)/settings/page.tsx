@@ -427,6 +427,10 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
           ))}
         </ul>
       </Card>
+      {/* `id="llm"` is the anchor target for cross-page deep links
+          (#498) — project settings points operators here to find
+          model + API key controls, since LLM providers are org-shared. */}
+      <div id="llm" className="scroll-mt-6">
       <LlmProvidersCard
         providers={providers.items as any}
         canEdit={canEdit}
@@ -567,6 +571,7 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
           }
         }}
       />
+      </div>
 
       <Card>
         <div className="flex items-baseline justify-between">
