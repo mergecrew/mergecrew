@@ -62,6 +62,7 @@ import {
   BACKEND_ENGINEER_AGENT_KIND,
   FRONTEND_ENGINEER_AGENT_KIND,
   QA_AGENT_KIND,
+  SRE_AGENT_KIND,
   PLANNER_DISCOVERY_SYSTEM_PROMPT,
   parsePlanPaths,
   parsePlannerDirections,
@@ -1054,7 +1055,24 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   // After PRs are open: trigger the dev-target deploy for each changeset
   // that doesn't already have one. Same best-effort posture as PR opening.
   // Skipped for dry-run runs (no PR means nothing to deploy).
-  if (!dryRun && deploy && dt && outcome.kind !== 'failed' && outcome.kind !== 'budget_exhausted') {
+  //
+  // Lifecycles with an SRE agent (#521, V2.af roster) own the dev-deploy
+  // step explicitly — the SRE post-process below invokes the same helper
+  // with the SRE step id stamped on the agent_steps.output row. We skip
+  // the auto-trigger here so we don't double-deploy or race with the
+  // SRE step's own poll. Careful / fast profiles (no SRE in the
+  // lifecycle) fall through to the original behavior.
+  const hasSreInLifecycle = Object.values(cfg.agents ?? {}).some(
+    (a) => (a as AgentDefinition).kind === SRE_AGENT_KIND,
+  );
+  if (
+    !dryRun &&
+    !hasSreInLifecycle &&
+    deploy &&
+    dt &&
+    outcome.kind !== 'failed' &&
+    outcome.kind !== 'budget_exhausted'
+  ) {
     await triggerPendingDevDeploys({
       organizationId,
       projectId,
@@ -1065,6 +1083,55 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
       eventlog,
       logger,
     });
+  }
+
+  // SRE post-process (#521, V2.af roster). On a completed SRE step,
+  // invoke the same `triggerPendingDevDeploys` helper the careful/fast
+  // profiles run from the auto-trigger above, then persist the
+  // resulting deployment shape on the SRE step's output so the run-
+  // detail UI + downstream Observation agent can read what deployed.
+  // Best-effort: a deploy failure logs + leaves the changeset's
+  // status untouched, mirroring the existing helper's behavior.
+  if (
+    agentDef.kind === SRE_AGENT_KIND &&
+    outcome.kind === 'completed' &&
+    !dryRun &&
+    deploy &&
+    dt
+  ) {
+    await triggerPendingDevDeploys({
+      organizationId,
+      projectId,
+      runId,
+      workflowRunId,
+      deploy,
+      deployTarget: dt,
+      eventlog,
+      logger,
+    });
+    const dep = await withTenant(organizationId, (tx) =>
+      tx.deploy.findFirst({
+        where: { projectId, changeset: { dailyRunId: runId } },
+        orderBy: { startedAt: 'desc' },
+        select: { url: true, status: true, deployTarget: { select: { adapterId: true } } },
+      }),
+    );
+    if (dep) {
+      await withTenant(organizationId, (tx) =>
+        tx.agentStep.update({
+          where: { id: stepId },
+          data: {
+            output: {
+              deployment: {
+                adapterId: dep.deployTarget.adapterId,
+                url: dep.url,
+                status: dep.status,
+              },
+            } as any,
+          },
+        }),
+      );
+    }
   }
 
   // Persist the agent transcript to the configured store (#4). Honored
@@ -2141,6 +2208,42 @@ async function synthesizeAgentInput(
       agentRef,
       instruction: `You are the ${role}. Implement the ${portion} portion of the supplied spec. The ${sibling} is running in parallel — leave ${siblingScope} to them.`,
       spec,
+    };
+  }
+
+  // SRE agent input (#521, V2.af roster). SRE moves the QA-passed
+  // changeset to the dev environment via the existing DeployProvider
+  // adapter (the dev-deploy code lives in `triggerPendingDevDeploys`
+  // below — kept as the implementation the SRE post-process calls).
+  // Input bundles the in-flight changeset (id, PR number, branch) +
+  // the project's configured dev deploy target so the agent can
+  // reference adapter/URL without re-querying.
+  if (agentDef.kind === SRE_AGENT_KIND) {
+    const cs = await withTenant(organizationId, (tx) =>
+      tx.changeset.findFirst({
+        where: {
+          projectId,
+          dailyRunId: runId,
+          prNumber: { not: null },
+          status: { in: ['pr_open', 'testing', 'dev_deployed'] },
+        },
+        orderBy: { updatedAt: 'desc' },
+        select: { id: true, title: true, branch: true, prNumber: true, prUrl: true, status: true },
+      }),
+    );
+    const dt = await withTenant(organizationId, (tx) =>
+      tx.deployTarget.findFirst({
+        where: { projectId, kind: 'dev' },
+        select: { id: true, adapterId: true, kind: true },
+      }),
+    );
+    return {
+      runId,
+      agentRef,
+      instruction:
+        'You are the SRE agent. Trigger the dev deploy for the supplied changeset via `deploy.dev`, poll `deploy.status` until terminal, then post the dev URL as a PR comment via `repo.git.comment_pr`. On failure, capture `deploy.logs` (last 200 lines) and comment them on the PR so a human can debug. Do not promote to production.',
+      changeset: cs,
+      deployTarget: dt,
     };
   }
 
