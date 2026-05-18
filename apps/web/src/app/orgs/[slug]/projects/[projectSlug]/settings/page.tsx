@@ -154,6 +154,21 @@ export default async function ProjectSettings({
     <main className="mx-auto max-w-3xl space-y-6 p-6">
       <h1 className="text-xl font-semibold">Settings</h1>
 
+      {/* Pointer to org-level LLM (#498). Operators landed here looking
+          for model + API key config; without this they couldn't tell
+          that providers / profiles are org-scoped and live on a
+          different page. */}
+      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+        Looking for model + API key config? LLM providers and profiles
+        are org-shared.{' '}
+        <a
+          href={`/orgs/${slug}/settings#llm`}
+          className="text-accent underline decoration-dotted"
+        >
+          Manage at the org level →
+        </a>
+      </p>
+
       <Section
         title="General"
         description="Identity of the project. The description is shown to agents during runs and to humans on the project overview."
