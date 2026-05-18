@@ -17,3 +17,4 @@ export * from './graph-profile.js';
 export * from './stock-agents.js';
 export * from './lifecycle-templates.js';
 export * from './tag-pattern.js';
+export * from './default-mergecrew-yaml.js';

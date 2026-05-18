@@ -38,7 +38,12 @@ function isPlausibleCron(s: string): boolean {
   return parts.length === 5 || parts.length === 6;
 }
 
-const DEFAULT_STOCK_TEMPLATE_ID = 'generic-careful';
+// Default auto-applied template for new projects (#480, flipped for the
+// roster restoration in #515). `roster` ships the full Discovery → PM →
+// Implementation → QA → Deploy → Observation lifecycle. Operators who
+// want the simpler 3-agent loop can still pick `generic-careful` or any
+// stack-specific careful template from the picker.
+const DEFAULT_STOCK_TEMPLATE_ID = 'roster';
 
 @Injectable()
 export class ProjectService {

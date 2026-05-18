@@ -21,7 +21,9 @@
  * lifecycle storage column.
  */
 import type { z } from 'zod';
-import type { MergecrewConfig } from './lifecycle.js';
+import { parse as parseYaml } from 'yaml';
+import { MergecrewConfig } from './lifecycle.js';
+import { DEFAULT_MERGECREW_YAML } from './default-mergecrew-yaml.js';
 
 /**
  * Input-side type — fields with zod defaults can be omitted. Lets
@@ -402,7 +404,38 @@ agents:
     maxToolCallsPerStep: 8
 `;
 
+// ---------------------------------------------------------------------------
+// roster (#515)
+//
+// The full 8-stage / 10-agent lifecycle Mergecrew was originally
+// designed around: Discovery → PM → Implementation (BackendEngineer +
+// FrontendEngineer) → QA → DeployDev (SRE) → Observation (Observation,
+// DesignReviewer, BugTriage, DocWriter). Reads directly from
+// `DEFAULT_MERGECREW_YAML` (`default-mergecrew-yaml.ts`) so the YAML
+// stays the single source of truth — the parsed form is derived at
+// module load via `MergecrewConfig.parse(parseYaml(...))`.
+//
+// Picked as the auto-applied default for new projects (`#480` →
+// `DEFAULT_STOCK_TEMPLATE_ID` in `apps/api/src/modules/project/project.service.ts`)
+// — replaces the legacy `generic-careful` 3-agent default.
+// ---------------------------------------------------------------------------
+
+const ROSTER_YAML = DEFAULT_MERGECREW_YAML;
+// Parse + validate at module load. A break in `DEFAULT_MERGECREW_YAML`
+// fails the import — caught by every consumer's first test run rather
+// than surfacing as a runtime crash on a real run.
+const ROSTER_PARSED = MergecrewConfig.parse(parseYaml(ROSTER_YAML)) as MergecrewConfigInput;
+
 export const STOCK_LIFECYCLE_TEMPLATES: StockLifecycleTemplate[] = [
+  {
+    id: 'roster',
+    name: 'Full roster (Discovery → PM → Implementation → QA → Deploy → Observation)',
+    description:
+      "The original mergecrew design: 10 specialized agents across 6 stages. Discovery surfaces what to work on; PM scopes specs; Backend + Frontend engineers implement in parallel; QA verifies; SRE deploys to dev; the observation fan-out reports back. Pick this if you want the full vision; pick a careful-flow template below for the simpler 3-agent loop.",
+    stack: ['Any'],
+    sourceYaml: ROSTER_YAML,
+    parsed: ROSTER_PARSED,
+  },
   {
     id: 'generic-careful',
     name: 'Generic (careful flow)',
