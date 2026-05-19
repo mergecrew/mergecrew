@@ -32,10 +32,10 @@ export function buildSandboxDriver(opts: SandboxFactoryOpts = {}): SandboxDriver
     case 'process':
       if (opts.logger) {
         opts.logger.warn(
-          'runner is running in unsandboxed mode (process driver) — build steps execute on the host with the supervisor environment. Set RUNNER_SANDBOX=docker for the container-per-run driver. See docs/02-architecture/13-runner-isolation.md',
+          'runner is running in unsandboxed mode (process driver) — build steps execute on the host. Env scrub is on (#561), so secrets in the supervisor process.env do not flow to subprocesses. For full isolation set RUNNER_SANDBOX=docker. See docs/02-architecture/13-runner-isolation.md',
         );
       }
-      return new ProcessDriver();
+      return new ProcessDriver({ logger: opts.logger });
     case 'docker':
       return new DockerDriver({
         defaultImage: opts.defaultImage,

@@ -10,6 +10,7 @@ import type {
   SandboxHandle,
   SandboxStartOpts,
 } from './types.js';
+import { classifySensitiveKey } from './env.js';
 
 /**
  * In-container path the host workspace bind-mounts to. Stable across
@@ -108,7 +109,19 @@ export class DockerDriver implements SandboxDriver {
   async exec(handle: SandboxHandle, opts: ExecOpts): Promise<ExecResult> {
     const args = ['exec'];
     if (opts.env) {
+      // docker exec doesn't inherit the supervisor process.env (it
+      // starts from the container's image-supplied env), so the env
+      // scrub (#561) is structural here. We still warn when a caller
+      // explicitly passes a sensitive-prefix key — the supervisor
+      // might be doing it intentionally, but it should be visible.
       for (const [k, v] of Object.entries(opts.env)) {
+        const prefix = classifySensitiveKey(k);
+        if (prefix) {
+          this.logger?.warn(
+            'sandbox env contains a sensitive prefix — verify this is project-scoped, not supervisor-scope',
+            { key: k, prefix, sandbox: handle.id },
+          );
+        }
         args.push('-e', `${k}=${v}`);
       }
     }
