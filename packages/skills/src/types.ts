@@ -27,6 +27,25 @@ export interface SkillExecutionContext {
   agentStepId?: string;
   workspacePath?: string;
   abortSignal: AbortSignal;
+  /**
+   * Agent kind making the call (#581). Used by the SkillExecutor's
+   * per-agent allowlist gate. Optional for back-compat — when absent
+   * the gate is bypassed (V0 single-agent path).
+   */
+  agentKind?: string;
+  /**
+   * Skill allowlist for this agent kind (#581 / #554 T-5). Sourced
+   * from `AgentDefinition.skills`. Empty array = no skills allowed
+   * for this kind; undefined = no allowlist enforced (back-compat).
+   */
+  allowedSkills?: readonly string[];
+  /**
+   * Signed call-token for high-impact skills (#581). Minted by the
+   * runner via the policy engine before dispatch; the executor
+   * verifies. Required for skills in HIGH_IMPACT_SKILLS when a
+   * PolicyEngine is configured on the executor.
+   */
+  callToken?: string;
   logger: { info: (m: string, meta?: any) => void; warn: (m: string, meta?: any) => void; error: (m: string, meta?: any) => void };
   emit?: (kind: string, payload: Record<string, unknown>) => Promise<void>;
   /** Adapters injected at construction time. */
