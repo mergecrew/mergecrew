@@ -51,10 +51,18 @@ const driverFactoryOpts = {
     | 'default'
     | 'in-cluster',
   k8sDefaultImage: process.env.RUNNER_K8S_DEFAULT_IMAGE,
+  fargateRegion: process.env.RUNNER_FARGATE_REGION,
+  fargateCluster: process.env.RUNNER_FARGATE_CLUSTER,
+  fargateTaskDefinition: process.env.RUNNER_FARGATE_TASK_DEFINITION,
+  fargateSubnets: process.env.RUNNER_FARGATE_SUBNETS,
+  fargateSecurityGroups: process.env.RUNNER_FARGATE_SG,
+  fargateDefaultImage: process.env.RUNNER_FARGATE_DEFAULT_IMAGE,
   logger,
 };
-const isK8s = /^(kubernetes|k8s)$/.test((process.env.RUNNER_SANDBOX ?? '').toLowerCase());
-const driverPromise: Promise<ReturnType<typeof buildSandboxDriver>> = isK8s
+const needsAsync = /^(kubernetes|k8s|fargate)$/.test(
+  (process.env.RUNNER_SANDBOX ?? '').toLowerCase(),
+);
+const driverPromise: Promise<ReturnType<typeof buildSandboxDriver>> = needsAsync
   ? buildSandboxDriverAsync(driverFactoryOpts)
   : Promise.resolve(buildSandboxDriver(driverFactoryOpts));
 

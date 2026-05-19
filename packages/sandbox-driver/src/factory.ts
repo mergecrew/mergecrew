@@ -3,8 +3,10 @@ import { ProcessDriver } from './process-driver.js';
 import { DockerDriver } from './docker-driver.js';
 import { K8sDriver } from './k8s-driver.js';
 import { buildK8sApiClient } from './k8s-api-client.js';
+import { FargateDriver } from './fargate-driver.js';
+import { buildFargateApiClient } from './fargate-api-client.js';
 
-export type SandboxMode = 'process' | 'docker' | 'kubernetes';
+export type SandboxMode = 'process' | 'docker' | 'kubernetes' | 'fargate';
 
 export interface SandboxFactoryOpts {
   /** Value of process.env.RUNNER_SANDBOX. Defaults to `process`. */
@@ -25,6 +27,18 @@ export interface SandboxFactoryOpts {
   k8sAuth?: 'default' | 'in-cluster';
   /** Image used by the K8sDriver when no per-project image is set. From RUNNER_K8S_DEFAULT_IMAGE. */
   k8sDefaultImage?: string;
+  /** AWS region for the FargateDriver. From RUNNER_FARGATE_REGION. */
+  fargateRegion?: string;
+  /** Fargate cluster name/ARN. From RUNNER_FARGATE_CLUSTER. */
+  fargateCluster?: string;
+  /** Task definition family or ARN. From RUNNER_FARGATE_TASK_DEFINITION. */
+  fargateTaskDefinition?: string;
+  /** Comma-separated subnet IDs. From RUNNER_FARGATE_SUBNETS. */
+  fargateSubnets?: string;
+  /** Comma-separated security group IDs. From RUNNER_FARGATE_SG. */
+  fargateSecurityGroups?: string;
+  /** Default image for Fargate sandboxes. From RUNNER_FARGATE_DEFAULT_IMAGE. */
+  fargateDefaultImage?: string;
   logger?: {
     info: (msg: string, meta?: any) => void;
     warn: (msg: string, meta?: any) => void;
@@ -55,7 +69,32 @@ export async function buildSandboxDriverAsync(opts: SandboxFactoryOpts = {}): Pr
       logger: opts.logger,
     });
   }
+  if (raw === 'fargate') {
+    if (!opts.fargateRegion || !opts.fargateCluster || !opts.fargateTaskDefinition || !opts.fargateSubnets) {
+      throw new Error(
+        'RUNNER_FARGATE_REGION, RUNNER_FARGATE_CLUSTER, RUNNER_FARGATE_TASK_DEFINITION and RUNNER_FARGATE_SUBNETS are required when RUNNER_SANDBOX=fargate',
+      );
+    }
+    const api = await buildFargateApiClient({ region: opts.fargateRegion });
+    opts.logger?.info(
+      `sandbox driver: fargate (cluster=${opts.fargateCluster})`,
+      { event: 'runner.sandbox_mode', mode: 'fargate' },
+    );
+    return new FargateDriver({
+      api,
+      cluster: opts.fargateCluster,
+      taskDefinition: opts.fargateTaskDefinition,
+      subnets: splitCsv(opts.fargateSubnets),
+      securityGroups: splitCsv(opts.fargateSecurityGroups ?? ''),
+      defaultImage: opts.fargateDefaultImage ?? opts.defaultImage,
+      logger: opts.logger,
+    });
+  }
   return buildSandboxDriver(opts);
+}
+
+function splitCsv(v: string): string[] {
+  return v.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
 }
 
 export function buildSandboxDriver(opts: SandboxFactoryOpts = {}): SandboxDriver {
@@ -63,6 +102,11 @@ export function buildSandboxDriver(opts: SandboxFactoryOpts = {}): SandboxDriver
   if (raw === 'kubernetes' || raw === 'k8s') {
     throw new Error(
       'RUNNER_SANDBOX=kubernetes requires buildSandboxDriverAsync() (loads @kubernetes/client-node lazily).',
+    );
+  }
+  if (raw === 'fargate') {
+    throw new Error(
+      'RUNNER_SANDBOX=fargate requires buildSandboxDriverAsync() (loads @aws-sdk/client-ecs lazily).',
     );
   }
   switch (raw) {
@@ -107,7 +151,7 @@ export function buildSandboxDriver(opts: SandboxFactoryOpts = {}): SandboxDriver
       });
     default:
       throw new Error(
-        `RUNNER_SANDBOX value not recognized: "${raw}". Expected one of: process, docker, kubernetes.`,
+        `RUNNER_SANDBOX value not recognized: "${raw}". Expected one of: process, docker, kubernetes, fargate.`,
       );
   }
 }
