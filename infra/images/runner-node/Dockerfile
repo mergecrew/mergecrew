@@ -30,12 +30,13 @@ RUN apt-get update \
         tini \
     && rm -rf /var/lib/apt/lists/*
 
-# mise (polyglot tool-version manager). Installed system-wide so the
-# unprivileged sandbox user can invoke it without write access to
-# /usr/local. Phase 2 (#568) wires `mise install` into the workspace
-# bootstrap so `.tool-versions` / `.mise.toml` is honored.
+# mise (polyglot tool-version manager). Uses the official multi-arch
+# installer so amd64 + arm64 image builds both succeed. Phase 2 (#568)
+# wires `mise install` into the workspace bootstrap so .tool-versions /
+# .mise.toml is honored.
 ENV MISE_VERSION=${MISE_VERSION}
-RUN curl -fsSL "https://github.com/jdx/mise/releases/download/${MISE_VERSION}/mise-${MISE_VERSION}-linux-x64" -o /usr/local/bin/mise \
+RUN curl -fsSL https://mise.run | MISE_VERSION="${MISE_VERSION}" sh \
+    && mv /root/.local/bin/mise /usr/local/bin/mise \
     && chmod +x /usr/local/bin/mise \
     && mise --version
 

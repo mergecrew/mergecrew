@@ -9,13 +9,13 @@ When `RUNNER_SANDBOX=docker`, every `runner.step` BullMQ job ends up running its
 
 ## Available images
 
-| Image | Status | Source |
+| Image | Stack | Source |
 | --- | --- | --- |
-| `ghcr.io/mergecrew/runner-node:20` | ✅ shipped (#558) | `infra/images/runner-node/Dockerfile` |
-| `ghcr.io/mergecrew/runner-python:3.12` | ⏳ planned (#567 / Phase 2) | — |
-| `ghcr.io/mergecrew/runner-java:21` | ⏳ planned (#567 / Phase 2) | — |
-| `ghcr.io/mergecrew/runner-go:1.22` | ⏳ planned (#567 / Phase 2) | — |
-| `ghcr.io/mergecrew/runner-polyglot:lts` | ⏳ planned (#567 / Phase 2) | — |
+| `ghcr.io/mergecrew/runner-node:20` | Node 20 | `infra/images/runner-node/Dockerfile` |
+| `ghcr.io/mergecrew/runner-python:3.12` | Python 3.12 + uv + poetry + ruff + mypy + pytest + black | `infra/images/runner-python/Dockerfile` |
+| `ghcr.io/mergecrew/runner-go:1.22` | Go 1.22 + golangci-lint | `infra/images/runner-go/Dockerfile` |
+| `ghcr.io/mergecrew/runner-java:21` | Temurin 21 + Maven 3.9 + Gradle 8 | `infra/images/runner-java/Dockerfile` |
+| `ghcr.io/mergecrew/runner-polyglot:lts` | Node 20 + Python (uv / poetry / ruff / mypy / pytest) preinstalled; Go / Java available via mise + `.tool-versions` | `infra/images/runner-polyglot/Dockerfile` |
 
 ## The contract every workspace image must meet
 
@@ -26,7 +26,10 @@ These are checked in CI; an image build that violates any of them fails to publi
 - **Required tools.** `bash`, `git`, `curl`, `ca-certificates`, `tini`, and `mise` are present on `$PATH`. Build skills assume `git`; `tini` reaps zombies under the driver's sleep-loop entrypoint; `mise` (#568) honors `.tool-versions`.
 - **No secrets.** The image cannot ship a `.npmrc` with a token, an SSH key, a service-account JSON, etc. The CI build runs in a clean env; runtime secrets come from the per-project `ProjectSecret` rows the supervisor injects via `--env` at exec time.
 - **Read-only-root tolerant.** The driver mounts `/` read-only and provides tmpfs at `/tmp` and `/home/mergecrew`. The image must run without writing outside those mounts and `/workspace`.
-- **Size.** ≤ 250 MB compressed for stack-specific images, ≤ 1.5 GB for `runner-polyglot`.
+- **Size.** Per-image budgets are enforced in CI:
+  - `runner-node` ≤ 250 MB compressed
+  - `runner-python` / `runner-go` / `runner-java` ≤ 800 MB compressed
+  - `runner-polyglot` ≤ 1.5 GB compressed
 - **Entrypoint is `tini --`.** The driver overrides `CMD` with `sh -c 'while true; do sleep 3600; done'` so multiple `docker exec`s share one container.
 
 ## Publishing
