@@ -80,7 +80,7 @@ docker run --rm -it --user 1001:1001 mergecrew/runner-node:dev sh -c 'id && comm
 
 The CI contract checks above are reasonable smoke tests to run locally.
 
-## BYO images (Phase 3)
+## BYO images (#571)
 
 A project can replace the stock image entirely with `mergecrew.yaml`:
 
@@ -89,7 +89,45 @@ runner:
   image: ghcr.io/acme/internal-ci:v3
 ```
 
-Custom images must meet the same contract (uid 1001 user, `/workspace` writable, required tools present). The supervisor validates them lazily on the first run; failures surface as `config_invalid` before any LLM tokens are spent. See #571.
+### Contract
+
+The supervisor probes the image on first use and fails the step with `config_invalid` if any of these are missing:
+
+- **uid 1001** is the default user. `docker run <image> id -u` returns `1001`.
+- **`/workspace`** exists and is writable by uid 1001.
+- **`bash`, `git`, `tini`** are present on `$PATH`.
+
+The probe runs once per (image, supervisor) — successful probes are cached on the host. Violations surface as a structured list in the step's failureReason field so operators see the exact gap rather than a downstream EACCES.
+
+Minimum-viable BYO Dockerfile (matching the contract):
+
+```dockerfile
+FROM your-base-image
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash ca-certificates curl git tini \
+ && rm -rf /var/lib/apt/lists/* \
+ && groupadd --system --gid 1001 mergecrew \
+ && useradd --system --uid 1001 --gid 1001 \
+       --no-create-home --shell /bin/bash mergecrew \
+ && mkdir -p /workspace \
+ && chown 1001:1001 /workspace \
+ && chmod 0775 /workspace
+USER mergecrew
+WORKDIR /workspace
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["bash"]
+```
+
+### Private registry credentials
+
+The docker driver uses the supervisor host's `~/.docker/config.json` for `docker pull` authentication. Two routes:
+
+1. **Operator-managed `docker login`.** Run `docker login ghcr.io` (or your registry) as the supervisor user before the first run uses the image. Credentials persist in the supervisor's home; the per-run sandbox never sees them.
+2. **`DOCKER_CONFIG` env on the supervisor.** Point at a directory containing a pre-populated `config.json`. Useful for k8s deploys that mount the docker config from a Secret.
+
+The supervisor's `RUNNER_DOCKER_BIN` env (`docker` or `podman`) is honored by both routes. **No private-registry credentials are ever passed to the per-run sandbox** — the pull happens on the host, the run inherits the resulting layer cache only.
+
+A first-class `ProjectSecret` of kind `registry_credentials` (with a UI form) is a follow-up — until then the operator-managed `docker login` is the path.
 
 ## Honoring `.tool-versions` / `.mise.toml`
 
