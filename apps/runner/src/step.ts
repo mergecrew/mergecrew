@@ -35,7 +35,14 @@ import {
   priceFor,
   type LlmProfile,
 } from '@mergecrew/llm';
-import { stockSkills, buildHttpSkill, SkillExecutor, type SkillExecutionContext } from '@mergecrew/skills';
+import {
+  stockSkills,
+  buildHttpSkill,
+  SkillExecutor,
+  buildPolicyEngineFromEnv,
+  HIGH_IMPACT_SKILLS,
+  type SkillExecutionContext,
+} from '@mergecrew/skills';
 import type { SandboxDriver, SandboxHandle } from '@mergecrew/sandbox-driver';
 import { GitHubProvider, getGitHubAppCredentials, type VcsProvider } from '@mergecrew/adapters-vcs';
 import {
@@ -545,7 +552,26 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     }
   }
 
-  const skills = new SkillExecutor();
+  // Policy engine (#581 / #554 T-5). Built once per supervisor lifetime
+  // from `SKILL_SIGNING_KEY`. When the key is absent we skip the per-
+  // agent + high-impact gates — same back-compat path the test suite
+  // uses, and acceptable for V0 process-driver deployments where the
+  // LLM has no path to the executor anyway.
+  const skillPolicy = buildPolicyEngineFromEnv();
+  if (!skillPolicy) {
+    logger.warn(
+      { event: 'runner.skill_policy_disabled' },
+      'SKILL_SIGNING_KEY not set — per-agent allowlist + high-impact call-token gates are disabled. Set the key in the supervisor env for production deployments.',
+    );
+  }
+  // Normalize agent skill list to bare names — the AgentDefinition
+  // surface allows `{ name, config }` objects for per-skill config, but
+  // the policy engine only needs the names.
+  const allowedSkillNames = agentDef.skills.map((s) =>
+    typeof s === 'string' ? s : s.name,
+  );
+
+  const skills = new SkillExecutor({ policy: skillPolicy ?? undefined });
   skills.registerAll(stockSkills);
   for (const [name, def] of Object.entries(cfg.skills ?? {})) {
     skills.register(buildHttpSkill(name, def));
@@ -599,6 +625,16 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     agentStepId: stepId,
     workspacePath,
     abortSignal: abortController.signal,
+    // #581 / #554 T-5: per-agent-kind allowlist + signed call-token for
+    // high-impact skills. The skill executor honors these when a
+    // PolicyEngine is configured (SKILL_SIGNING_KEY); otherwise both
+    // gates are bypassed (back-compat).
+    agentKind: agentDef.kind,
+    allowedSkills: allowedSkillNames,
+    callToken:
+      skillPolicy && HIGH_IMPACT_SKILLS.has(extra.skillName)
+        ? skillPolicy.mintCallToken({ stepId, skill: extra.skillName })
+        : undefined,
     logger: {
       info: (m, meta) => logger.info({ ...meta, skillName: extra.skillName }, m),
       warn: (m, meta) => logger.warn({ ...meta, skillName: extra.skillName }, m),
