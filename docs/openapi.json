@@ -1173,6 +1173,20 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/projects/{projectSlug}/runs/{runId}/network-summary": {
+      "get": {
+        "operationId": "RunController_networkSummary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Run"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/projects/{projectSlug}/runs/{runId}/intent": {
       "post": {
         "operationId": "RunController_addIntent",
