@@ -5,8 +5,10 @@ import { K8sDriver } from './k8s-driver.js';
 import { buildK8sApiClient } from './k8s-api-client.js';
 import { FargateDriver } from './fargate-driver.js';
 import { buildFargateApiClient } from './fargate-api-client.js';
+import { E2BDriver } from './e2b-driver.js';
+import { buildE2BApiClient } from './e2b-api-client.js';
 
-export type SandboxMode = 'process' | 'docker' | 'kubernetes' | 'fargate';
+export type SandboxMode = 'process' | 'docker' | 'kubernetes' | 'fargate' | 'e2b';
 
 export interface SandboxFactoryOpts {
   /** Value of process.env.RUNNER_SANDBOX. Defaults to `process`. */
@@ -39,6 +41,12 @@ export interface SandboxFactoryOpts {
   fargateSecurityGroups?: string;
   /** Default image for Fargate sandboxes. From RUNNER_FARGATE_DEFAULT_IMAGE. */
   fargateDefaultImage?: string;
+  /** E2B control plane domain. From RUNNER_E2B_DOMAIN. */
+  e2bDomain?: string;
+  /** E2B API key (optional for self-hosted). From RUNNER_E2B_API_KEY. */
+  e2bApiKey?: string;
+  /** Default E2B template id. From RUNNER_E2B_DEFAULT_TEMPLATE. */
+  e2bDefaultTemplate?: string;
   logger?: {
     info: (msg: string, meta?: any) => void;
     warn: (msg: string, meta?: any) => void;
@@ -90,6 +98,21 @@ export async function buildSandboxDriverAsync(opts: SandboxFactoryOpts = {}): Pr
       logger: opts.logger,
     });
   }
+  if (raw === 'e2b') {
+    if (!opts.e2bDomain) {
+      throw new Error('RUNNER_E2B_DOMAIN is required when RUNNER_SANDBOX=e2b');
+    }
+    const api = await buildE2BApiClient({ domain: opts.e2bDomain, apiKey: opts.e2bApiKey });
+    opts.logger?.info(
+      `sandbox driver: e2b (domain=${opts.e2bDomain})`,
+      { event: 'runner.sandbox_mode', mode: 'e2b' },
+    );
+    return new E2BDriver({
+      api,
+      defaultTemplate: opts.e2bDefaultTemplate,
+      logger: opts.logger,
+    });
+  }
   return buildSandboxDriver(opts);
 }
 
@@ -107,6 +130,11 @@ export function buildSandboxDriver(opts: SandboxFactoryOpts = {}): SandboxDriver
   if (raw === 'fargate') {
     throw new Error(
       'RUNNER_SANDBOX=fargate requires buildSandboxDriverAsync() (loads @aws-sdk/client-ecs lazily).',
+    );
+  }
+  if (raw === 'e2b') {
+    throw new Error(
+      'RUNNER_SANDBOX=e2b requires buildSandboxDriverAsync() (loads the e2b SDK lazily).',
     );
   }
   switch (raw) {
@@ -151,7 +179,7 @@ export function buildSandboxDriver(opts: SandboxFactoryOpts = {}): SandboxDriver
       });
     default:
       throw new Error(
-        `RUNNER_SANDBOX value not recognized: "${raw}". Expected one of: process, docker, kubernetes, fargate.`,
+        `RUNNER_SANDBOX value not recognized: "${raw}". Expected one of: process, docker, kubernetes, fargate, e2b.`,
       );
   }
 }
