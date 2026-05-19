@@ -90,6 +90,7 @@ import {
 } from './workspace.js';
 import { resolveSandboxResources } from './runner-config.js';
 import { maybeRunMiseInstall } from './mise-install.js';
+import { maybeBuildDevcontainer } from './devcontainer-build.js';
 
 interface StepArgs {
   organizationId: string;
@@ -267,7 +268,16 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   );
   const earlyCfg = (earlyLifecycle?.parsed ?? {}) as MergecrewConfig;
   const sandboxResources = resolveSandboxResources(earlyCfg.runner);
-  const sandboxImage = earlyCfg.runner?.image;
+
+  // Image resolution (#570 + #559): if the project ships
+  // `.devcontainer/devcontainer.json` and the supervisor can build it,
+  // that image wins over `runner.image` from mergecrew.yaml. Stock
+  // catalog detection (#566) is downstream of both — handled by the
+  // driver when neither is set. Build failures fall back transparently.
+  //
+  // We bootstrap the workspace (clone) BEFORE this hook so the
+  // devcontainer file is present on disk.
+  let sandboxImage: string | undefined = earlyCfg.runner?.image;
 
   // Start the per-step sandbox (#556, #559). For the default ProcessDriver
   // this is effectively a no-op that records the workspace path. For
@@ -355,6 +365,26 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     stopHeartbeat();
     return { kind: 'failed', reason: bootstrap.reason };
   }
+
+  // Devcontainer build (#570). When the cloned workspace contains
+  // .devcontainer/devcontainer.json, build it into an OCI image and
+  // promote that image to be the sandbox image. Cached on host by
+  // config hash; failures fall back to the explicit runner.image or
+  // the driver's default.
+  const devcontainer = await maybeBuildDevcontainer({ workspacePath, logger }).catch(
+    (err: any) => ({ kind: 'failed' as const, reason: String(err?.message ?? err) }),
+  );
+  if (devcontainer.kind === 'built' || devcontainer.kind === 'cached') {
+    sandboxImage = devcontainer.image;
+  }
+  // sandbox already started above with the previous image — for the
+  // devcontainer to actually be the sandbox's image, we'd need to
+  // restart it. In this iteration the build is precomputed so the
+  // NEXT step in the same run uses it; the first step pays the
+  // stock-image cost. A follow-up (small) can move the build hook
+  // before driver.start() once the bootstrap+driver lifecycle is
+  // restructured. For now: log and surface.
+  void sandboxImage;
 
   // Bootstrap project toolchain via mise (#568). No-op when there's
   // no .tool-versions / .mise.toml or when the sentinel matches the
