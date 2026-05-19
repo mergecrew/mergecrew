@@ -70,6 +70,18 @@ export class GitHubProvider implements VcsProvider {
     return r.token;
   }
 
+  /**
+   * Public access to the installation token (#550). Other GitHub-backed
+   * adapters in the runner — the GitHubIssuesProvider for the
+   * `tracker.list_issues` skill, the GitHubActionsProvider for deploys
+   * — need the same short-lived token the VCS provider mints. Exposing
+   * the path here keeps token minting centralized so a future swap to a
+   * different GH auth method only touches one place.
+   */
+  async getInstallationToken(installationId: string): Promise<string> {
+    return this.tokenFor(installationId);
+  }
+
   private async kit(installationId: string): Promise<Octokit> {
     const token = await this.tokenFor(installationId);
     return new Octokit({ auth: token, baseUrl: this.apiUrl });

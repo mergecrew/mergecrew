@@ -315,6 +315,39 @@ export class ProjectService {
         },
       }),
     );
+    // Auto-wire GitHub Issues as the project tracker (#550). The
+    // Discovery and BugTriage agents both call `tracker.list_issues`
+    // on every run; without a tracker target the call errors out and
+    // the run carries a red dot for every step. The GH App
+    // installation already grants Issues read/write, so this is a
+    // pure cost-free upgrade for the operator — they can switch to
+    // Linear or another tracker in project settings later.
+    //
+    // We skip the auto-wire if a different tracker is already
+    // configured (e.g. a Linear setup we don't want to clobber). The
+    // runner mints a fresh installation token at step time via the
+    // GH App credentials, so no TRACKER_TOKEN secret is needed here.
+    await this.prisma.withTenant(project.organizationId, async (tx) => {
+      const existing = await tx.trackerTarget.findUnique({
+        where: { projectId: project.id },
+      });
+      if (existing && existing.adapterId !== 'github-issues') {
+        return;
+      }
+      await tx.trackerTarget.upsert({
+        where: { projectId: project.id },
+        update: {
+          adapterId: 'github-issues',
+          config: { repoFullName: input.repoFullName } as any,
+        },
+        create: {
+          organizationId: project.organizationId,
+          projectId: project.id,
+          adapterId: 'github-issues',
+          config: { repoFullName: input.repoFullName } as any,
+        },
+      });
+    });
     void this.telemetry.emit(project.organizationId, 'integration.connected', {
       provider: 'github',
     });

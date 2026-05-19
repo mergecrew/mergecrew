@@ -263,6 +263,14 @@ export function RepoForm({
         </p>
       )}
 
+      <div className="rounded border border-emerald-200 bg-emerald-50/50 p-2 text-xs text-emerald-900 dark:border-emerald-700/40 dark:bg-emerald-950/30 dark:text-emerald-200">
+        <span className="font-medium">Issues source: GitHub Issues.</span>{' '}
+        We&apos;ll wire <code>tracker.list_issues</code> /{' '}
+        <code>tracker.create_issue</code> to this repo&apos;s Issues tab on
+        connect — Discovery and BugTriage agents call those every run.
+        Switch to Linear later from the project&apos;s Integrations page.
+      </div>
+
       <div className="flex flex-wrap gap-2">
         <Button onClick={onSave} disabled={pending} variant="primary">
           {initial ? 'Update connection' : 'Connect repository'}
