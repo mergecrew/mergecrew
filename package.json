@@ -11,6 +11,7 @@
     "build": "turbo run build",
     "dev": "dotenv -e .env -- turbo run dev",
     "lint": "turbo run lint",
+    "lint:no-raw-sql": "node scripts/check-no-raw-sql.mjs",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "format": "prettier --write .",
@@ -28,6 +29,7 @@
     "screenshots": "tsx scripts/screenshots/capture.ts"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^25.7.0",
     "dotenv": "^17.4.2",
     "dotenv-cli": "^8.0.0",
@@ -37,6 +39,7 @@
     "tsx": "^4.19.1",
     "turbo": "^2.9.12",
     "typescript": "^5.6.2",
+    "typescript-eslint": "^8.59.4",
     "vitest": "^2.1.1"
   },
   "pnpm": {

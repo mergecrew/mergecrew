@@ -53,6 +53,7 @@ export class HealthController {
 
     try {
       await withTimeout(
+        // eslint-disable-next-line no-restricted-syntax -- `select 1` healthcheck, no input. See docs/02-architecture/11-security.md § Raw SQL allowlist.
         this.prisma.withSystem((tx) => tx.$queryRaw`select 1`),
         'db',
       );
