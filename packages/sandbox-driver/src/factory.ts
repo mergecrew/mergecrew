@@ -1,8 +1,10 @@
 import type { SandboxDriver } from './types.js';
 import { ProcessDriver } from './process-driver.js';
 import { DockerDriver } from './docker-driver.js';
+import { K8sDriver } from './k8s-driver.js';
+import { buildK8sApiClient } from './k8s-api-client.js';
 
-export type SandboxMode = 'process' | 'docker';
+export type SandboxMode = 'process' | 'docker' | 'kubernetes';
 
 export interface SandboxFactoryOpts {
   /** Value of process.env.RUNNER_SANDBOX. Defaults to `process`. */
@@ -17,6 +19,12 @@ export interface SandboxFactoryOpts {
   egressNetwork?: string;
   /** IPv4 of the runner-dns resolver. From RUNNER_DNS_RESOLVER. */
   dnsResolver?: string;
+  /** Kubernetes namespace where the K8sDriver creates Jobs. From RUNNER_K8S_NAMESPACE. */
+  k8sNamespace?: string;
+  /** 'default' (kubeconfig) or 'in-cluster'. From RUNNER_K8S_AUTH. */
+  k8sAuth?: 'default' | 'in-cluster';
+  /** Image used by the K8sDriver when no per-project image is set. From RUNNER_K8S_DEFAULT_IMAGE. */
+  k8sDefaultImage?: string;
   logger?: {
     info: (msg: string, meta?: any) => void;
     warn: (msg: string, meta?: any) => void;
@@ -29,8 +37,34 @@ export interface SandboxFactoryOpts {
  * behavior). Unknown modes throw so a typo doesn't silently fall back
  * to the unsandboxed default.
  */
+export async function buildSandboxDriverAsync(opts: SandboxFactoryOpts = {}): Promise<SandboxDriver> {
+  const raw = (opts.mode ?? 'process').trim().toLowerCase();
+  if (raw === 'kubernetes' || raw === 'k8s') {
+    if (!opts.k8sNamespace) {
+      throw new Error('RUNNER_K8S_NAMESPACE is required when RUNNER_SANDBOX=kubernetes');
+    }
+    const api = await buildK8sApiClient({ kubeConfigLoader: opts.k8sAuth ?? 'default' });
+    opts.logger?.info(
+      `sandbox driver: kubernetes (ns=${opts.k8sNamespace})`,
+      { event: 'runner.sandbox_mode', mode: 'kubernetes' },
+    );
+    return new K8sDriver({
+      api,
+      namespace: opts.k8sNamespace,
+      defaultImage: opts.k8sDefaultImage ?? opts.defaultImage,
+      logger: opts.logger,
+    });
+  }
+  return buildSandboxDriver(opts);
+}
+
 export function buildSandboxDriver(opts: SandboxFactoryOpts = {}): SandboxDriver {
   const raw = (opts.mode ?? 'process').trim().toLowerCase();
+  if (raw === 'kubernetes' || raw === 'k8s') {
+    throw new Error(
+      'RUNNER_SANDBOX=kubernetes requires buildSandboxDriverAsync() (loads @kubernetes/client-node lazily).',
+    );
+  }
   switch (raw) {
     case '':
     case 'process':
@@ -72,6 +106,8 @@ export function buildSandboxDriver(opts: SandboxFactoryOpts = {}): SandboxDriver
         logger: opts.logger,
       });
     default:
-      throw new Error(`RUNNER_SANDBOX value not recognized: "${raw}". Expected one of: process, docker.`);
+      throw new Error(
+        `RUNNER_SANDBOX value not recognized: "${raw}". Expected one of: process, docker, kubernetes.`,
+      );
   }
 }

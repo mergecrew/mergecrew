@@ -13,7 +13,7 @@ import { runStep } from './step.js';
 import { CancellationCoordinator } from './cancellation.js';
 import { startProbeServer } from './probe-server.js';
 import { cleanupWorkspace, WORKSPACE_CLEANUP_QUEUE } from './workspace.js';
-import { buildSandboxDriver } from '@mergecrew/sandbox-driver';
+import { buildSandboxDriver, buildSandboxDriverAsync } from '@mergecrew/sandbox-driver';
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
@@ -36,15 +36,27 @@ const concurrency = Number(process.env.RUNNER_CONCURRENCY ?? 4);
 // (`process`) preserves the v0 execa-on-host behavior; once #557 lands an
 // operator flips to `docker` via the RUNNER_SANDBOX env. The driver is
 // threaded through every step's SkillExecutionContext.
-const driver = buildSandboxDriver({
+// Async path so the k8s driver can lazy-import `@kubernetes/client-node`
+// (#577) — process + docker modes return synchronously and bypass the
+// import. Promise resolution happens before the worker starts consuming.
+const driverFactoryOpts = {
   mode: process.env.RUNNER_SANDBOX,
   defaultImage: process.env.RUNNER_DEFAULT_IMAGE,
   ociRuntime: process.env.RUNNER_OCI_RUNTIME,
   dockerBin: process.env.RUNNER_DOCKER_BIN,
   egressNetwork: process.env.RUNNER_EGRESS_NETWORK,
   dnsResolver: process.env.RUNNER_DNS_RESOLVER,
+  k8sNamespace: process.env.RUNNER_K8S_NAMESPACE,
+  k8sAuth: (process.env.RUNNER_K8S_AUTH === 'in-cluster' ? 'in-cluster' : 'default') as
+    | 'default'
+    | 'in-cluster',
+  k8sDefaultImage: process.env.RUNNER_K8S_DEFAULT_IMAGE,
   logger,
-});
+};
+const isK8s = /^(kubernetes|k8s)$/.test((process.env.RUNNER_SANDBOX ?? '').toLowerCase());
+const driverPromise: Promise<ReturnType<typeof buildSandboxDriver>> = isK8s
+  ? buildSandboxDriverAsync(driverFactoryOpts)
+  : Promise.resolve(buildSandboxDriver(driverFactoryOpts));
 
 // V1.3 cancellation propagation (#9). The API publishes on
 // RUN_CANCEL_CHANNEL when a user cancels a run; we abort every in-flight
@@ -84,6 +96,7 @@ const worker = new Worker(
       stepId: string;
       agentRef: string;
     };
+    const driver = await driverPromise;
     const outcome = await runStep({ ...data, eventlog, logger, cancellation, driver });
     await replyQueue.add('reply', { ...data, outcome }, { removeOnComplete: 1000 });
     return outcome;
@@ -134,7 +147,14 @@ worker.on('failed', (job, err) => {
 const probePort = Number(process.env.RUNNER_HEALTH_PORT ?? 9091);
 const probeServer = startProbeServer({ port: probePort, redis: conn, logger });
 
-logger.info({ concurrency, sandboxDriver: driver.name }, 'runner started');
+driverPromise
+  .then((d) =>
+    logger.info({ concurrency, sandboxDriver: d.name }, 'runner started'),
+  )
+  .catch((err) => {
+    logger.error({ err: err?.message ?? err }, 'sandbox driver init failed; exiting');
+    process.exit(1);
+  });
 
 async function shutdown() {
   logger.info('shutting down');

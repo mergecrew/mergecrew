@@ -1,0 +1,33 @@
+# Standalone namespace for per-step sandbox Pods. Kept separate so the
+# default NetworkPolicy posture there is deny-all-egress without
+# affecting the supervisor's own traffic to Redis / Postgres / API.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.sandboxNamespace }}
+  labels:
+    app.kubernetes.io/name: mergecrew-runner-sandboxes
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    # PodSecurity admission set to `restricted` so misconfigurations on
+    # a per-Job spec can't escape the baseline (no host paths, no
+    # privileged, runAsNonRoot enforced).
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# Catch-all NetworkPolicy: any Pod in the sandbox namespace that is NOT
+# matched by a per-run policy still has zero egress. Per-run policies
+# the supervisor creates (selecting on `mergecrew.io/run-id`) are
+# additive over this baseline.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-egress
+  namespace: {{ .Values.sandboxNamespace }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+    - Ingress
+  egress: []
+  ingress: []
