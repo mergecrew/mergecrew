@@ -46,6 +46,8 @@ jobs:
       - run: pnpm --filter @mergecrew/db migrate
       - run: pnpm typecheck
       - run: pnpm build
+      - name: Skills path-gate (#580 / #554 T-10)
+        run: pnpm --filter @mergecrew/skills lint:fs-gate
       - run: pnpm test --if-present
       - name: OpenAPI spec is up to date
         run: |

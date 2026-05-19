@@ -14,7 +14,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsc -p tsconfig.test.json && vitest run"
+    "test": "tsc -p tsconfig.test.json && vitest run",
+    "lint:fs-gate": "node scripts/check-fs-gate.mjs"
   },
   "dependencies": {
     "@mergecrew/adapters-comms": "workspace:*",
