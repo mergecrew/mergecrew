@@ -26,6 +26,15 @@ export interface DockerDriverOpts {
   ociRuntime?: string;
   /** Path to the docker (or podman) CLI. */
   dockerBin?: string;
+  /**
+   * Docker network the sandbox joins when an egress allowlist is
+   * present (#573). The default `none` keeps containers offline;
+   * operators provision a `mergecrew-egress` network with nftables
+   * rules that ACCEPT traffic to allowlisted IPs and DROP everything
+   * else (see docs/03-infrastructure/23-runner-network-policy.md).
+   * Operators set this via RUNNER_EGRESS_NETWORK without touching code.
+   */
+  egressNetwork?: string;
   logger?: {
     info: (m: string, meta?: any) => void;
     warn: (m: string, meta?: any) => void;
@@ -57,6 +66,7 @@ export class DockerDriver implements SandboxDriver {
   private readonly defaultImage: string;
   private readonly ociRuntime: string | undefined;
   private readonly bin: string;
+  private readonly egressNetwork: string | undefined;
   private readonly logger?: DockerDriverOpts['logger'];
 
   // Map containerId → host workspace path for fs-bridge ops.
@@ -66,6 +76,7 @@ export class DockerDriver implements SandboxDriver {
     this.defaultImage = opts.defaultImage ?? 'node:20-bookworm-slim';
     this.ociRuntime = opts.ociRuntime;
     this.bin = opts.dockerBin ?? 'docker';
+    this.egressNetwork = opts.egressNetwork;
     this.logger = opts.logger;
   }
 
@@ -199,7 +210,20 @@ export class DockerDriver implements SandboxDriver {
       args.push('--volume', `${cache.hostPath}:${cache.containerPath}:rw`);
     }
     args.push('--workdir', CONTAINER_WORKSPACE);
-    args.push('--network', 'none');
+    // Egress posture (#573). Default-deny is the safe baseline:
+    // `--network none` means no outbound at all. When the project
+    // sets `runner.egress.allow`, the supervisor flips us to the
+    // operator-provisioned egress network whose nftables ruleset
+    // accepts traffic to the allowlisted IPs and drops the rest.
+    // Without an operator-provisioned network the runner stays in
+    // `none` mode even when an allowlist is present — better safe
+    // (no outbound) than sorry (full outbound).
+    const wantsAllowlistedEgress = (opts.egressAllowlist?.length ?? 0) > 0;
+    if (wantsAllowlistedEgress && this.egressNetwork) {
+      args.push('--network', this.egressNetwork);
+    } else {
+      args.push('--network', 'none');
+    }
     args.push('--cap-drop', 'ALL');
     args.push('--security-opt', 'no-new-privileges');
     args.push('--label', `mergecrew.runId=${opts.runId}`);

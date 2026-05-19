@@ -293,9 +293,17 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     return [];
   });
 
-  // Start the per-step sandbox (#556, #559, #572). Provisions a per-run
-  // container with the image + resources + cache mounts resolved
-  // above. Skills exec shell via the handle on SkillExecutionContext.
+  // Egress allowlist for the sandbox network layer (#573). Pulled
+  // from `runner.egress.allow` in mergecrew.yaml. When set + a custom
+  // egress network is configured on the supervisor, the driver flips
+  // from `--network none` to the operator-provisioned network whose
+  // nftables ruleset accepts traffic to these hosts only.
+  const sandboxEgressAllow = earlyCfg.runner?.egress?.allow ?? null;
+
+  // Start the per-step sandbox (#556, #559, #572, #573). Provisions a
+  // per-run container with image + resources + cache mounts + egress
+  // posture resolved above. Skills exec shell via the handle on
+  // SkillExecutionContext.
   const sandbox: SandboxHandle = await driver.start({
     runId,
     projectId,
@@ -304,6 +312,7 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     image: sandboxImage,
     resources: sandboxResources,
     cacheMounts,
+    egressAllowlist: sandboxEgressAllow,
   });
 
   // VCS adapter from env (used by the workspace bootstrap below and by

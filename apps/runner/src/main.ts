@@ -36,7 +36,14 @@ const concurrency = Number(process.env.RUNNER_CONCURRENCY ?? 4);
 // (`process`) preserves the v0 execa-on-host behavior; once #557 lands an
 // operator flips to `docker` via the RUNNER_SANDBOX env. The driver is
 // threaded through every step's SkillExecutionContext.
-const driver = buildSandboxDriver({ mode: process.env.RUNNER_SANDBOX, logger });
+const driver = buildSandboxDriver({
+  mode: process.env.RUNNER_SANDBOX,
+  defaultImage: process.env.RUNNER_DEFAULT_IMAGE,
+  ociRuntime: process.env.RUNNER_OCI_RUNTIME,
+  dockerBin: process.env.RUNNER_DOCKER_BIN,
+  egressNetwork: process.env.RUNNER_EGRESS_NETWORK,
+  logger,
+});
 
 // V1.3 cancellation propagation (#9). The API publishes on
 // RUN_CANCEL_CHANNEL when a user cancels a run; we abort every in-flight

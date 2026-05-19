@@ -13,6 +13,8 @@ export interface SandboxFactoryOpts {
   ociRuntime?: string;
   /** Docker CLI binary; supports `podman` for rootless setups. From RUNNER_DOCKER_BIN. */
   dockerBin?: string;
+  /** Docker network used when an egress allowlist is set. From RUNNER_EGRESS_NETWORK. */
+  egressNetwork?: string;
   logger?: {
     info: (msg: string, meta?: any) => void;
     warn: (msg: string, meta?: any) => void;
@@ -63,6 +65,7 @@ export function buildSandboxDriver(opts: SandboxFactoryOpts = {}): SandboxDriver
         defaultImage: opts.defaultImage,
         ociRuntime: opts.ociRuntime,
         dockerBin: opts.dockerBin,
+        egressNetwork: opts.egressNetwork,
         logger: opts.logger,
       });
     default:

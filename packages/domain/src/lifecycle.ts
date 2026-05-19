@@ -132,6 +132,24 @@ export type RunnerCacheConfig = z.infer<typeof RunnerCacheConfig>;
 export const RunnerSetupConfig = z.array(z.string().min(1));
 export type RunnerSetupConfig = z.infer<typeof RunnerSetupConfig>;
 
+/**
+ * Per-project egress allowlist (#573). When set, the sandbox runs on
+ * a docker network configured to drop all outbound except to these
+ * hostnames. When unset, the driver uses `--network none` (the safe
+ * baseline — no outbound at all). See
+ * docs/03-infrastructure/23-runner-network-policy.md for the operator
+ * setup that backs the allowlist.
+ */
+export const RunnerEgressConfig = z.object({
+  /**
+   * List of hostnames the sandbox is allowed to reach. Wildcards via
+   * `*.example.com`. The DNS resolver (#574) translates these to IPs;
+   * the nftables ruleset accepts traffic to those IPs only.
+   */
+  allow: z.array(z.string().min(1)).default([]),
+});
+export type RunnerEgressConfig = z.infer<typeof RunnerEgressConfig>;
+
 export const RunnerConfig = z.object({
   /**
    * OCI image ref the docker SandboxDriver pulls and launches. When
@@ -142,6 +160,7 @@ export const RunnerConfig = z.object({
   resources: RunnerResources.optional(),
   setup: RunnerSetupConfig.optional(),
   cache: RunnerCacheConfig.optional(),
+  egress: RunnerEgressConfig.optional(),
 });
 export type RunnerConfig = z.infer<typeof RunnerConfig>;
 
