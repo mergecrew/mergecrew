@@ -20,4 +20,5 @@ export {
   SANDBOX_GID,
   type DockerDriverOpts,
 } from './docker-driver.js';
+export { chownWorkspaceForSandbox, type ChownLogger } from './workspace-prep.js';
 export { buildSandboxDriver, type SandboxFactoryOpts, type SandboxMode } from './factory.js';

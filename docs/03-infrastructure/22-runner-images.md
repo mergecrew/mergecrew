@@ -55,6 +55,18 @@ The job runs five contract checks before declaring success:
 
 Once #566 lands (lockfile-based stack detection), the supervisor picks the right `runner-<stack>` image without operator input.
 
+## Workspace ownership (host side)
+
+The DockerDriver bind-mounts the supervisor's host workspace at `/workspace` inside the container, and the container runs as uid 1001 — so the host workspace **must be owned by uid 1001** for the build to read/write it. The driver attempts a best-effort recursive `chown 1001:1001` before `docker run` (`packages/sandbox-driver/src/workspace-prep.ts`). For that chown to succeed, the supervisor needs **CAP_CHOWN** (or equivalent).
+
+Three setups satisfy this:
+
+1. **Supervisor runs as root inside its own container.** Standard pattern for self-hosters using the default `docker-compose.full.yml`. CAP_CHOWN is present.
+2. **Rootless Docker with user-namespace remapping.** uid 1001 inside the container maps to a non-1001 uid on the host that the supervisor already owns. The chown is then a no-op.
+3. **External workspace preparation.** Operator owns the workspace dir at uid 1001 from the start (e.g., systemd `User=mergecrew-runner`) and the supervisor never needs to chown.
+
+If the chown fails (EPERM/EACCES), the driver logs a warning and the build inside the sandbox may surface EACCES on writes. The fix is one of the three setups above, not a code change.
+
 ## Building locally
 
 ```sh

@@ -11,16 +11,10 @@ import type {
   SandboxStartOpts,
 } from './types.js';
 import { classifySensitiveKey } from './env.js';
+import { chownWorkspaceForSandbox } from './workspace-prep.js';
 
-/**
- * In-container path the host workspace bind-mounts to. Stable across
- * images so skills (and `mergecrew.yaml`) can reference it.
- */
-export const CONTAINER_WORKSPACE = '/workspace';
-
-/** UID/GID the stock images create. See `docs/03-infrastructure/22-runner-images.md`. */
-export const SANDBOX_UID = '1001';
-export const SANDBOX_GID = '1001';
+export { CONTAINER_WORKSPACE, SANDBOX_UID, SANDBOX_GID } from './docker-driver-constants.js';
+import { CONTAINER_WORKSPACE, SANDBOX_UID, SANDBOX_GID } from './docker-driver-constants.js';
 
 export interface DockerDriverOpts {
   /** Image used when `SandboxStartOpts.image` is empty. */
@@ -80,6 +74,14 @@ export class DockerDriver implements SandboxDriver {
     if (!stat || !stat.isDirectory()) {
       throw new Error(`workspacePath does not exist: ${opts.workspacePath}`);
     }
+    // Threat T-2 (#554): the sandbox process runs as uid 1001 (set
+    // below via --user). The bind-mounted workspace must be owned by
+    // uid 1001 for that process to read+write it. Best-effort recursive
+    // chown — fails closed with a clear warning when the supervisor
+    // lacks CAP_CHOWN (e.g. unprivileged systemd unit) so operators
+    // can debug without staring at opaque EACCES errors inside the
+    // container. See docs/03-infrastructure/22-runner-images.md.
+    await chownWorkspaceForSandbox(opts.workspacePath, this.logger).catch(() => {});
     const image = opts.image ?? this.defaultImage;
     const name = `mergecrew-${opts.runId}-${randomUUID().slice(0, 8)}`;
     const args = this.buildRunArgs(name, image, opts);
