@@ -31,12 +31,34 @@ export function buildSandboxDriver(opts: SandboxFactoryOpts = {}): SandboxDriver
     case '':
     case 'process':
       if (opts.logger) {
+        // Multi-line banner is intentional — this is a security-relevant
+        // posture choice the operator should not miss in a busy log
+        // stream. Suppressing it requires explicitly switching modes.
         opts.logger.warn(
-          'runner is running in unsandboxed mode (process driver) — build steps execute on the host. Env scrub is on (#561), so secrets in the supervisor process.env do not flow to subprocesses. For full isolation set RUNNER_SANDBOX=docker. See docs/02-architecture/13-runner-isolation.md',
+          [
+            '',
+            '┌───────────────────────────────────────────────────────────────────┐',
+            '│  UNSANDBOXED RUNNER MODE (process driver)                         │',
+            '│                                                                   │',
+            '│  Build steps run on the supervisor host. The env scrub (#561)     │',
+            '│  prevents supervisor secrets from leaking, but FS / network /     │',
+            '│  resource isolation are NOT enforced.                             │',
+            '│                                                                   │',
+            '│  Set RUNNER_SANDBOX=docker for per-run container isolation.       │',
+            '│  See docs/03-infrastructure/16-self-host-runbook.md               │',
+            '│    § Enable RUNNER_SANDBOX=docker                                 │',
+            '└───────────────────────────────────────────────────────────────────┘',
+            '',
+          ].join('\n'),
+          { event: 'runner.sandbox_mode', mode: 'process' },
         );
       }
       return new ProcessDriver({ logger: opts.logger });
     case 'docker':
+      opts.logger?.info(
+        'sandbox driver: docker (per-run container isolation enabled)',
+        { event: 'runner.sandbox_mode', mode: 'docker' },
+      );
       return new DockerDriver({
         defaultImage: opts.defaultImage,
         ociRuntime: opts.ociRuntime,
