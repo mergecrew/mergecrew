@@ -1157,7 +1157,14 @@ function parseTextVerdict(text: string): ParsedReviewerVerdict | null {
  * two don't drift.
  */
 export interface ParsedQaVerdict {
-  verdict: 'tests_pass' | 'tests_fail';
+  /**
+   * tests_skipped (#566): QA recognized that no tests were configured
+   * for the project's detected stack. Distinct from tests_fail so the
+   * orchestrator doesn't loop the project back to PM trying to "fix"
+   * a missing test script. The graph-profile transition treats it as
+   * a passthrough to deploy_dev.
+   */
+  verdict: 'tests_pass' | 'tests_fail' | 'tests_skipped';
   summary: string;
   failureExcerpts: string[];
 }
@@ -1207,7 +1214,7 @@ function parseJsonQaVerdict(text: string): ParsedQaVerdict | null {
           : null;
     if (!rawVerdict) continue;
     const verdict = rawVerdict.trim().toLowerCase();
-    if (verdict !== 'tests_pass' && verdict !== 'tests_fail') continue;
+    if (verdict !== 'tests_pass' && verdict !== 'tests_fail' && verdict !== 'tests_skipped') continue;
     const summary =
       typeof obj.summary === 'string'
         ? obj.summary.trim()
@@ -1228,17 +1235,17 @@ function parseJsonQaVerdict(text: string): ParsedQaVerdict | null {
       .filter((x: unknown): x is string => typeof x === 'string')
       .map((s: string) => s.trim())
       .filter((s: string) => s.length > 0);
-    return { verdict, summary, failureExcerpts };
+    return { verdict: verdict as ParsedQaVerdict['verdict'], summary, failureExcerpts };
   }
   return null;
 }
 
 function parseTextQaVerdict(text: string): ParsedQaVerdict | null {
   const verdictMatch = text.match(
-    /\bVERDICT\b\s*[*_`]*\s*[:=→-]+\s*[*_`"'\s]*(tests_pass|tests_fail)\b/i,
+    /\bVERDICT\b\s*[*_`]*\s*[:=→-]+\s*[*_`"'\s]*(tests_pass|tests_fail|tests_skipped)\b/i,
   );
   if (!verdictMatch?.[1]) return null;
-  const verdict = verdictMatch[1].toLowerCase() as 'tests_pass' | 'tests_fail';
+  const verdict = verdictMatch[1].toLowerCase() as ParsedQaVerdict['verdict'];
   const summary = extractQaSection(text, 'SUMMARY');
   const failuresBlock = extractQaSection(text, 'FAILURES');
   const failureExcerpts: string[] = [];

@@ -1,12 +1,54 @@
 import { ValidationError } from '@mergecrew/domain';
 import type { AnySkill, SkillExecutionContext } from '../types.js';
+import { detectStack, type BuildCommand, type BuildCommandsOverride } from './detect-stack.js';
 
+/**
+ * Build commands the runner is allowed to invoke. Each entry is a
+ * literal command name (or a workspace-relative wrapper path like
+ * `./gradlew`). Anything that needs to be installed by a stack image
+ * — `mvn`, `gradle` via the gradlew wrapper, `poetry`, `cargo`,
+ * etc. — is listed here once the runner-* image catalog ships it
+ * (#567). Until then the docker driver pulls a polyglot base image
+ * (#558 for node; later #567 for the others).
+ *
+ * Custom commands from `mergecrew.yaml build.commands` are validated
+ * against this list — that's the gate that prevents the LLM from
+ * naming an arbitrary binary.
+ */
 const ALLOWLIST_CMDS = new Set([
+  // Node / TS
   'npm', 'pnpm', 'yarn',
   'node', 'tsc', 'tsx',
   'eslint', 'prettier',
   'jest', 'vitest', 'playwright',
+  // Python
+  'python', 'python3',
+  'pip', 'pip3',
+  'poetry', 'uv',
+  'mypy', 'ruff', 'pytest', 'black',
+  // Go
+  'go', 'golangci-lint',
+  // Java
+  'mvn', 'gradle',
+  // PHP
+  'composer', 'php',
+  // Ruby
+  'bundle', 'ruby',
+  // Rust
+  'cargo',
+  // .NET
+  'dotnet',
+  // Misc utilities used by stack defaults
+  'sh', 'bash', 'make',
 ]);
+
+/** Wrapper scripts shipped inside a project repo are allowed by prefix. */
+const WRAPPER_PREFIXES = ['./gradlew', './mvnw', './scripts/'];
+
+function isAllowedCommand(cmd: string): boolean {
+  if (ALLOWLIST_CMDS.has(cmd)) return true;
+  return WRAPPER_PREFIXES.some((p) => cmd.startsWith(p));
+}
 
 interface RunOpts {
   cmd: string;
@@ -15,20 +57,31 @@ interface RunOpts {
   timeoutMs?: number;
 }
 
+interface BuildSkillResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+}
+
 /**
- * Execute a build command via the SandboxDriver (#560). With the
- * default ProcessDriver this is the same as the V0 `execa`-on-host
- * call. With the docker driver the command runs inside the per-run
- * container, where the network namespace and resource caps from
- * SandboxStartOpts apply. Egress allowlist enforcement is layered on
- * by Phase 4 (#573 / #574 / #575) — see
- * `packages/skills/src/egress-policy.ts` for the docstring covering
- * which layer protects what.
+ * "Not configured" sentinel returned when stack detection can't find
+ * a command (e.g., a Go project with no lint target, or a freshly
+ * scaffolded repo with no test script). The runner's QA verdict
+ * parser (#566) treats this as `tests_skipped` rather than `tests_fail`
+ * so empty projects don't burn the loop cap trying to fix a problem
+ * that isn't a regression.
  */
-async function runCommand(opts: RunOpts) {
-  const cmd = opts.cmd;
-  if (!ALLOWLIST_CMDS.has(cmd)) {
-    throw new ValidationError(`command not allowed: ${cmd}`);
+interface NotConfiguredResult {
+  notConfigured: true;
+  reason: string;
+}
+
+type SkillOutput = BuildSkillResult | NotConfiguredResult;
+
+async function runCommand(opts: RunOpts): Promise<BuildSkillResult> {
+  if (!isAllowedCommand(opts.cmd)) {
+    throw new ValidationError(`command not allowed: ${opts.cmd}`);
   }
   const { driver, sandbox } = opts.ctx;
   if (!driver || !sandbox) {
@@ -37,7 +90,7 @@ async function runCommand(opts: RunOpts) {
     );
   }
   const r = await driver.exec(sandbox, {
-    cmd,
+    cmd: opts.cmd,
     args: opts.args,
     env: { CI: 'true', FORCE_COLOR: '0' },
     timeoutMs: opts.timeoutMs ?? 600_000,
@@ -55,81 +108,98 @@ function tail(s: string, max: number): string {
   return s.length <= max ? s : s.slice(s.length - max);
 }
 
+/**
+ * Resolve the override block from the project's lifecycle config
+ * (`build.commands`). Pulled from `ctx.config.build?.commands` which
+ * the runner injects before each skill call.
+ */
+function overrideFromCtx(ctx: SkillExecutionContext): BuildCommandsOverride | undefined {
+  const cfg = ctx.config?.build as { commands?: BuildCommandsOverride } | undefined;
+  return cfg?.commands;
+}
+
+async function runStackCommand(
+  ctx: SkillExecutionContext,
+  pick: (cmds: Awaited<ReturnType<typeof detectStack>>['commands']) => BuildCommand | null,
+  label: string,
+): Promise<{ output: SkillOutput; brief: string }> {
+  if (!ctx.workspacePath) throw new ValidationError('workspacePath required');
+  const stack = await detectStack(ctx.workspacePath, overrideFromCtx(ctx));
+  const cmd = pick(stack.commands);
+  if (!cmd) {
+    const reason =
+      stack.language === 'unknown'
+        ? `${label}: no recognized stack signals (package.json / pyproject.toml / go.mod / pom.xml / …)`
+        : `${label}: no command for ${stack.language}/${stack.packageManager}`;
+    return {
+      output: { notConfigured: true, reason },
+      brief: `${label}: not configured (${stack.language}/${stack.packageManager})`,
+    };
+  }
+  const r = await runCommand({ cmd: cmd.cmd, args: cmd.args, ctx });
+  return {
+    output: r,
+    brief: `${label}: ${cmd.cmd} ${cmd.args.join(' ')} (exit=${r.exitCode})`,
+  };
+}
+
 const installSkill: AnySkill = {
   name: 'build.run_install',
-  description: 'Install dependencies. Detects pnpm/yarn/npm based on lockfile.',
+  description: 'Install project dependencies. Stack auto-detected from lockfile / manifest (Node / Python / Go / Java / PHP / Ruby / Rust / .NET).',
   inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   sideEffectClass: 'write_workspace',
   capabilities: ['process.spawn', 'fs.write', 'net.outbound'],
   timeoutMs: 600_000,
   async execute(_input, ctx) {
-    if (!ctx.workspacePath) throw new ValidationError('workspacePath required');
-    const which = await detectPm(ctx.workspacePath);
-    const args = which === 'pnpm' ? ['install', '--frozen-lockfile'] :
-      which === 'yarn' ? ['install', '--frozen-lockfile'] :
-      ['ci'];
-    const r = await runCommand({ cmd: which, args, ctx });
-    return { output: r, brief: `${which} install (exit=${r.exitCode})` };
+    return runStackCommand(ctx, (c) => c.install, 'install');
   },
 };
 
 const typecheckSkill: AnySkill = {
   name: 'build.run_typecheck',
-  description: 'Run the project\'s typecheck script (e.g., npm run typecheck) or fall back to tsc --noEmit.',
+  description: 'Run the language-native typecheck (tsc, mypy, go build ./..., mvn compile, …).',
   inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   sideEffectClass: 'read',
   capabilities: ['process.spawn', 'fs.read'],
   timeoutMs: 600_000,
   async execute(_input, ctx) {
-    if (!ctx.workspacePath) throw new ValidationError('workspacePath required');
-    const pm = await detectPm(ctx.workspacePath);
-    const r = await runCommand({ cmd: pm, args: ['run', 'typecheck'], ctx });
-    return { output: r, brief: `typecheck (exit=${r.exitCode})` };
+    return runStackCommand(ctx, (c) => c.typecheck, 'typecheck');
   },
 };
 
 const lintSkill: AnySkill = {
   name: 'build.run_lint',
-  description: 'Run the project\'s lint script.',
+  description: 'Run the language-native lint (eslint, ruff, golangci-lint, spotless, …).',
   inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   sideEffectClass: 'read',
   capabilities: ['process.spawn', 'fs.read'],
   timeoutMs: 600_000,
   async execute(_input, ctx) {
-    if (!ctx.workspacePath) throw new ValidationError('workspacePath required');
-    const pm = await detectPm(ctx.workspacePath);
-    const r = await runCommand({ cmd: pm, args: ['run', 'lint'], ctx });
-    return { output: r, brief: `lint (exit=${r.exitCode})` };
+    return runStackCommand(ctx, (c) => c.lint, 'lint');
   },
 };
 
 const unitTestsSkill: AnySkill = {
   name: 'build.run_unit_tests',
-  description: 'Run the project\'s unit tests.',
+  description: 'Run the language-native unit tests (jest/vitest, pytest, go test, mvn test, …).',
   inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   sideEffectClass: 'read',
   capabilities: ['process.spawn', 'fs.read'],
   timeoutMs: 600_000,
   async execute(_input, ctx) {
-    if (!ctx.workspacePath) throw new ValidationError('workspacePath required');
-    const pm = await detectPm(ctx.workspacePath);
-    const r = await runCommand({ cmd: pm, args: ['run', 'test'], ctx });
-    return { output: r, brief: `tests (exit=${r.exitCode})` };
+    return runStackCommand(ctx, (c) => c.test, 'tests');
   },
 };
 
 const integrationSkill: AnySkill = {
   name: 'build.run_integration_tests',
-  description: 'Run the project\'s integration tests.',
+  description: 'Run the language-native integration tests, if defined for the stack.',
   inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   sideEffectClass: 'read',
   capabilities: ['process.spawn', 'fs.read'],
   timeoutMs: 600_000,
   async execute(_input, ctx) {
-    if (!ctx.workspacePath) throw new ValidationError('workspacePath required');
-    const pm = await detectPm(ctx.workspacePath);
-    const r = await runCommand({ cmd: pm, args: ['run', 'test:integration'], ctx });
-    return { output: r, brief: `integration (exit=${r.exitCode})` };
+    return runStackCommand(ctx, (c) => c.integration, 'integration');
   },
 };
 
@@ -140,17 +210,3 @@ export const buildSkills: AnySkill[] = [
   unitTestsSkill,
   integrationSkill,
 ];
-
-async function detectPm(cwd: string): Promise<'pnpm' | 'yarn' | 'npm'> {
-  const { promises: fs } = await import('node:fs');
-  const path = (await import('node:path')).default;
-  try {
-    await fs.access(path.join(cwd, 'pnpm-lock.yaml'));
-    return 'pnpm';
-  } catch {}
-  try {
-    await fs.access(path.join(cwd, 'yarn.lock'));
-    return 'yarn';
-  } catch {}
-  return 'npm';
-}

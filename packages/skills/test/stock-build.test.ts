@@ -1,13 +1,14 @@
 import { describe, it, expect } from 'vitest';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { findStockSkill } from '../src/catalog.js';
 import { makeSandbox } from './harness.js';
 
 /**
- * Smoke test for the build.* skills after #560: each skill must exec
- * through `ctx.driver.exec` rather than calling `execa` directly. Asserts
- * the wiring by running against the default ProcessDriver harness — if
- * the migration regressed, these would throw 'sandbox driver not
- * configured' instead of returning a structured result.
+ * Smoke tests for the build.* skills after #560 (driver routing) +
+ * #566 (stack detection / not_configured signal). Wraps the harness's
+ * default ProcessDriver — under DockerDriver the same skill code path
+ * runs unchanged.
  */
 
 function runSkill(name: string) {
@@ -16,47 +17,70 @@ function runSkill(name: string) {
   return skill;
 }
 
-describe('build.* skills route through the SandboxDriver', () => {
-  it('build.run_install reports a structured result (no execa import needed)', async () => {
+describe('build.* skills with stack detection', () => {
+  it('empty workspace → notConfigured (not tests_fail)', async () => {
     const { ctx, cleanup } = await makeSandbox();
     try {
-      const skill = runSkill('build.run_install');
-      const result = await skill.execute({}, ctx);
-      // The workspace is empty: npm install will fail with no package.json,
-      // but the result shape must come back from `driver.exec` (not throw).
-      expect(result.brief).toMatch(/install \(exit=/);
-      expect(typeof (result.output as any).exitCode).toBe('number');
+      const r = await runSkill('build.run_install').execute({}, ctx);
+      expect((r.output as any).notConfigured).toBe(true);
+      expect(r.brief).toMatch(/install: not configured/);
     } finally {
       await cleanup();
     }
   });
 
-  it('build.run_typecheck reports a structured result', async () => {
+  it('typecheck on empty workspace surfaces notConfigured', async () => {
     const { ctx, cleanup } = await makeSandbox();
     try {
-      const skill = runSkill('build.run_typecheck');
-      const result = await skill.execute({}, ctx);
-      expect(result.brief).toMatch(/typecheck \(exit=/);
+      const r = await runSkill('build.run_typecheck').execute({}, ctx);
+      expect((r.output as any).notConfigured).toBe(true);
     } finally {
       await cleanup();
     }
   });
 
-  it('rejects commands outside the allowlist via runCommand', async () => {
-    // The allowlist is internal to build.ts; we exercise the gate by
-    // checking the build skills surface as expected. The full negative
-    // check (running an arbitrary command) lives in the e2e suite (#564).
-    const skill = runSkill('build.run_install');
-    expect(skill.capabilities).toContain('process.spawn');
+  it('Node project (package.json + pnpm lock) → real exec, not notConfigured', async () => {
+    const { ctx, workspacePath, cleanup } = await makeSandbox();
+    try {
+      // Create the minimal Node project shape so detectStack picks pnpm.
+      await fs.writeFile(path.join(workspacePath, 'package.json'), '{}');
+      await fs.writeFile(path.join(workspacePath, 'pnpm-lock.yaml'), '');
+      const r = await runSkill('build.run_typecheck').execute({}, ctx);
+      // pnpm isn't installed in CI's bare env, so we expect a real
+      // exec with a non-zero exit — what matters is the result shape:
+      // exitCode is present, notConfigured is not.
+      expect((r.output as any).notConfigured).toBeUndefined();
+      expect(typeof (r.output as any).exitCode).toBe('number');
+      expect(r.brief).toMatch(/typecheck: pnpm run typecheck \(exit=/);
+    } finally {
+      await cleanup();
+    }
   });
 
-  it('throws a clear error when the sandbox driver is missing', async () => {
-    const { ctx, cleanup } = await makeSandbox();
+  it('throws clearly when sandbox driver is missing AND a command is configured', async () => {
+    const { ctx, workspacePath, cleanup } = await makeSandbox();
     try {
-      const skill = runSkill('build.run_install');
-      // Strip the driver/sandbox to simulate a misconfigured runner.
+      // Make detectStack pick a real stack (so a runCommand is attempted).
+      await fs.writeFile(path.join(workspacePath, 'package.json'), '{}');
       const broken = { ...ctx, driver: undefined, sandbox: undefined } as any;
-      await expect(skill.execute({}, broken)).rejects.toThrow(/sandbox driver not configured/);
+      await expect(
+        runSkill('build.run_install').execute({}, broken),
+      ).rejects.toThrow(/sandbox driver not configured/);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('mergecrew.yaml build.commands override fully replaces a detected command', async () => {
+    const { ctx, workspacePath, cleanup } = await makeSandbox({
+      config: { build: { commands: { test: { cmd: 'sh', args: ['-c', 'echo overridden'] } } } },
+    });
+    try {
+      await fs.writeFile(path.join(workspacePath, 'package.json'), '{}');
+      const r = await runSkill('build.run_unit_tests').execute({}, ctx);
+      expect((r.output as any).exitCode).toBe(0);
+      expect((r.output as any).stdout).toMatch(/overridden/);
+      expect(r.brief).toMatch(/tests: sh -c echo overridden/);
     } finally {
       await cleanup();
     }
