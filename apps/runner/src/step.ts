@@ -89,6 +89,7 @@ import {
   bootstrapWorkspace,
 } from './workspace.js';
 import { resolveSandboxResources } from './runner-config.js';
+import { maybeRunMiseInstall } from './mise-install.js';
 
 interface StepArgs {
   organizationId: string;
@@ -354,6 +355,21 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     stopHeartbeat();
     return { kind: 'failed', reason: bootstrap.reason };
   }
+
+  // Bootstrap project toolchain via mise (#568). No-op when there's
+  // no .tool-versions / .mise.toml or when the sentinel matches the
+  // current hash. Failure is non-fatal: we log + continue so an
+  // operator without mise in their image still gets a chance to run
+  // the agent loop (build skills will fall back to whatever's on PATH).
+  await maybeRunMiseInstall({
+    workspacePath,
+    driver,
+    sandbox,
+    logger,
+    abortSignal: undefined,
+  }).catch((err: any) =>
+    logger.warn({ workspacePath, err: err?.message ?? err }, 'mise install hook threw'),
+  );
 
   // Deploy adapter selection: pick the dev target, decide adapter from its config.
   const dt = await withTenant(organizationId, (tx) =>

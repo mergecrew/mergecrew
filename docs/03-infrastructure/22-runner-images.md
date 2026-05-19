@@ -90,9 +90,24 @@ runner:
 
 Custom images must meet the same contract (uid 1001 user, `/workspace` writable, required tools present). The supervisor validates them lazily on the first run; failures surface as `config_invalid` before any LLM tokens are spent. See #571.
 
+## Honoring `.tool-versions` / `.mise.toml`
+
+Every stock image ships `mise` (the [polyglot tool-version manager](https://mise.jdx.dev)). When the cloned repo contains `.tool-versions` (asdf/mise format) or `.mise.toml` in the workspace root, the supervisor runs `mise install` once per workspace before the first agent step. Pin a specific Node / Python / Go / Java / Ruby / Rust version without rebuilding the image:
+
+```
+# .tool-versions
+nodejs 20.10.0
+python 3.11.7
+go 1.22.1
+```
+
+The supervisor writes a sentinel file `.mergecrew-mise-installed` keyed by the SHA-256 of whichever version-file drove the install. Subsequent steps in the same run skip the re-install; editing `.tool-versions` mid-run invalidates the sentinel and forces a re-install on the next step.
+
+Use a custom `runner.image` only when you need a tool `mise` doesn't manage, or a binary preinstalled for cold-start reasons.
+
 ## Extending an image (Phase 2 follow-up)
 
-When `.tool-versions` lives in the repo, `mise install` runs once per workspace bootstrap (#568) — that's the right way to pin a *specific* Node / Python / Go version without rebuilding the base image. Use a custom image only when you need a tool `mise` doesn't manage, or a binary preinstalled for cold-start reasons.
+Custom images that don't ship `mise` are tolerated — the supervisor logs `mise not available in sandbox image; skipping .tool-versions install` and continues. Operators using `runner.image` to a non-mergecrew base must install their own toolchain.
 
 ## Refs
 
