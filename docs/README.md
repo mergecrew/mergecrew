@@ -41,6 +41,7 @@ Documentation for contributors and operators of [Mergecrew](https://github.com/m
 6. [Deploy-target cookbook](03-infrastructure/06-deploy-targets-cookbook.md)
 7. [Single-VM deploy via GHCR](03-infrastructure/19-vm-deploy.md)
 8. [GitHub App setup](03-infrastructure/20-github-app-setup.md)
+9. [Runner workspace images](03-infrastructure/22-runner-images.md) — what the docker SandboxDriver launches per run
 
 **Guardrails & budgets**
 
