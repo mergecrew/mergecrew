@@ -95,6 +95,48 @@ describe('DockerDriver', () => {
     expect(args).toContain('node:20-bookworm-slim');
   });
 
+  it('joins the configured egress network when egressAllowlist is set', async () => {
+    const d = new DockerDriver({ egressNetwork: 'mergecrew-egress' });
+    execaResponses.push({ exitCode: 0, stdout: 'abc\n' });
+    await d.start({
+      runId: 'r',
+      projectId: 'p',
+      organizationId: 'o',
+      workspacePath: workspace,
+      egressAllowlist: ['api.github.com'],
+    });
+    const args = execaCalls[0]!.args;
+    expect(args[args.indexOf('--network') + 1]).toBe('mergecrew-egress');
+  });
+
+  it('stays on --network none when egressAllowlist is set but no egress network configured', async () => {
+    const d = new DockerDriver(); // egressNetwork not set
+    execaResponses.push({ exitCode: 0, stdout: 'abc\n' });
+    await d.start({
+      runId: 'r',
+      projectId: 'p',
+      organizationId: 'o',
+      workspacePath: workspace,
+      egressAllowlist: ['api.github.com'],
+    });
+    const args = execaCalls[0]!.args;
+    expect(args[args.indexOf('--network') + 1]).toBe('none');
+  });
+
+  it('stays on --network none when egress network is configured but allowlist is empty', async () => {
+    const d = new DockerDriver({ egressNetwork: 'mergecrew-egress' });
+    execaResponses.push({ exitCode: 0, stdout: 'abc\n' });
+    await d.start({
+      runId: 'r',
+      projectId: 'p',
+      organizationId: 'o',
+      workspacePath: workspace,
+      egressAllowlist: [],
+    });
+    const args = execaCalls[0]!.args;
+    expect(args[args.indexOf('--network') + 1]).toBe('none');
+  });
+
   it('start() passes --runtime when ociRuntime is configured', async () => {
     const d = new DockerDriver({ ociRuntime: 'runsc' });
     execaResponses.push({ exitCode: 0, stdout: 'abc\n' });
