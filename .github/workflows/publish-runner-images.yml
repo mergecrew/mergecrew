@@ -5,30 +5,44 @@ name: Publish runner workspace images
 # Distinct from `deploy-services.yml`, which builds the supervisor
 # images that run the BullMQ workers.
 #
-# Triggers:
-#   * tag `runner-node-v*` → publish that tag verbatim (e.g.
-#     `runner-node-v20.1.0` → ghcr.io/mergecrew/runner-node:20.1.0)
-#     plus rolling `:20` for the major-version tag
-#   * push to main when the image source changes → rolling `:20`
-#   * workflow_dispatch → on-demand republish with a chosen tag
+# Stacks (#558 + #567):
+#   runner-node       — Node 20
+#   runner-python     — Python 3.12 + uv + poetry + ruff + mypy + pytest
+#   runner-go         — Go 1.22 + golangci-lint
+#   runner-java       — Temurin 21 + Maven + Gradle
+#   runner-polyglot   — fallback (Node + Python preinstalled; Go / Java via mise)
 #
-# Later phases (#567) add runner-python, runner-java, runner-go, and
-# runner-polyglot using the same workflow shape.
+# Triggers:
+#   * tag `runner-<stack>-v*` → publish that tag verbatim
+#   * push to main when the image source changes → rolling tag
+#   * workflow_dispatch → on-demand republish with a chosen tag / stack
 
 on:
   push:
     branches: [main]
     paths:
       - 'infra/images/runner-node/**'
+      - 'infra/images/runner-python/**'
+      - 'infra/images/runner-go/**'
+      - 'infra/images/runner-java/**'
+      - 'infra/images/runner-polyglot/**'
       - '.github/workflows/publish-runner-images.yml'
     tags:
       - 'runner-node-v*'
+      - 'runner-python-v*'
+      - 'runner-go-v*'
+      - 'runner-java-v*'
+      - 'runner-polyglot-v*'
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Tag to publish (e.g. 20, 20.1.0, edge)'
+      stack:
+        description: 'Stack to publish (node | python | go | java | polyglot | all)'
         required: false
-        default: '20'
+        default: 'all'
+      tag:
+        description: 'Tag to publish (e.g. 20, 3.12, lts, edge)'
+        required: false
+        default: ''
 
 concurrency:
   group: publish-runner-images-${{ github.ref }}
@@ -39,59 +53,107 @@ permissions:
   packages: write
 
 jobs:
-  runner-node:
+  publish:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - stack: node
+            default_tag: '20'
+            max_size_mb: 250
+          - stack: python
+            default_tag: '3.12'
+            max_size_mb: 800
+          - stack: go
+            default_tag: '1.22'
+            max_size_mb: 800
+          - stack: java
+            default_tag: '21'
+            max_size_mb: 800
+          - stack: polyglot
+            default_tag: 'lts'
+            max_size_mb: 1500
     env:
-      IMAGE: ghcr.io/mergecrew/runner-node
+      IMAGE: ghcr.io/mergecrew/runner-${{ matrix.stack }}
     steps:
-      - uses: actions/checkout@v6
+      - name: Gate — only build this stack on relevant triggers
+        id: gate
+        env:
+          STACK: ${{ matrix.stack }}
+          REF: ${{ github.ref }}
+          DISPATCH_STACK: ${{ github.event.inputs.stack }}
+        run: |
+          # Tags only fire for one specific stack at a time.
+          case "$REF" in
+            refs/tags/runner-${STACK}-v*) echo "run=1" >> "$GITHUB_OUTPUT" ;;
+            refs/tags/runner-*-v*) echo "run=0" >> "$GITHUB_OUTPUT" ;;
+            *)
+              # workflow_dispatch may target a single stack or 'all'.
+              if [ -n "$DISPATCH_STACK" ] && [ "$DISPATCH_STACK" != "all" ] && [ "$DISPATCH_STACK" != "$STACK" ]; then
+                echo "run=0" >> "$GITHUB_OUTPUT"
+              else
+                echo "run=1" >> "$GITHUB_OUTPUT"
+              fi
+              ;;
+          esac
 
-      - name: Resolve tags
+      - if: steps.gate.outputs.run == '1'
+        uses: actions/checkout@v6
+
+      - if: steps.gate.outputs.run == '1'
+        name: Resolve tags
         id: tags
+        env:
+          STACK: ${{ matrix.stack }}
+          DEFAULT_TAG: ${{ matrix.default_tag }}
+          DISPATCH_TAG: ${{ github.event.inputs.tag }}
         run: |
           ref="${GITHUB_REF#refs/tags/}"
-          dispatch_tag="${{ github.event.inputs.tag }}"
-          if [[ "$GITHUB_REF" == refs/tags/runner-node-v* ]]; then
-            full="${ref#runner-node-v}"   # e.g. 20.1.0
-            major="${full%%.*}"           # e.g. 20
+          if [[ "$GITHUB_REF" == refs/tags/runner-${STACK}-v* ]]; then
+            full="${ref#runner-${STACK}-v}"   # e.g. 3.12.1
+            major="${full%%.*}"               # e.g. 3 (-ish — see python)
             echo "primary=$full" >> "$GITHUB_OUTPUT"
-            echo "major=$major" >> "$GITHUB_OUTPUT"
-          elif [[ -n "$dispatch_tag" ]]; then
-            echo "primary=$dispatch_tag" >> "$GITHUB_OUTPUT"
-            echo "major=" >> "$GITHUB_OUTPUT"
+            echo "rolling=$DEFAULT_TAG" >> "$GITHUB_OUTPUT"
+          elif [ -n "$DISPATCH_TAG" ]; then
+            echo "primary=$DISPATCH_TAG" >> "$GITHUB_OUTPUT"
+            echo "rolling=" >> "$GITHUB_OUTPUT"
           else
-            # push to main with image source changes → rolling :20
-            echo "primary=20" >> "$GITHUB_OUTPUT"
-            echo "major=" >> "$GITHUB_OUTPUT"
+            echo "primary=$DEFAULT_TAG" >> "$GITHUB_OUTPUT"
+            echo "rolling=" >> "$GITHUB_OUTPUT"
           fi
-          echo "sha_tag=20-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "sha_tag=${DEFAULT_TAG}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
-      - name: Log in to GHCR
+      - if: steps.gate.outputs.run == '1'
+        name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Docker Buildx
+      - if: steps.gate.outputs.run == '1'
+        name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build + push
+      - if: steps.gate.outputs.run == '1'
+        name: Build + push
         uses: docker/build-push-action@v6
         with:
-          context: infra/images/runner-node
-          file: infra/images/runner-node/Dockerfile
+          context: infra/images/runner-${{ matrix.stack }}
+          file: infra/images/runner-${{ matrix.stack }}/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ env.IMAGE }}:${{ steps.tags.outputs.primary }}
             ${{ env.IMAGE }}:${{ steps.tags.outputs.sha_tag }}
-            ${{ steps.tags.outputs.major != '' && format('{0}:{1}', env.IMAGE, steps.tags.outputs.major) || '' }}
+            ${{ steps.tags.outputs.rolling != '' && format('{0}:{1}', env.IMAGE, steps.tags.outputs.rolling) || '' }}
           provenance: false
-          cache-from: type=gha,scope=runner-node
-          cache-to: type=gha,scope=runner-node,mode=max
+          cache-from: type=gha,scope=runner-${{ matrix.stack }}
+          cache-to: type=gha,scope=runner-${{ matrix.stack }},mode=max
 
-      - name: Image contract — required tools are present
+      - if: steps.gate.outputs.run == '1'
+        name: Image contract — required tools are present
         run: |
           IMG="${{ env.IMAGE }}:${{ steps.tags.outputs.primary }}"
           docker pull "$IMG"
@@ -99,27 +161,54 @@ jobs:
             docker run --rm --entrypoint sh "$IMG" -c "command -v $bin >/dev/null || { echo \"$bin not present\"; exit 1; }"
           done
 
-      - name: Image contract — user is mergecrew uid 1001
+      - if: steps.gate.outputs.run == '1'
+        name: Image contract — user is mergecrew uid 1001
         run: |
           IMG="${{ env.IMAGE }}:${{ steps.tags.outputs.primary }}"
           uid=$(docker run --rm "$IMG" id -u)
           [ "$uid" = "1001" ] || { echo "uid is $uid, expected 1001"; exit 1; }
 
-      - name: Image contract — /workspace exists and is writable by uid 1001
+      - if: steps.gate.outputs.run == '1'
+        name: Image contract — /workspace exists and is writable by uid 1001
         run: |
           IMG="${{ env.IMAGE }}:${{ steps.tags.outputs.primary }}"
           docker run --rm "$IMG" sh -c 'echo ok > /workspace/.contract && cat /workspace/.contract'
 
-      - name: Image contract — size budget (≤ 250 MB compressed)
+      - if: steps.gate.outputs.run == '1'
+        name: Image contract — size budget
+        env:
+          MAX_MB: ${{ matrix.max_size_mb }}
         run: |
           IMG="${{ env.IMAGE }}:${{ steps.tags.outputs.primary }}"
-          # Sum compressed layer sizes from the amd64 platform manifest.
           digest=$(docker buildx imagetools inspect "$IMG" --raw \
             | jq -r '.manifests[] | select(.platform.architecture=="amd64") | .digest')
           size=$(docker buildx imagetools inspect "${IMAGE}@${digest}" --raw \
             | jq '[.layers[].size] | add')
           mb=$((size / 1024 / 1024))
-          echo "compressed size (amd64): ${mb} MB"
-          [ "$mb" -le 250 ] || { echo "image exceeds 250 MB compressed budget"; exit 1; }
+          echo "compressed size (amd64): ${mb} MB (budget: ${MAX_MB} MB)"
+          [ "$mb" -le "$MAX_MB" ] || { echo "image exceeds ${MAX_MB} MB compressed budget"; exit 1; }
         env:
           IMAGE: ${{ env.IMAGE }}
+          MAX_MB: ${{ matrix.max_size_mb }}
+
+      - if: steps.gate.outputs.run == '1'
+        name: Stack-specific contract — language toolchain present
+        run: |
+          IMG="${{ env.IMAGE }}:${{ steps.tags.outputs.primary }}"
+          case "${{ matrix.stack }}" in
+            node)
+              docker run --rm "$IMG" node --version
+              ;;
+            python)
+              docker run --rm "$IMG" sh -c 'python3 --version && uv --version && poetry --version && ruff --version'
+              ;;
+            go)
+              docker run --rm "$IMG" sh -c 'go version && golangci-lint --version'
+              ;;
+            java)
+              docker run --rm "$IMG" sh -c 'java -version 2>&1 && mvn -version 2>&1 && gradle --version | head -5'
+              ;;
+            polyglot)
+              docker run --rm "$IMG" sh -c 'node --version && python3 --version'
+              ;;
+          esac
