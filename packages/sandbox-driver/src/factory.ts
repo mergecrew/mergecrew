@@ -15,6 +15,8 @@ export interface SandboxFactoryOpts {
   dockerBin?: string;
   /** Docker network used when an egress allowlist is set. From RUNNER_EGRESS_NETWORK. */
   egressNetwork?: string;
+  /** IPv4 of the runner-dns resolver. From RUNNER_DNS_RESOLVER. */
+  dnsResolver?: string;
   logger?: {
     info: (msg: string, meta?: any) => void;
     warn: (msg: string, meta?: any) => void;
@@ -66,6 +68,7 @@ export function buildSandboxDriver(opts: SandboxFactoryOpts = {}): SandboxDriver
         ociRuntime: opts.ociRuntime,
         dockerBin: opts.dockerBin,
         egressNetwork: opts.egressNetwork,
+        dnsResolver: opts.dnsResolver,
         logger: opts.logger,
       });
     default:
