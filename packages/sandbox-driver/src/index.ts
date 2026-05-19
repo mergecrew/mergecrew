@@ -37,3 +37,10 @@ export {
   type K8sNetworkPolicyEgressRule,
 } from './k8s-driver.js';
 export { buildK8sApiClient, type K8sClientOpts } from './k8s-api-client.js';
+export {
+  FargateDriver,
+  type FargateApiClient,
+  type FargateDriverOpts,
+  type FargateRunTaskSpec,
+} from './fargate-driver.js';
+export { buildFargateApiClient, type FargateClientOpts } from './fargate-api-client.js';
