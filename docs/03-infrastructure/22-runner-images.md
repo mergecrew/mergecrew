@@ -52,9 +52,10 @@ The job runs five contract checks before declaring success:
 
 `DockerDriver` resolves the image to use in this order:
 
-1. `SandboxStartOpts.image` from `mergecrew.yaml` `runner.image` (#559).
-2. `RUNNER_DEFAULT_IMAGE` env on the supervisor.
-3. The hard-coded fallback `node:20-bookworm-slim` (kept narrow because Phase 2 stack detection (#566) will eventually pick the right image automatically — until then, operators should set `RUNNER_DEFAULT_IMAGE=ghcr.io/mergecrew/runner-node:20` to use the published workspace image).
+1. **`.devcontainer/devcontainer.json` in the project repo (#570).** When the cloned workspace ships a devcontainer config, the supervisor builds it into an OCI image via `@devcontainers/cli` and uses that. Cached on the host keyed by the SHA-256 of the config file. Requires the supervisor host to have a docker socket and `npx`/`node` on PATH. Failures fall back transparently to the next step.
+2. `SandboxStartOpts.image` from `mergecrew.yaml` `runner.image` (#559).
+3. `RUNNER_DEFAULT_IMAGE` env on the supervisor.
+4. The hard-coded fallback `node:20-bookworm-slim` (kept narrow because Phase 2 stack detection (#566) picks the right image automatically — operators should set `RUNNER_DEFAULT_IMAGE=ghcr.io/mergecrew/runner-node:20` until stack-based image resolution lands).
 
 Once #566 lands (lockfile-based stack detection), the supervisor picks the right `runner-<stack>` image without operator input.
 
