@@ -165,8 +165,9 @@ describe('buildSandboxDriver', () => {
     expect(buildSandboxDriver({ mode: 'PROCESS' }).name).toBe('process');
   });
 
-  it('throws for docker (not yet implemented)', () => {
-    expect(() => buildSandboxDriver({ mode: 'docker' })).toThrow(/#557/);
+  it('returns docker driver when mode is docker', () => {
+    const d = buildSandboxDriver({ mode: 'docker' });
+    expect(d.name).toBe('docker');
   });
 
   it('throws for unknown modes', () => {
@@ -175,7 +176,7 @@ describe('buildSandboxDriver', () => {
 
   it('logs a warning when running in process mode and a logger is supplied', () => {
     const calls: string[] = [];
-    const logger = { info: () => {}, warn: (msg: string) => calls.push(msg) };
+    const logger = { info: () => {}, warn: (msg: string) => { calls.push(msg); }, error: () => {} };
     buildSandboxDriver({ logger });
     expect(calls.length).toBe(1);
     expect(calls[0]).toMatch(/unsandboxed/);
