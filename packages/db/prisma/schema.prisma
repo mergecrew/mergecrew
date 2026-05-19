@@ -552,6 +552,7 @@ model DailyRun {
   changesets    Changeset[]
   pauses        RunPause[]
   intentsPicked IntentInboxItem[]
+  egressEvents  EgressEvent[]
 
   @@index([projectId, scheduledAt(sort: Desc)])
   /// Inflight check (orchestrator.handleRunDue): "is there a non-terminal run
@@ -621,6 +622,7 @@ model AgentStep {
   toolCalls   ToolCall[]
   modelTurns  ModelTurn[]
   pauses      RunPause[]
+  egressEvents EgressEvent[]
 
   @@index([status, startedAt])
   @@index([status, heartbeatAt])
@@ -693,6 +695,49 @@ model LlmInvocation {
   @@index([organizationId, occurredAt(sort: Desc)])
   @@index([projectId, occurredAt(sort: Desc)])
   @@map("llm_invocations")
+}
+
+/// Outbound network attempt recorded during a run (#576).
+///
+/// Captured at the skill layer (`packages/skills/src/egress-policy.ts`)
+/// for every HTTP-bound stock or custom skill call: host, decision
+/// (allowed | blocked), the reason the decision was reached, the skill
+/// that made the attempt, and the agent step it occurred under.
+///
+/// Future sources (sandbox proxy / DNS / nftables) will write to the
+/// same table — the `source` discriminator tells the UI whether the
+/// attempt came from Node code or from inside the sandbox.
+model EgressEvent {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  dailyRunId     String   @map("daily_run_id") @db.Uuid
+  agentStepId    String?  @map("agent_step_id") @db.Uuid
+  /// Where the decision came from: 'skill' (Node-level assertEgressAllowed),
+  /// 'sandbox.proxy' (#575), 'sandbox.dns' (#574), 'sandbox.netfilter' (#573).
+  source         String
+  /// Skill name (when source='skill') or sidecar name otherwise.
+  origin         String?
+  /// Lower-cased hostname the build/skill tried to reach.
+  host           String
+  port           Int?
+  method         String?
+  /// 'allowed' | 'blocked'
+  decision       String
+  /// Short tag: 'allowlist' | 'wildcard' | 'unlisted' | 'loopback' | 'private' | 'parse_error' | 'other'
+  reason         String
+  /// Audit vs enforced mode (#576). V0 is always 'enforced' — skills
+  /// throw EgressBlocked synchronously. When the proxy gains an audit
+  /// mode (it logs but doesn't drop), entries from there land as
+  /// 'audit' so the UI can render the "would have been blocked" chip.
+  mode           String   @default("enforced")
+  occurredAt     DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  dailyRun DailyRun   @relation(fields: [dailyRunId], references: [id], onDelete: Cascade)
+  step     AgentStep? @relation(fields: [agentStepId], references: [id], onDelete: SetNull)
+
+  @@index([dailyRunId, occurredAt(sort: Desc)])
+  @@index([dailyRunId, decision, host])
+  @@map("egress_events")
 }
 
 model RunPause {
