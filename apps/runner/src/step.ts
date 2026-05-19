@@ -1076,7 +1076,8 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     typeof outcome.output === 'string'
   ) {
     const parsed = parseQaVerdict(outcome.output);
-    const verdict: 'tests_pass' | 'tests_fail' = parsed?.verdict ?? 'tests_fail';
+    const verdict: 'tests_pass' | 'tests_fail' | 'tests_skipped' =
+      parsed?.verdict ?? 'tests_fail';
     const summary =
       parsed?.summary ??
       `qa output did not match the expected verdict shape; raw output below:\n\n${outcome.output.slice(0, 2000)}`;

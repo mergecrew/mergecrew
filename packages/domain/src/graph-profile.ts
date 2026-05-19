@@ -144,6 +144,12 @@ export const ROSTER_GRAPH: GraphDefinition = {
       // spec revision (D3). Loop cap is enforced by the orchestrator
       // using the existing `REVIEW_LOOP_CAP` constant.
       { from: 'qa', to: 'deploy_dev', when: 'tests_pass' },
+      // tests_skipped (#566): no test setup was detected (e.g., a
+      // freshly scaffolded repo). Treat as a passthrough rather than
+      // looping QA → PM, which would burn LLM cycles trying to "fix"
+      // a non-regression. Orchestrator policy may later require a
+      // human gate for tests_skipped on sensitive changesets.
+      { from: 'qa', to: 'deploy_dev', when: 'tests_skipped' },
       { from: 'qa', to: 'pm', when: 'tests_fail' },
       { from: 'deploy_dev', to: 'observation' },
       { from: 'observation', to: GRAPH_END },

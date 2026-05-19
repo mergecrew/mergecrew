@@ -121,6 +121,32 @@ export const RunnerConfig = z.object({
 });
 export type RunnerConfig = z.infer<typeof RunnerConfig>;
 
+/**
+ * Per-command override for the build skills (#566). When detection
+ * picks the wrong command — corporate `mvn` wrapper, a Makefile that
+ * orchestrates a polyrepo build, a Python project that uses `nox`
+ * instead of `pytest` directly — the project pins exact `cmd` + `args`
+ * here. The override fully replaces the detected command.
+ */
+export const BuildCommandDef = z.object({
+  cmd: z.string().min(1),
+  args: z.array(z.string()).default([]),
+});
+export type BuildCommandDef = z.infer<typeof BuildCommandDef>;
+
+export const BuildConfig = z.object({
+  commands: z
+    .object({
+      install: BuildCommandDef.optional(),
+      typecheck: BuildCommandDef.optional(),
+      lint: BuildCommandDef.optional(),
+      test: BuildCommandDef.optional(),
+      integration: BuildCommandDef.optional(),
+    })
+    .optional(),
+});
+export type BuildConfig = z.infer<typeof BuildConfig>;
+
 export const MergecrewConfig = z.object({
   version: z.literal(1),
   lifecycle: z.object({
@@ -130,5 +156,6 @@ export const MergecrewConfig = z.object({
   agents: z.record(AgentDefinition).default({}),
   skills: z.record(CustomSkillDef).default({}),
   runner: RunnerConfig.optional(),
+  build: BuildConfig.optional(),
 });
 export type MergecrewConfig = z.infer<typeof MergecrewConfig>;
