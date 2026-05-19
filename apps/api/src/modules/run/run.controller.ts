@@ -39,6 +39,11 @@ export class RunController {
     return { items: await this.runs.timeline(runId, after) };
   }
 
+  @Get(':runId/network-summary')
+  async networkSummary(@Param('runId') runId: string) {
+    return this.runs.networkSummary(runId);
+  }
+
   @Post(':runId/intent')
   @RequireRole('operator')
   async addIntent(

@@ -932,6 +932,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/orgs/{slug}/projects/{projectSlug}/runs/{runId}/network-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["RunController_networkSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{slug}/projects/{projectSlug}/runs/{runId}/intent": {
         parameters: {
             query?: never;
@@ -3288,6 +3304,23 @@ export interface operations {
         };
     };
     RunController_timeline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RunController_networkSummary: {
         parameters: {
             query?: never;
             header?: never;

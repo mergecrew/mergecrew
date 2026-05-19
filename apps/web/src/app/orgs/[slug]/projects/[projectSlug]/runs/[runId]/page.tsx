@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { api, apiOr404 } from '@/lib/api';
 import { requireSession } from '@/lib/session';
@@ -74,6 +75,27 @@ interface RunDetail {
   workflows: Workflow[];
 }
 
+interface RunNetworkHost {
+  host: string;
+  attempts: number;
+  allowed: number;
+  blocked: number;
+  firstSeen: string;
+  lastSeen: string;
+  reasons: string[];
+  sources: string[];
+  origins: string[];
+  modes: string[];
+}
+
+interface RunNetworkSummary {
+  runId: string;
+  projectId: string;
+  mode: 'enforced' | 'audit' | null;
+  totals: { attempts: number; allowed: number; blocked: number };
+  items: RunNetworkHost[];
+}
+
 export default async function RunPage({
   params,
   searchParams,
@@ -93,6 +115,11 @@ export default async function RunPage({
     `/v1/orgs/${slug}/projects/${projectSlug}/runs/${runId}/timeline`,
     { session },
   );
+
+  const network = await api<RunNetworkSummary>(
+    `/v1/orgs/${slug}/projects/${projectSlug}/runs/${runId}/network-summary`,
+    { session },
+  ).catch(() => null);
 
   const streamUrl = `/api/v1/orgs/${slug}/projects/${projectSlug}/runs/${runId}/timeline/stream`;
   const totals = computeTotals(detail);
@@ -180,6 +207,13 @@ export default async function RunPage({
       )}
 
       <AgentPanel detail={detail} />
+
+      {network && (
+        <NetworkPanel
+          summary={network}
+          allowlistHref={`/orgs/${slug}/projects/${projectSlug}/settings`}
+        />
+      )}
 
       <p className="text-sm text-zinc-600 dark:text-zinc-400">
         Each workflow runs one or more agents. Click an agent to see its input, output, and every
@@ -312,6 +346,135 @@ function AgentPanel({ detail }: { detail: RunDetail }) {
           );
         })}
       </div>
+    </section>
+  );
+}
+
+/**
+ * Per-run network surface (#576). Renders one row per host the run
+ * tried to reach (skill-level today; sandbox-level layers land later).
+ * Operators use this to see at-a-glance what was *attempted* and what
+ * got rejected — the only audit signal we have when traffic dies at a
+ * lower layer (nftables / proxy / DNS).
+ *
+ * Hidden when no events were captured at all (no HTTP-bound skills ran,
+ * or this is an old run from before #576 shipped); shows the explicit
+ * "all outbound was allowlisted" empty state when every event was an
+ * allow.
+ */
+function NetworkPanel({
+  summary,
+  allowlistHref,
+}: {
+  summary: RunNetworkSummary;
+  allowlistHref: string;
+}) {
+  if (summary.totals.attempts === 0) return null;
+  const allAllowed = summary.totals.blocked === 0;
+  const auditOnly = summary.mode === 'audit';
+  return (
+    <section>
+      <div className="mb-2 flex items-baseline justify-between">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
+          Network ({summary.items.length} {summary.items.length === 1 ? 'host' : 'hosts'})
+        </h2>
+        <div className="flex items-baseline gap-2 text-xs text-zinc-500">
+          <span>
+            {summary.totals.attempts} attempt{summary.totals.attempts === 1 ? '' : 's'} ·{' '}
+            <span className="text-green-700 dark:text-green-300">
+              {summary.totals.allowed} allowed
+            </span>{' '}
+            ·{' '}
+            <span className={summary.totals.blocked > 0 ? 'text-rose-700 dark:text-rose-300' : ''}>
+              {summary.totals.blocked} blocked
+            </span>
+          </span>
+          {summary.mode && (
+            <span
+              className={`rounded px-1.5 py-0.5 font-mono text-[10px] uppercase ${
+                auditOnly
+                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+                  : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+              }`}
+              title={
+                auditOnly
+                  ? 'Audit mode — these attempts were logged but not actually blocked.'
+                  : 'Enforced — blocked attempts were dropped at the skill or sandbox layer.'
+              }
+            >
+              {auditOnly ? 'audit' : 'enforced'}
+            </span>
+          )}
+        </div>
+      </div>
+      {allAllowed ? (
+        <Card>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            All outbound was allowlisted ✅ ·{' '}
+            <Link
+              href={allowlistHref}
+              className="underline decoration-dotted hover:text-zinc-900 dark:hover:text-zinc-200"
+            >
+              project allowlist
+            </Link>
+          </p>
+        </Card>
+      ) : (
+        <Card>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-[10px] uppercase tracking-wide text-zinc-500">
+                <th className="pb-2 pr-2 font-medium">Host</th>
+                <th className="pb-2 pr-2 font-medium">Attempts</th>
+                <th className="pb-2 pr-2 font-medium">Blocked</th>
+                <th className="pb-2 pr-2 font-medium">Sources</th>
+                <th className="pb-2 font-medium">Reasons</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summary.items.map((h) => (
+                <tr
+                  key={h.host}
+                  className="border-t border-zinc-100 align-baseline dark:border-zinc-800"
+                >
+                  <td className="py-1.5 pr-2 font-mono text-zinc-800 dark:text-zinc-200">
+                    {h.host}
+                  </td>
+                  <td className="py-1.5 pr-2 font-mono tabular-nums text-zinc-700 dark:text-zinc-300">
+                    {h.attempts}
+                  </td>
+                  <td
+                    className={`py-1.5 pr-2 font-mono tabular-nums ${
+                      h.blocked > 0
+                        ? 'text-rose-700 dark:text-rose-300'
+                        : 'text-zinc-500'
+                    }`}
+                  >
+                    {h.blocked}
+                  </td>
+                  <td className="py-1.5 pr-2 text-zinc-600 dark:text-zinc-400">
+                    {h.origins.length > 0
+                      ? h.origins.join(', ')
+                      : h.sources.join(', ')}
+                  </td>
+                  <td className="py-1.5 text-zinc-600 dark:text-zinc-400">
+                    {h.reasons.join(', ')}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="mt-3 text-xs text-zinc-500">
+            Add a host to the project allowlist to unblock it ·{' '}
+            <Link
+              href={allowlistHref}
+              className="underline decoration-dotted hover:text-zinc-900 dark:hover:text-zinc-200"
+            >
+              project settings
+            </Link>
+          </p>
+        </Card>
+      )}
     </section>
   );
 }

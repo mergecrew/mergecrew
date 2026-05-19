@@ -604,8 +604,35 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
       warn: (m, meta) => logger.warn({ ...meta, skillName: extra.skillName }, m),
       error: (m, meta) => logger.error({ ...meta, skillName: extra.skillName }, m),
     },
-    emit: async () => {
-      /* runner doesn't push extra events from skills in V1 */
+    emit: async (kind, payload) => {
+      // #576 — persist `egress.checked` audit events so the run-detail
+      // "Network" section can surface every host the run tried to reach
+      // (allowed and blocked). Other event kinds are unused for now.
+      if (kind !== 'egress.checked') return;
+      try {
+        await withTenant(organizationId, (tx) =>
+          tx.egressEvent.create({
+            data: {
+              organizationId,
+              dailyRunId: runId,
+              agentStepId: stepId,
+              source: String(payload.source ?? 'skill'),
+              origin: typeof payload.origin === 'string' ? payload.origin : null,
+              host: String(payload.host ?? ''),
+              port: typeof payload.port === 'number' ? payload.port : null,
+              method: typeof payload.method === 'string' ? payload.method : null,
+              decision: String(payload.decision ?? 'blocked'),
+              reason: String(payload.reason ?? 'other'),
+              mode: typeof payload.mode === 'string' ? payload.mode : 'enforced',
+            },
+          }),
+        );
+      } catch (err) {
+        logger.warn(
+          { err: (err as Error)?.message, kind, payload },
+          'failed to persist egress event; continuing',
+        );
+      }
     },
     adapters: { vcs, deploy, tracker, comms },
     egressAllowlist,

@@ -93,3 +93,66 @@ export function assertEgressAllowed(url: string, allowlist: string[] | null | un
     throw new EgressBlocked(host);
   }
 }
+
+/**
+ * Recording variant used by HTTP skills (#576). Same enforcement as
+ * `assertEgressAllowed` — throws `EgressBlocked` on disallowed URLs —
+ * but also fires an `egress.checked` event on `ctx.emit` so the runner
+ * can persist it to the `egress_events` table that drives the run-
+ * detail "Network" section.
+ *
+ * Keep the recording side-effect best-effort: a missing `ctx.emit` (test
+ * contexts, or future skill callers that don't care about audit) just
+ * skips the event. Enforcement still happens.
+ */
+export interface EgressRecordCtx {
+  egressAllowlist?: string[] | null;
+  emit?: (kind: string, payload: Record<string, unknown>) => Promise<void>;
+}
+
+export async function recordAndAssertEgress(
+  url: string,
+  ctx: EgressRecordCtx,
+  origin: string,
+): Promise<void> {
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    await safeEmit(ctx, {
+      source: 'skill',
+      origin,
+      host: url,
+      decision: 'blocked',
+      reason: 'parse_error',
+    });
+    throw new EgressBlocked(url, `cannot parse URL: ${url}`);
+  }
+  const allowed = isHostAllowed(host, ctx.egressAllowlist);
+  if (!allowed) {
+    await safeEmit(ctx, {
+      source: 'skill',
+      origin,
+      host,
+      decision: 'blocked',
+      reason: PRIVATE_HOSTS.test(host) ? 'private' : 'unlisted',
+    });
+    throw new EgressBlocked(host);
+  }
+  await safeEmit(ctx, {
+    source: 'skill',
+    origin,
+    host,
+    decision: 'allowed',
+    reason: ctx.egressAllowlist === null || ctx.egressAllowlist === undefined ? 'unrestricted' : 'allowlist',
+  });
+}
+
+async function safeEmit(ctx: EgressRecordCtx, payload: Record<string, unknown>): Promise<void> {
+  if (!ctx.emit) return;
+  try {
+    await ctx.emit('egress.checked', payload);
+  } catch {
+    // Audit logging must never break the skill.
+  }
+}

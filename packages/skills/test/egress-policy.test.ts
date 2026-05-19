@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   EgressBlocked,
   assertEgressAllowed,
   isHostAllowed,
+  recordAndAssertEgress,
 } from '../src/egress-policy.js';
 
 describe('isHostAllowed', () => {
@@ -74,5 +75,78 @@ describe('assertEgressAllowed', () => {
 
   it('does not throw when the allowlist is undefined', () => {
     expect(() => assertEgressAllowed('https://anything.example/x', undefined)).not.toThrow();
+  });
+});
+
+describe('recordAndAssertEgress', () => {
+  it('emits egress.checked with decision=allowed when the host passes', async () => {
+    const emit = vi.fn().mockResolvedValue(undefined);
+    await recordAndAssertEgress(
+      'https://api.example.com/x',
+      { egressAllowlist: ['api.example.com'], emit },
+      'web.fetch_url',
+    );
+    expect(emit).toHaveBeenCalledTimes(1);
+    expect(emit).toHaveBeenCalledWith('egress.checked', expect.objectContaining({
+      source: 'skill',
+      origin: 'web.fetch_url',
+      host: 'api.example.com',
+      decision: 'allowed',
+      reason: 'allowlist',
+    }));
+  });
+
+  it('emits decision=blocked and still throws when the host is not allowlisted', async () => {
+    const emit = vi.fn().mockResolvedValue(undefined);
+    await expect(
+      recordAndAssertEgress(
+        'https://evil.com/x',
+        { egressAllowlist: ['api.example.com'], emit },
+        'web.fetch_url',
+      ),
+    ).rejects.toBeInstanceOf(EgressBlocked);
+    expect(emit).toHaveBeenCalledWith('egress.checked', expect.objectContaining({
+      decision: 'blocked',
+      reason: 'unlisted',
+      host: 'evil.com',
+      origin: 'web.fetch_url',
+    }));
+  });
+
+  it('flags loopback reason as private', async () => {
+    const emit = vi.fn().mockResolvedValue(undefined);
+    await expect(
+      recordAndAssertEgress('http://127.0.0.1/x', { egressAllowlist: ['*'], emit }, 'web.fetch_url'),
+    ).rejects.toBeInstanceOf(EgressBlocked);
+    expect(emit).toHaveBeenCalledWith('egress.checked', expect.objectContaining({
+      decision: 'blocked',
+      reason: 'private',
+    }));
+  });
+
+  it('emits unrestricted when allowlist is undefined (back-compat)', async () => {
+    const emit = vi.fn().mockResolvedValue(undefined);
+    await recordAndAssertEgress(
+      'https://api.example.com/x',
+      { emit },
+      'web.fetch_url',
+    );
+    expect(emit).toHaveBeenCalledWith('egress.checked', expect.objectContaining({
+      decision: 'allowed',
+      reason: 'unrestricted',
+    }));
+  });
+
+  it('swallows emit errors so audit logging never breaks the skill', async () => {
+    const emit = vi.fn().mockRejectedValue(new Error('db down'));
+    await expect(
+      recordAndAssertEgress('https://api.example.com/x', { egressAllowlist: ['*'], emit }, 'web.fetch_url'),
+    ).resolves.toBeUndefined();
+  });
+
+  it('works without an emit (test contexts that build ctx by hand)', async () => {
+    await expect(
+      recordAndAssertEgress('https://api.example.com/x', { egressAllowlist: ['*'] }, 'web.fetch_url'),
+    ).resolves.toBeUndefined();
   });
 });

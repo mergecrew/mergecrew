@@ -174,6 +174,112 @@ export class RunService {
   }
 
   /**
+   * Per-run network summary (#576). Aggregates the `egress_events` rows
+   * the runner emits for every allow/deny decision into one row per host
+   * so the run-detail "Network" section can render a compact list.
+   *
+   * Returned `mode` is the strictest mode across the run's events: any
+   * 'enforced' entry means *some* layer actually dropped traffic; if
+   * every entry is 'audit' the UI shows the would-have-been-blocked
+   * chip.
+   */
+  async networkSummary(runId: string) {
+    const t = this.tenant.require();
+    const run = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.dailyRun.findFirst({
+        where: { id: runId, organizationId: t.organizationId },
+        select: { id: true, projectId: true },
+      }),
+    );
+    if (!run) throw new NotFoundError();
+    const events = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.egressEvent.findMany({
+        where: { dailyRunId: runId },
+        orderBy: { occurredAt: 'asc' },
+      }),
+    );
+    const hosts = new Map<
+      string,
+      {
+        host: string;
+        attempts: number;
+        allowed: number;
+        blocked: number;
+        firstSeen: string;
+        lastSeen: string;
+        reasons: Set<string>;
+        sources: Set<string>;
+        origins: Set<string>;
+        modes: Set<string>;
+      }
+    >();
+    let anyEnforced = false;
+    let anyAudit = false;
+    for (const e of events) {
+      const key = e.host;
+      let row = hosts.get(key);
+      if (!row) {
+        row = {
+          host: key,
+          attempts: 0,
+          allowed: 0,
+          blocked: 0,
+          firstSeen: e.occurredAt.toISOString(),
+          lastSeen: e.occurredAt.toISOString(),
+          reasons: new Set<string>(),
+          sources: new Set<string>(),
+          origins: new Set<string>(),
+          modes: new Set<string>(),
+        };
+        hosts.set(key, row);
+      }
+      row.attempts += 1;
+      if (e.decision === 'blocked') row.blocked += 1;
+      else row.allowed += 1;
+      row.reasons.add(e.reason);
+      row.sources.add(e.source);
+      if (e.origin) row.origins.add(e.origin);
+      row.modes.add(e.mode);
+      row.lastSeen = e.occurredAt.toISOString();
+      if (e.mode === 'enforced') anyEnforced = true;
+      if (e.mode === 'audit') anyAudit = true;
+    }
+    const items = Array.from(hosts.values())
+      .map((r) => ({
+        host: r.host,
+        attempts: r.attempts,
+        allowed: r.allowed,
+        blocked: r.blocked,
+        firstSeen: r.firstSeen,
+        lastSeen: r.lastSeen,
+        reasons: Array.from(r.reasons),
+        sources: Array.from(r.sources),
+        origins: Array.from(r.origins),
+        modes: Array.from(r.modes),
+      }))
+      // Blocked hosts first; then by attempts desc; then by host.
+      .sort((a, b) => {
+        if (a.blocked !== b.blocked) return b.blocked - a.blocked;
+        if (a.attempts !== b.attempts) return b.attempts - a.attempts;
+        return a.host.localeCompare(b.host);
+      });
+    // Enforcement mode for the whole run: prefer 'enforced' if anything
+    // actually dropped; otherwise 'audit' if anyAudit; otherwise null
+    // (no events captured at all).
+    const mode: 'enforced' | 'audit' | null = anyEnforced ? 'enforced' : anyAudit ? 'audit' : null;
+    const totals = items.reduce(
+      (acc, r) => {
+        acc.attempts += r.attempts;
+        acc.allowed += r.allowed;
+        acc.blocked += r.blocked;
+        return acc;
+      },
+      { attempts: 0, allowed: 0, blocked: 0 },
+    );
+    return { runId, projectId: run.projectId, mode, totals, items };
+  }
+
+  /**
    * Returns the run as a tree of workflows → agent steps → (model turns + tool calls).
    * Used by the run-detail page to show what the agents actually did.
    */
