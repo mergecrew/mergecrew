@@ -6,7 +6,13 @@ export type {
   SandboxResources,
   SandboxStartOpts,
 } from './types.js';
-export { ProcessDriver } from './process-driver.js';
+export { ProcessDriver, type ProcessDriverOpts } from './process-driver.js';
+export {
+  BASE_ALLOWED_ENV,
+  SENSITIVE_ENV_PREFIXES,
+  buildScrubbedEnv,
+  classifySensitiveKey,
+} from './env.js';
 export {
   DockerDriver,
   CONTAINER_WORKSPACE,

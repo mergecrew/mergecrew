@@ -8,6 +8,15 @@ import type {
   SandboxHandle,
   SandboxStartOpts,
 } from './types.js';
+import { buildScrubbedEnv, classifySensitiveKey } from './env.js';
+
+export interface ProcessDriverOpts {
+  logger?: {
+    info: (msg: string, meta?: any) => void;
+    warn: (msg: string, meta?: any) => void;
+    error: (msg: string, meta?: any) => void;
+  };
+}
 
 /**
  * The shipping-as-of-V0 execution model: spawn subprocesses directly
@@ -21,6 +30,11 @@ import type {
  */
 export class ProcessDriver implements SandboxDriver {
   readonly name = 'process';
+  private readonly logger?: ProcessDriverOpts['logger'];
+
+  constructor(opts: ProcessDriverOpts = {}) {
+    this.logger = opts.logger;
+  }
 
   async start(opts: SandboxStartOpts): Promise<SandboxHandle> {
     // Validate workspace exists; everything else is a no-op for this driver.
@@ -37,13 +51,34 @@ export class ProcessDriver implements SandboxDriver {
 
   async exec(handle: SandboxHandle, opts: ExecOpts): Promise<ExecResult> {
     const cwd = resolveCwd(handle.workspacePath, opts.cwd);
+    // Env scrub (#561). Start from the allowlisted base — never the
+    // full process.env — and let the caller layer on explicit values.
+    // Per-call sensitive overrides are honored (the supervisor sometimes
+    // legitimately injects a scoped secret) but logged so the leak path
+    // is visible in operator telemetry.
+    const base = buildScrubbedEnv();
+    if (opts.env && this.logger) {
+      for (const key of Object.keys(opts.env)) {
+        const prefix = classifySensitiveKey(key);
+        if (prefix) {
+          this.logger.warn(
+            'sandbox env contains a sensitive prefix — verify this is project-scoped, not supervisor-scope',
+            { key, prefix, sandbox: handle.id },
+          );
+        }
+      }
+    }
+    const env: Record<string, string> = opts.env ? { ...base, ...opts.env } : base;
     const r = await execa(opts.cmd, opts.args, {
       cwd,
-      env: opts.env ? { ...process.env, ...opts.env } : process.env,
+      env,
+      // CRUCIAL: execa merges `env` with process.env by default; without
+      // this the scrub above is a no-op. extendEnv: false hands the
+      // child *only* what we built.
+      extendEnv: false,
       signal: opts.signal,
       timeout: opts.timeoutMs ?? 0,
       reject: false,
-      // Match today's behavior in packages/skills/src/stock/build.ts.
       stdout: 'pipe',
       stderr: 'pipe',
     });
