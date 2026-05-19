@@ -1,5 +1,5 @@
 {
-  "name": "@mergecrew/skills",
+  "name": "@mergecrew/sandbox-driver",
   "version": "0.1.0",
   "private": true,
   "main": "./dist/index.js",
@@ -17,16 +17,6 @@
     "test": "tsc -p tsconfig.test.json && vitest run"
   },
   "dependencies": {
-    "@mergecrew/adapters-comms": "workspace:*",
-    "@mergecrew/adapters-deploy": "workspace:*",
-    "@mergecrew/adapters-tracker": "workspace:*",
-    "@mergecrew/adapters-vcs": "workspace:*",
-    "@mergecrew/db": "workspace:*",
-    "@mergecrew/domain": "workspace:*",
-    "@mergecrew/llm": "workspace:*",
-    "@mergecrew/sandbox-driver": "workspace:*",
-    "@prisma/client": "^5.22.0",
-    "playwright-core": "^1.48.1",
     "execa": "^8.0.1"
   },
   "devDependencies": {

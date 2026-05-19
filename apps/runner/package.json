@@ -21,6 +21,7 @@
     "@mergecrew/domain": "workspace:*",
     "@mergecrew/eventlog": "workspace:*",
     "@mergecrew/llm": "workspace:*",
+    "@mergecrew/sandbox-driver": "workspace:*",
     "@mergecrew/skills": "workspace:*",
     "@mergecrew/transcript-store": "workspace:*",
     "@prisma/client": "^5.22.0",

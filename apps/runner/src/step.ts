@@ -36,6 +36,7 @@ import {
   type LlmProfile,
 } from '@mergecrew/llm';
 import { stockSkills, buildHttpSkill, SkillExecutor, type SkillExecutionContext } from '@mergecrew/skills';
+import type { SandboxDriver, SandboxHandle } from '@mergecrew/sandbox-driver';
 import { GitHubProvider, getGitHubAppCredentials, type VcsProvider } from '@mergecrew/adapters-vcs';
 import {
   AwsDirectProvider,
@@ -103,10 +104,18 @@ interface StepArgs {
    * mid-flight. Tests that exercise runStep() in isolation can omit this.
    */
   cancellation?: CancellationCoordinator;
+  /**
+   * Sandbox driver selected by `RUNNER_SANDBOX`. The runner threads it
+   * through the skill execution context so shell-bound skills will (per
+   * #560) exec via the driver instead of calling `execa` on the host
+   * directly. In #556 the field is plumbed but stock skills don't yet
+   * use it.
+   */
+  driver: SandboxDriver;
 }
 
 export async function runStep(args: StepArgs): Promise<StepOutcome> {
-  const { organizationId, projectId, runId, workflowRunId, stepId, agentRef, eventlog, logger, cancellation } = args;
+  const { organizationId, projectId, runId, workflowRunId, stepId, agentRef, eventlog, logger, cancellation, driver } = args;
 
   // Defense in depth: a step might have been queued before the user
   // cancelled the run. Don't waste an LLM call on it. The orchestrator
@@ -240,6 +249,18 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   await fs.mkdir(resolveWorkspaceRoot(), { recursive: true, mode: 0o700 });
   const workspacePath = workspacePathForRun(runId);
   await fs.mkdir(workspacePath, { recursive: true, mode: 0o700 });
+
+  // Start the per-step sandbox (#556). For the default ProcessDriver this
+  // is effectively a no-op that records the workspace path. For
+  // forthcoming container drivers (#557) it provisions a per-run
+  // container. Skills that exec shell will receive the handle via the
+  // SkillExecutionContext in #560.
+  const sandbox: SandboxHandle = await driver.start({
+    runId,
+    projectId,
+    organizationId,
+    workspacePath,
+  });
 
   // VCS adapter from env (used by the workspace bootstrap below and by
   // skills that touch the repo).
@@ -487,6 +508,8 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     },
     adapters: { vcs, deploy, tracker, comms },
     egressAllowlist,
+    driver,
+    sandbox,
     config: {
       // Per-skill / per-step config bag the runner injects.
       adapterConfig: dt?.config ?? {},
@@ -1400,6 +1423,14 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   // Unregister from the cancellation coordinator so a stale entry doesn't
   // leak across BullMQ jobs in this process.
   unregisterCancellation?.();
+  // Tear the sandbox down. No-op for ProcessDriver; for container drivers
+  // (#557) this removes the per-run container. #557 will also need to
+  // wrap the whole step in try/finally so early-return paths still call
+  // stop() — for now we accept the leak risk because ProcessDriver has
+  // no state to leak.
+  await driver.stop(sandbox).catch((err: any) =>
+    logger.warn({ runId, err: err?.message ?? err }, 'sandbox stop failed'),
+  );
 
   // We export a price helper so the runtime can attach $ to model turns.
   void priceFor;

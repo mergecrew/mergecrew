@@ -13,6 +13,7 @@ import { runStep } from './step.js';
 import { CancellationCoordinator } from './cancellation.js';
 import { startProbeServer } from './probe-server.js';
 import { cleanupWorkspace, WORKSPACE_CLEANUP_QUEUE } from './workspace.js';
+import { buildSandboxDriver } from '@mergecrew/sandbox-driver';
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
@@ -30,6 +31,12 @@ const eventlog = new Eventlog(pubsub, fanoutToBullmq(fanoutQueue));
 const replyQueue = new Queue('orchestrator.step-reply', { connection: conn });
 
 const concurrency = Number(process.env.RUNNER_CONCURRENCY ?? 4);
+
+// Build the sandbox driver once at supervisor startup. Today the default
+// (`process`) preserves the v0 execa-on-host behavior; once #557 lands an
+// operator flips to `docker` via the RUNNER_SANDBOX env. The driver is
+// threaded through every step's SkillExecutionContext.
+const driver = buildSandboxDriver({ mode: process.env.RUNNER_SANDBOX, logger });
 
 // V1.3 cancellation propagation (#9). The API publishes on
 // RUN_CANCEL_CHANNEL when a user cancels a run; we abort every in-flight
@@ -69,7 +76,7 @@ const worker = new Worker(
       stepId: string;
       agentRef: string;
     };
-    const outcome = await runStep({ ...data, eventlog, logger, cancellation });
+    const outcome = await runStep({ ...data, eventlog, logger, cancellation, driver });
     await replyQueue.add('reply', { ...data, outcome }, { removeOnComplete: 1000 });
     return outcome;
   },
@@ -119,7 +126,7 @@ worker.on('failed', (job, err) => {
 const probePort = Number(process.env.RUNNER_HEALTH_PORT ?? 9091);
 const probeServer = startProbeServer({ port: probePort, redis: conn, logger });
 
-logger.info({ concurrency }, 'runner started');
+logger.info({ concurrency, sandboxDriver: driver.name }, 'runner started');
 
 async function shutdown() {
   logger.info('shutting down');
