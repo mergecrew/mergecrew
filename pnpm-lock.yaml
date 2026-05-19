@@ -195,6 +195,10 @@ importers:
         version: 5.9.3
 
   apps/e2e-loop:
+    dependencies:
+      '@mergecrew/sandbox-driver':
+        specifier: workspace:*
+        version: link:../../packages/sandbox-driver
     devDependencies:
       '@types/node':
         specifier: ^25.6.2
@@ -205,6 +209,9 @@ importers:
       typescript:
         specifier: ^5.6.2
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.1
+        version: 2.1.9(@types/node@25.6.2)(terser@5.47.1)
 
   apps/eval-runner:
     dependencies:
