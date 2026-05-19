@@ -21,6 +21,20 @@ export interface SandboxResources {
   timeoutMs?: number;
 }
 
+export interface SandboxCacheMount {
+  /**
+   * Host-side directory holding the cache. The supervisor creates it
+   * before driver.start() so the mount has something to attach to.
+   */
+  hostPath: string;
+  /**
+   * In-container path the host cache mounts to. Caller resolves any
+   * `~/` (home) or `./` (workspace-relative) expansion before
+   * constructing this opt — the driver mounts verbatim.
+   */
+  containerPath: string;
+}
+
 export interface SandboxStartOpts {
   runId: string;
   projectId: string;
@@ -40,6 +54,13 @@ export interface SandboxStartOpts {
    * at the network namespace.
    */
   egressAllowlist?: string[] | null;
+  /**
+   * Per-project cache directories that persist across runs (#572).
+   * Tagged on the host by (org_id, project_id) so they never cross
+   * tenant boundaries. ProcessDriver ignores them (no need — paths
+   * are host-local already); DockerDriver mounts each as a --volume.
+   */
+  cacheMounts?: SandboxCacheMount[];
 }
 
 export interface SandboxHandle {

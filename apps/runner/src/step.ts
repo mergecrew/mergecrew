@@ -91,6 +91,8 @@ import {
 import { resolveSandboxResources } from './runner-config.js';
 import { maybeRunMiseInstall } from './mise-install.js';
 import { maybeBuildDevcontainer } from './devcontainer-build.js';
+import { maybeRunSetup } from './setup-script.js';
+import { resolveCacheMounts } from './cache-mounts.js';
 
 interface StepArgs {
   organizationId: string;
@@ -279,11 +281,21 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   // devcontainer file is present on disk.
   let sandboxImage: string | undefined = earlyCfg.runner?.image;
 
-  // Start the per-step sandbox (#556, #559). For the default ProcessDriver
-  // this is effectively a no-op that records the workspace path. For
-  // the docker driver (#557) it provisions a per-run container with the
-  // image + resources resolved above. Skills that exec shell will
-  // receive the handle via SkillExecutionContext in #560.
+  // Per-project cache mounts (#572). Resolves runner.cache.paths to
+  // host-side directories tagged by (org_id, project_id); the driver
+  // mounts each into the container. ProcessDriver ignores them.
+  const cacheMounts = await resolveCacheMounts({
+    organizationId,
+    projectId,
+    cachePaths: earlyCfg.runner?.cache?.paths,
+  }).catch((err: any) => {
+    logger.warn({ err: err?.message ?? err }, 'cache mounts resolution failed; continuing without persistent caches');
+    return [];
+  });
+
+  // Start the per-step sandbox (#556, #559, #572). Provisions a per-run
+  // container with the image + resources + cache mounts resolved
+  // above. Skills exec shell via the handle on SkillExecutionContext.
   const sandbox: SandboxHandle = await driver.start({
     runId,
     projectId,
@@ -291,6 +303,7 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     workspacePath,
     image: sandboxImage,
     resources: sandboxResources,
+    cacheMounts,
   });
 
   // VCS adapter from env (used by the workspace bootstrap below and by
@@ -399,6 +412,19 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     abortSignal: undefined,
   }).catch((err: any) =>
     logger.warn({ workspacePath, err: err?.message ?? err }, 'mise install hook threw'),
+  );
+
+  // Run the project's `runner.setup` commands (#572). Sentinel-deduped
+  // so the same setup doesn't re-run across steps in the same workspace.
+  await maybeRunSetup({
+    workspacePath,
+    driver,
+    sandbox,
+    setup: earlyCfg.runner?.setup,
+    logger,
+    abortSignal: undefined,
+  }).catch((err: any) =>
+    logger.warn({ workspacePath, err: err?.message ?? err }, 'runner.setup hook threw'),
   );
 
   // Deploy adapter selection: pick the dev target, decide adapter from its config.

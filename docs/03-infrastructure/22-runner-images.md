@@ -129,6 +129,36 @@ The supervisor's `RUNNER_DOCKER_BIN` env (`docker` or `podman`) is honored by bo
 
 A first-class `ProjectSecret` of kind `registry_credentials` (with a UI form) is a follow-up — until then the operator-managed `docker login` is the path.
 
+## Setup script + cache paths (#572)
+
+Two extra fields on the project's `runner` block run between workspace bootstrap and the first agent step:
+
+```yaml
+# mergecrew.yaml
+runner:
+  setup:
+    - "pip install -r requirements.txt"
+    - "pip install -e .[dev]"
+  cache:
+    paths:
+      - ~/.cache/pip
+      - .pytest_cache
+```
+
+**`runner.setup`.** Shell commands the supervisor runs once per workspace (via the SandboxDriver). Sentinel-deduped on the SHA-256 of the command list — same setup re-running across steps is free; editing the list bumps the sentinel. On the first non-zero exit the supervisor stops the chain and writes no sentinel, so the next step retries.
+
+**`runner.cache.paths`.** In-container paths that should persist across runs in the same project. Each path becomes a `--volume` mount onto a host directory tagged `{cache_root}/{organization_id}/{project_id}/<path-slug>`. Resolution rules:
+
+- `~/path` → `/home/mergecrew/path`
+- `/abs/path` → kept verbatim
+- `relative/path` → `/workspace/relative/path`
+
+Common entries: `~/.cache/pip`, `~/.npm`, `~/.cache/uv`, `~/.m2`, `~/.gradle`, `~/.cargo`, `~/go/pkg/mod`, `.pytest_cache`.
+
+Cache root is `/var/mergecrew/cache/` by default; override via `RUNNER_CACHE_ROOT`. **Caches never cross tenant boundaries** — the host directories are tagged by org+project. GC is operator-managed in V1 (`find /var/mergecrew/cache -atime +30 -delete`); a first-class TTL is a follow-up.
+
+The project-settings UI form for these two fields is a deferred follow-up — until it ships, operators edit `mergecrew.yaml` directly.
+
 ## Honoring `.tool-versions` / `.mise.toml`
 
 Every stock image ships `mise` (the [polyglot tool-version manager](https://mise.jdx.dev)). When the cloned repo contains `.tool-versions` (asdf/mise format) or `.mise.toml` in the workspace root, the supervisor runs `mise install` once per workspace before the first agent step. Pin a specific Node / Python / Go / Java / Ruby / Rust version without rebuilding the image:
