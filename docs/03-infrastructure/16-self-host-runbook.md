@@ -20,6 +20,7 @@ Each entry is symptom → likely cause → recovery → source of truth. If a sy
 | Migrating from Ollama to Anthropic mid-project | [Switch LLM provider](#switch-llm) |
 | Configure outbound email (digests, magic-link) | [Configure outbound email](#configure-email) |
 | Worker stuck, want to restart safely | [Restart a worker without losing in-flight runs](#safe-restart) |
+| Switch the runner to the docker sandbox driver | [Enable RUNNER_SANDBOX=docker](#runner-sandbox-docker) |
 
 ---
 
@@ -162,6 +163,42 @@ Each entry is symptom → likely cause → recovery → source of truth. If a sy
 3. Retry the failing step from the UI.
 
 **Source.** `apps/runner/src/step.ts` for the GitHub call sites; `packages/adapters-vcs/src/github.ts` for the App auth flow.
+
+### Enable RUNNER_SANDBOX=docker
+<a id="runner-sandbox-docker"></a>
+
+**Symptom.** Default install runs in *unsandboxed mode* — supervisor startup logs a multi-line banner with the title `UNSANDBOXED RUNNER MODE` and a warning. Build steps for every tenant execute on the supervisor host. Suitable for single-tenant self-hosters; unsuitable for multi-tenant.
+
+**Cause.** `RUNNER_SANDBOX` defaults to `process` (the ProcessDriver) for two reasons: zero install dependencies (no Docker socket required on the supervisor host) and complete behavioral parity with the V0 runner. Operators flip it deliberately once they have the host setup ready.
+
+**Recovery — flipping to docker.**
+
+1. **Confirm the supervisor has access to a Docker socket.** Either bind-mount `/var/run/docker.sock` into the supervisor container, or run the supervisor on a host with a Docker socket available. `docker info` from within the supervisor process must work.
+2. **Ensure CAP_CHOWN** (or run the supervisor as root inside its container). The docker driver chowns the workspace to uid 1001 before `docker run`; without CAP_CHOWN the build will surface EACCES. See [`docs/03-infrastructure/22-runner-images.md`](22-runner-images.md) § "Workspace ownership (host side)".
+3. **Set the env.** Add to the supervisor's environment:
+
+   ```sh
+   RUNNER_SANDBOX=docker
+   # optional:
+   RUNNER_DEFAULT_IMAGE=ghcr.io/mergecrew/runner-node:20
+   RUNNER_OCI_RUNTIME=runsc           # gVisor; default 'runc' is fine for most
+   RUNNER_DOCKER_BIN=podman           # for rootless/podman setups
+   ```
+
+4. **Restart the supervisor.** Startup log now shows `sandboxDriver: 'docker'` and the unsandboxed banner is gone.
+5. **Run a smoke step.** The first per-tenant build run pulls the stock image (or the `runner.image` from `mergecrew.yaml`). First-time cold pull adds ~10s; subsequent runs reuse the cached image.
+
+**Verification.** Inside the running container during a build step:
+
+```sh
+docker exec <container-id> id          # uid=1001 gid=1001
+docker exec <container-id> printenv KMS_MASTER_KEY    # empty (env scrub, #561)
+docker exec <container-id> ip addr show               # --network none until Phase 4
+```
+
+**Rollback.** Unset `RUNNER_SANDBOX` (or set to `process`) and restart the supervisor. No data migration needed; the workspaces and skill API are unchanged.
+
+**Source.** `apps/runner/src/main.ts` builds the driver via `buildSandboxDriver()` from `RUNNER_SANDBOX`. Factory: `packages/sandbox-driver/src/factory.ts`. RFC: `docs/02-architecture/13-runner-isolation.md` § 7.
 
 ---
 

@@ -179,6 +179,6 @@ describe('buildSandboxDriver', () => {
     const logger = { info: () => {}, warn: (msg: string) => { calls.push(msg); }, error: () => {} };
     buildSandboxDriver({ logger });
     expect(calls.length).toBe(1);
-    expect(calls[0]).toMatch(/unsandboxed/);
+    expect(calls[0]).toMatch(/UNSANDBOXED/);
   });
 });
