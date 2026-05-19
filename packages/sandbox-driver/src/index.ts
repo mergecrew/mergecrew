@@ -44,3 +44,10 @@ export {
   type FargateRunTaskSpec,
 } from './fargate-driver.js';
 export { buildFargateApiClient, type FargateClientOpts } from './fargate-api-client.js';
+export {
+  E2BDriver,
+  type E2BApiClient,
+  type E2BCreateOpts,
+  type E2BDriverOpts,
+} from './e2b-driver.js';
+export { buildE2BApiClient, type E2BClientOpts } from './e2b-api-client.js';

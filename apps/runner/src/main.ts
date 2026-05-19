@@ -57,9 +57,12 @@ const driverFactoryOpts = {
   fargateSubnets: process.env.RUNNER_FARGATE_SUBNETS,
   fargateSecurityGroups: process.env.RUNNER_FARGATE_SG,
   fargateDefaultImage: process.env.RUNNER_FARGATE_DEFAULT_IMAGE,
+  e2bDomain: process.env.RUNNER_E2B_DOMAIN,
+  e2bApiKey: process.env.RUNNER_E2B_API_KEY,
+  e2bDefaultTemplate: process.env.RUNNER_E2B_DEFAULT_TEMPLATE,
   logger,
 };
-const needsAsync = /^(kubernetes|k8s|fargate)$/.test(
+const needsAsync = /^(kubernetes|k8s|fargate|e2b)$/.test(
   (process.env.RUNNER_SANDBOX ?? '').toLowerCase(),
 );
 const driverPromise: Promise<ReturnType<typeof buildSandboxDriver>> = needsAsync
