@@ -95,12 +95,63 @@ sudo nft -j list counters table inet mergecrew
 - A misbehaving build script that calls `curl evil.com` directly was the original problem. With this in place, `curl` returns "could not resolve host" (Phase 4 DNS resolver, #574) or "connection refused" (this PR's nftables) — both non-zero exits the build skill surfaces.
 - The host's nftables ruleset is operator-controlled. The supervisor doesn't have CAP_NET_ADMIN; it can't change the rules. A compromised supervisor cannot lift the allowlist.
 
+## Per-run DNS resolver (#574)
+
+nftables drops by IP. A DNS-level allowlist closes the "build script resolves a non-allowlisted host then connects by the returned IP" path by returning NXDOMAIN at name resolution time.
+
+`apps/runner-dns/` is a small Node service that:
+
+- Listens on UDP `RUNNER_DNS_PORT` (default 53).
+- Reads the host-global allowlist from `RUNNER_DNS_ALLOWLIST` (comma-separated, supports `*.suffix.tld` wildcards — same semantics as the Node skill layer).
+- Forwards allowed queries to `RUNNER_DNS_UPSTREAM` (default `1.1.1.1:53`).
+- Returns NXDOMAIN for everything else.
+- JSON-logs every blocked query as `{event: "dns.blocked", host, src}` so operators can correlate with the run.
+
+### Operator setup
+
+Run `runner-dns` as a sidecar in the same network as `mergecrew-egress` — e.g., via docker-compose:
+
+```yaml
+services:
+  runner-dns:
+    image: ghcr.io/mergecrew/runner-dns:latest
+    networks: [mergecrew-egress]
+    environment:
+      RUNNER_DNS_PORT: "53"
+      RUNNER_DNS_ALLOWLIST: "api.github.com,*.fastly.net,*.pypi.org,files.pythonhosted.org"
+      RUNNER_DNS_UPSTREAM: "1.1.1.1:53"
+```
+
+Then point the supervisor at it:
+
+```sh
+RUNNER_DNS_RESOLVER=<resolver_container_ip>
+```
+
+The DockerDriver adds `--dns <ip>` to every sandbox that joins the egress network, so the container's `/etc/resolv.conf` resolves through `runner-dns` only.
+
+### Verification
+
+```sh
+docker exec <sandbox> nslookup api.github.com   # resolves → upstream returns the A record
+docker exec <sandbox> nslookup pypi.evil.com    # NXDOMAIN
+docker logs <runner-dns> | grep dns.blocked     # blocked attempts surface here
+```
+
+### Limitations of V1
+
+- The allowlist is **host-global**, not per-run. Operators with multiple tenants generate the union from project configs via config-management.
+- Per-run resolver instances (one process per sandbox with project-scoped allowlist) is a follow-up. The driver's `--dns` flag already supports a per-sandbox IP — what's needed is the lifecycle code to spin a resolver per run and feed the project's allowlist into it.
+- IPv6 support: the V1 resolver listens on UDP4 only. AAAA queries from the sandbox hit the empty path and return NXDOMAIN by default. Containers configured for IPv4-only egress don't notice.
+
 ## What this PR does (and doesn't) ship
 
-- ✅ Driver-side network mode selection based on the project's egress posture.
-- ✅ `runner.egress.allow` schema in `mergecrew.yaml`.
-- ✅ Operator recipe for nftables + docker network.
-- ⏳ Per-run DNS resolver that returns NXDOMAIN for non-allowlisted hosts — #574.
+- ✅ Driver-side network mode selection based on the project's egress posture (#573).
+- ✅ `runner.egress.allow` schema in `mergecrew.yaml` (#573).
+- ✅ Operator recipe for nftables + docker network (#573).
+- ✅ Per-run DNS resolver service (`apps/runner-dns/`) — host-global allowlist (#574).
+- ✅ DockerDriver `--dns` flag wiring (#574).
+- ⏳ Per-run resolver lifecycle (project-scoped allowlist) — follow-up.
 - ⏳ Optional egress proxy sidecar (SNI inspection + per-request audit) — #575.
 - ⏳ UI surfacing blocked-outbound counts in the run digest — #576.
 

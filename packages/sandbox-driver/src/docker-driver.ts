@@ -35,6 +35,16 @@ export interface DockerDriverOpts {
    * Operators set this via RUNNER_EGRESS_NETWORK without touching code.
    */
   egressNetwork?: string;
+  /**
+   * IPv4 of the per-run DNS resolver (#574). When set, the sandbox
+   * launches with `--dns <ip>` so its `/etc/resolv.conf` points at the
+   * resolver instead of the host's default. The resolver returns
+   * NXDOMAIN for hostnames outside the project's allowlist — closes
+   * the "resolve `pypi.evil.com` then connect by IP" hole that
+   * nftables (#573) can't see by name. Operators set via
+   * RUNNER_DNS_RESOLVER.
+   */
+  dnsResolver?: string;
   logger?: {
     info: (m: string, meta?: any) => void;
     warn: (m: string, meta?: any) => void;
@@ -67,6 +77,7 @@ export class DockerDriver implements SandboxDriver {
   private readonly ociRuntime: string | undefined;
   private readonly bin: string;
   private readonly egressNetwork: string | undefined;
+  private readonly dnsResolver: string | undefined;
   private readonly logger?: DockerDriverOpts['logger'];
 
   // Map containerId → host workspace path for fs-bridge ops.
@@ -77,6 +88,7 @@ export class DockerDriver implements SandboxDriver {
     this.ociRuntime = opts.ociRuntime;
     this.bin = opts.dockerBin ?? 'docker';
     this.egressNetwork = opts.egressNetwork;
+    this.dnsResolver = opts.dnsResolver;
     this.logger = opts.logger;
   }
 
@@ -221,6 +233,12 @@ export class DockerDriver implements SandboxDriver {
     const wantsAllowlistedEgress = (opts.egressAllowlist?.length ?? 0) > 0;
     if (wantsAllowlistedEgress && this.egressNetwork) {
       args.push('--network', this.egressNetwork);
+      // Point /etc/resolv.conf at the runner-dns resolver (#574) so
+      // hostname-based exfiltration is blocked at the DNS layer in
+      // addition to the IP layer (nftables, #573).
+      if (this.dnsResolver) {
+        args.push('--dns', this.dnsResolver);
+      }
     } else {
       args.push('--network', 'none');
     }

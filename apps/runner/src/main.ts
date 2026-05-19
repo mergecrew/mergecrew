@@ -42,6 +42,7 @@ const driver = buildSandboxDriver({
   ociRuntime: process.env.RUNNER_OCI_RUNTIME,
   dockerBin: process.env.RUNNER_DOCKER_BIN,
   egressNetwork: process.env.RUNNER_EGRESS_NETWORK,
+  dnsResolver: process.env.RUNNER_DNS_RESOLVER,
   logger,
 });
 
