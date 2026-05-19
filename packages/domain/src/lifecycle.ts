@@ -110,6 +110,28 @@ export const RunnerResources = z.object({
 });
 export type RunnerResources = z.infer<typeof RunnerResources>;
 
+/**
+ * Per-project cache config (#572). Each `cache.paths` entry is an
+ * in-container path that gets bound to a per-project directory on
+ * the supervisor host. Paths starting with `~/` resolve against the
+ * sandbox user's home (`/home/mergecrew`); other absolute paths are
+ * used verbatim. Relative paths resolve against `/workspace`.
+ */
+export const RunnerCacheConfig = z.object({
+  paths: z.array(z.string().min(1)).default([]),
+});
+export type RunnerCacheConfig = z.infer<typeof RunnerCacheConfig>;
+
+/**
+ * Per-project workspace setup script (#572). Runs once per workspace
+ * (sentinel-deduped by hash) before the first agent step. Each
+ * command must be a single line; the runner shells them via
+ * `/bin/sh -c`. Common uses: `pip install -e .[dev]`, vendor a
+ * checkout, prime fixtures.
+ */
+export const RunnerSetupConfig = z.array(z.string().min(1));
+export type RunnerSetupConfig = z.infer<typeof RunnerSetupConfig>;
+
 export const RunnerConfig = z.object({
   /**
    * OCI image ref the docker SandboxDriver pulls and launches. When
@@ -118,6 +140,8 @@ export const RunnerConfig = z.object({
    */
   image: z.string().min(1).optional(),
   resources: RunnerResources.optional(),
+  setup: RunnerSetupConfig.optional(),
+  cache: RunnerCacheConfig.optional(),
 });
 export type RunnerConfig = z.infer<typeof RunnerConfig>;
 

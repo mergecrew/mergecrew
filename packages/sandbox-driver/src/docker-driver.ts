@@ -193,6 +193,11 @@ export class DockerDriver implements SandboxDriver {
     args.push('--tmpfs', '/tmp:rw,size=512m,mode=1777');
     args.push('--tmpfs', `/home/mergecrew:rw,size=512m,uid=${SANDBOX_UID},gid=${SANDBOX_GID}`);
     args.push('--volume', `${opts.workspacePath}:${CONTAINER_WORKSPACE}:rw`);
+    // Per-project cache mounts (#572). Listed after the workspace so a
+    // misconfigured cache.paths can't shadow `/workspace`.
+    for (const cache of opts.cacheMounts ?? []) {
+      args.push('--volume', `${cache.hostPath}:${cache.containerPath}:rw`);
+    }
     args.push('--workdir', CONTAINER_WORKSPACE);
     args.push('--network', 'none');
     args.push('--cap-drop', 'ALL');

@@ -1,6 +1,7 @@
 export type {
   ExecOpts,
   ExecResult,
+  SandboxCacheMount,
   SandboxDriver,
   SandboxHandle,
   SandboxResources,
