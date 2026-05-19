@@ -102,6 +102,39 @@ The implication: the allowlist is a **soft control** today — it stops an agent
 
 This is a known gap and is tracked alongside the broader runner-isolation work (#187, #188).
 
+### Raw SQL allowlist (#582 / #554 T-9)
+
+The runner's Prisma client runs as a role that bypasses row-level
+security so the supervisor can read across tenant rows for orchestration
+(heartbeat sweeper, scheduler, telemetry batchers). Every regular query
+goes through `withTenant(organizationId, …)` in `packages/db/src/client.ts`,
+which sets `app.org_id` for the transaction so RLS policies on every
+table apply.
+
+A `$queryRaw` / `$executeRaw` call with user-controlled input would
+bypass that boundary. The CI lint (`pnpm lint:no-raw-sql`) forbids the
+Prisma raw-SQL APIs (`$queryRaw`, `$queryRawUnsafe`, `$executeRaw`,
+`$executeRawUnsafe`) everywhere except `packages/db/**`, where the
+`withTenant` helpers bind the org-id before any raw SQL runs.
+
+The handful of legitimate exceptions outside `packages/db/**` carry an
+inline `// eslint-disable-next-line no-restricted-syntax` with a
+justification:
+
+| Location | Why it's safe |
+|---|---|
+| `apps/api/src/modules/health/health.controller.ts` | `select 1` healthcheck — no input. |
+| `apps/api/src/modules/admin/admin.service.ts` | `select 1` admin healthcheck — no input. |
+| `apps/api/src/modules/cost/cost.controller.ts` | Aggregation queries over per-tenant rows; runs inside `withTenant` and uses parameterized placeholders — never string-interpolation of user input. |
+
+To add a new exception:
+
+1. Verify the SQL is parameterized — never string-concat user input.
+2. Wrap the call in `withTenant`/`withSystem` so the org-id boundary
+   is explicit.
+3. Add the line-level disable with a one-line justification.
+4. Append the entry to the table above in this section.
+
 ## Prompt injection mitigations
 
 - Inputs from external content (issues, customer feedback, docs) are wrapped in `<external_content>` tags in the system prompt and explicitly described as untrusted.

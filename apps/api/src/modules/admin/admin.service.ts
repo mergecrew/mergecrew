@@ -74,6 +74,7 @@ export class AdminService {
    */
   async health(): Promise<HealthResponse> {
     const [dbPing, redisPing] = await Promise.all([
+      // eslint-disable-next-line no-restricted-syntax -- `select 1` admin healthcheck, no input. See docs/02-architecture/11-security.md § Raw SQL allowlist.
       timed(() => this.prisma.withSystem((tx) => tx.$queryRawUnsafe('select 1'))),
       timed(async () => {
         const r = await this.queueSvc.connectionHandle().ping();

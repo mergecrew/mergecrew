@@ -16,6 +16,7 @@ export class CostController {
     const days = Math.min(Math.max(Number(daysQ ?? 30), 1), 90);
     const since = new Date(Date.now() - days * 86_400_000);
     const rows = await this.prisma.withTenant(t.organizationId, async (tx) => {
+      // eslint-disable-next-line no-restricted-syntax -- parameterized aggregation inside withTenant; no string-interpolated user input. See docs/02-architecture/11-security.md § Raw SQL allowlist.
       return tx.$queryRaw<Array<{ day: Date; usd: number; tokens: number; provider_kind: string; model_id: string }>>(
         Prisma.sql`
           select
@@ -45,6 +46,7 @@ export class CostController {
     const days = Math.min(Math.max(Number(daysQ ?? 30), 1), 90);
     const since = new Date(Date.now() - days * 86_400_000);
     const rows = await this.prisma.withTenant(t.organizationId, async (tx) => {
+      // eslint-disable-next-line no-restricted-syntax -- parameterized aggregation inside withTenant; no string-interpolated user input. See docs/02-architecture/11-security.md § Raw SQL allowlist.
       return tx.$queryRaw<Array<{ day: Date; usd: number; tokens: number }>>(
         Prisma.sql`
           select

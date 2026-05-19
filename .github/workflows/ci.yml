@@ -48,6 +48,8 @@ jobs:
       - run: pnpm build
       - name: Skills path-gate (#580 / #554 T-10)
         run: pnpm --filter @mergecrew/skills lint:fs-gate
+      - name: Raw SQL chokepoint (#582 / #554 T-9)
+        run: pnpm lint:no-raw-sql
       - run: pnpm test --if-present
       - name: OpenAPI spec is up to date
         run: |
