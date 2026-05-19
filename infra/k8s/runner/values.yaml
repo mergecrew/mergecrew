@@ -1,0 +1,52 @@
+# Default values for the mergecrew runner Helm chart.
+# Operators override these via `helm install --set …` or `--values prod.yaml`.
+
+image:
+  # Mergecrew runner supervisor (the long-lived workload that consumes
+  # the `runner.step` queue and spawns sandbox Jobs in the runners
+  # namespace).
+  repository: ghcr.io/mergecrew/runner
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Replicas of the supervisor itself. Each one consumes from BullMQ
+# independently; scale this with workload volume.
+replicas: 1
+
+resources:
+  limits:
+    cpu: "1"
+    memory: 1Gi
+  requests:
+    cpu: "200m"
+    memory: 256Mi
+
+# Where per-step sandbox Pods land. **Must** be different from the
+# supervisor's own namespace so the NetworkPolicies don't accidentally
+# trap the supervisor's own egress (Redis, S3, the Mergecrew API).
+sandboxNamespace: mergecrew-runners
+
+env:
+  # Set to `kubernetes` to enable the K8sDriver. Other supported modes:
+  # process, docker. See packages/sandbox-driver/src/factory.ts.
+  RUNNER_SANDBOX: "kubernetes"
+  # When the supervisor runs inside the same cluster, use in-cluster auth.
+  # Otherwise leave as `default` and mount a kubeconfig as a Secret.
+  RUNNER_K8S_AUTH: "in-cluster"
+  RUNNER_K8S_DEFAULT_IMAGE: "ghcr.io/mergecrew/runner-polyglot:latest"
+  RUNNER_HEALTH_PORT: "9091"
+  LOG_LEVEL: "info"
+
+# Connection secrets / config. Reference a pre-existing Secret instead
+# of inlining values so the chart works in both manual + GitOps flows.
+externalSecrets:
+  redisUrl: mergecrew-runner-redis
+  databaseUrl: mergecrew-runner-postgres
+
+# Default NetworkPolicy egress posture applied to every sandbox Pod when
+# no project-specific allowlist is set. Operators can extend this in
+# the runners namespace; the supervisor only owns the per-Job policy
+# that selects on the run-id label.
+defaultEgress:
+  allowDns: true
+  allowedCidrs: []

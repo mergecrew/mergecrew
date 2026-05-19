@@ -1,0 +1,14 @@
+apiVersion: v2
+name: mergecrew-runner
+description: |
+  Mergecrew runner supervisor deployed onto Kubernetes, with per-step Jobs
+  dispatched into an isolated namespace by the in-process K8sDriver (#577).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/mergecrew/mergecrew
+sources:
+  - https://github.com/mergecrew/mergecrew
+maintainers:
+  - name: mergecrew
+    email: ops@mergecrew.io

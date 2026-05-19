@@ -22,4 +22,18 @@ export {
   type DockerDriverOpts,
 } from './docker-driver.js';
 export { chownWorkspaceForSandbox, type ChownLogger } from './workspace-prep.js';
-export { buildSandboxDriver, type SandboxFactoryOpts, type SandboxMode } from './factory.js';
+export {
+  buildSandboxDriver,
+  buildSandboxDriverAsync,
+  type SandboxFactoryOpts,
+  type SandboxMode,
+} from './factory.js';
+export {
+  K8sDriver,
+  type K8sApiClient,
+  type K8sDriverOpts,
+  type K8sJobSpec,
+  type K8sNetworkPolicySpec,
+  type K8sNetworkPolicyEgressRule,
+} from './k8s-driver.js';
+export { buildK8sApiClient, type K8sClientOpts } from './k8s-api-client.js';
