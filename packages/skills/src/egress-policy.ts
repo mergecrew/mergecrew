@@ -1,10 +1,45 @@
 /**
- * Egress allowlist (#10). Per-project list of host patterns that agent
- * skills are allowed to reach over the network.
+ * Egress allowlist (#10, #188, #560). Per-project list of host patterns
+ * that agent skills are allowed to reach over the network.
  *
- * Semantics:
- *  - `undefined` / `null` allowlist = no restriction (back-compat default
- *    for projects that haven't opted in).
+ * # Where this allowlist is enforced
+ *
+ * Two layers, with different guarantees:
+ *
+ * 1. **Node-level (this file).** `assertEgressAllowed()` is called by
+ *    HTTP-bound skills (`web.fetch_url`, `web.parse_url`,
+ *    `web.fetch_image`, `web.fetch_html`, and any custom HTTPS skill
+ *    declared in `mergecrew.yaml`) before they fire the request. This
+ *    layer blocks the LLM from naming a non-allowlisted host inside a
+ *    skill arg. It does NOT see traffic that an agent's build script
+ *    initiates from within the sandbox — `curl` / `wget` / `npm
+ *    install` don't go through Node's network APIs, so this file
+ *    can't observe them. With the V0 process driver, that's the gap
+ *    documented in #188.
+ *
+ * 2. **Network namespace (driver, Phase 4 — #573 / #574 / #575).**
+ *    When the runner runs with `RUNNER_SANDBOX=docker`, the sandbox
+ *    container lives in its own network namespace. Phase 4 layers
+ *    nftables default-deny + a per-run DNS resolver on that namespace,
+ *    so every outbound packet — whether from Node, a shell skill, or
+ *    anything in between — is checked against the same allowlist.
+ *    That's the hard control the project setting promises.
+ *
+ * # Migration status
+ *
+ * - V0 (today): layer 1 only. Build skills (#560) now exec via the
+ *   SandboxDriver, so under `RUNNER_SANDBOX=docker` layer 2's
+ *   `--network none` baseline already blocks all outbound from build
+ *   commands. The allowlist itself is still only consulted at layer
+ *   1 — Phase 4 wires it in at layer 2.
+ * - Phase 4: layer 2 reads the same allowlist and enforces it at the
+ *   netns. Layer 1 remains for fast-fail before the request leaves
+ *   Node.
+ *
+ * # Semantics (used by both layers)
+ *
+ *  - `undefined` / `null` allowlist = no restriction (back-compat
+ *    default for projects that haven't opted in).
  *  - `[]` empty list = block all outbound HTTP.
  *  - `['*']` = explicit allow-all.
  *  - Otherwise: `host` matches if it equals a pattern, OR the pattern

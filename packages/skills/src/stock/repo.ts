@@ -1,15 +1,16 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { execa } from 'execa';
 import { ValidationError } from '@mergecrew/domain';
-import type { AnySkill } from '../types.js';
+import type { AnySkill, SkillExecutionContext } from '../types.js';
 import { resolveInWorkspace } from '../workspace.js';
 
-async function currentBranch(workspacePath: string): Promise<string | null> {
+async function currentBranch(ctx: SkillExecutionContext): Promise<string | null> {
+  if (!ctx.driver || !ctx.sandbox) return null;
   try {
-    const r = await execa('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-      cwd: workspacePath,
-      reject: false,
+    const r = await ctx.driver.exec(ctx.sandbox, {
+      cmd: 'git',
+      args: ['rev-parse', '--abbrev-ref', 'HEAD'],
+      signal: ctx.abortSignal,
     });
     const s = (r.stdout ?? '').trim();
     return s && s !== 'HEAD' ? s : null;
@@ -165,7 +166,7 @@ const repoCommit: AnySkill = {
       authorName: 'Mergecrew Bot',
       authorEmail: `mergecrew@${ctx.organizationId}.mergecrew.dev`,
     });
-    const branch = await currentBranch(ctx.workspacePath);
+    const branch = await currentBranch(ctx);
     return {
       output: { sha, branch, message: subject },
       brief: `commit ${sha.slice(0, 7)} ${subject}`,
