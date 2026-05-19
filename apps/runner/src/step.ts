@@ -348,6 +348,14 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   // Tracker adapter — per-project. Reads tracker_targets + the encrypted
   // TRACKER_TOKEN secret. If either is missing we leave it undefined so skills
   // that need a tracker can fail with a clear message.
+  //
+  // GitHub Issues fast-path (#550): when the tracker is github-issues
+  // and no TRACKER_TOKEN secret is stored, mint a fresh installation
+  // token via the same GH App credentials the VCS provider uses.
+  // Onboarding auto-creates this TrackerTarget on repo connect so the
+  // operator doesn't have to wire up a PAT — Discovery and BugTriage
+  // call `tracker.list_issues` on every run, and unconfigured trackers
+  // surface as red dots in the timeline.
   let tracker: TrackerProvider | undefined;
   const trackerTarget = await withTenant(organizationId, (tx) =>
     tx.trackerTarget.findUnique({ where: { projectId } }),
@@ -358,14 +366,33 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
         where: { projectId, name: TRACKER_TOKEN_SECRET },
       }),
     );
-    if (tokenRow) {
-      const token = decryptDevOnly(tokenRow.ciphertext);
-      if (trackerTarget.adapterId === 'github-issues') {
-        const repoFullName = (trackerTarget.config as any)?.repoFullName ?? '';
-        if (repoFullName) tracker = new GitHubIssuesProvider({ installationToken: token, repoFullName });
-      } else if (trackerTarget.adapterId === 'linear') {
-        tracker = new LinearProvider({ apiKey: token });
+    const storedToken = tokenRow ? decryptDevOnly(tokenRow.ciphertext) : null;
+    if (trackerTarget.adapterId === 'github-issues') {
+      const repoFullName = (trackerTarget.config as any)?.repoFullName ?? '';
+      if (repoFullName) {
+        let issuesToken = storedToken;
+        if (!issuesToken && vcs instanceof GitHubProvider) {
+          // Fall back to the GH App installation token. Same credential
+          // the VCS provider mints for clone/PR; same scopes cover the
+          // Issues API.
+          const repo = await withTenant(organizationId, (tx) =>
+            tx.connectedRepo.findUnique({ where: { projectId } }),
+          );
+          if (repo) {
+            issuesToken = await vcs
+              .getInstallationToken(repo.installationId)
+              .catch(() => null);
+          }
+        }
+        if (issuesToken) {
+          tracker = new GitHubIssuesProvider({
+            installationToken: issuesToken,
+            repoFullName,
+          });
+        }
       }
+    } else if (trackerTarget.adapterId === 'linear' && storedToken) {
+      tracker = new LinearProvider({ apiKey: storedToken });
     }
   }
 
