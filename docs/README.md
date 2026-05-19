@@ -43,6 +43,15 @@ Documentation for contributors and operators of [Mergecrew](https://github.com/m
 8. [GitHub App setup](03-infrastructure/20-github-app-setup.md)
 9. [Runner workspace images](03-infrastructure/22-runner-images.md) — what the docker SandboxDriver launches per run
 
+**Stack cookbook** (#569)
+
+- [Node](03-infrastructure/24-stack-node.md)
+- [Python](03-infrastructure/25-stack-python.md)
+- [Java](03-infrastructure/26-stack-java.md)
+- [Go](03-infrastructure/27-stack-go.md)
+- [Ruby](03-infrastructure/28-stack-ruby.md)
+- [.NET](03-infrastructure/29-stack-dotnet.md)
+
 **Guardrails & budgets**
 
 8. [Monthly spend cap](03-infrastructure/08-monthly-spend-cap.md)
