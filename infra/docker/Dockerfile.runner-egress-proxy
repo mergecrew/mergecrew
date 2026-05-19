@@ -1,0 +1,29 @@
+# Container image for the runner egress proxy sidecar (#575).
+# Pairs with infra/docker/Dockerfile.runner-dns and the existing
+# infra/docker/Dockerfile.* family for the supervisor services.
+
+ARG NODE_VERSION=22-bookworm
+FROM node:${NODE_VERSION} AS base
+RUN corepack enable
+WORKDIR /repo
+
+FROM base AS deps
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* tsconfig.base.json ./
+COPY apps/runner-egress-proxy/package.json apps/runner-egress-proxy/
+COPY packages/ packages/
+RUN pnpm install --frozen-lockfile=false
+
+FROM deps AS build
+COPY . .
+RUN pnpm --filter @mergecrew/runner-egress-proxy build
+
+FROM node:${NODE_VERSION} AS runtime
+WORKDIR /app
+COPY --from=build /repo/node_modules /app/node_modules
+COPY --from=build /repo/apps/runner-egress-proxy/node_modules /app/apps/runner-egress-proxy/node_modules
+COPY --from=build /repo/apps/runner-egress-proxy/dist /app/apps/runner-egress-proxy/dist
+COPY --from=build /repo/apps/runner-egress-proxy/package.json /app/apps/runner-egress-proxy/package.json
+RUN chown -R node:node /app
+USER node
+WORKDIR /app/apps/runner-egress-proxy
+CMD ["node", "dist/main.js"]
