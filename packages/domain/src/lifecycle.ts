@@ -85,6 +85,42 @@ export const CustomSkillDef = z.object({
 });
 export type CustomSkillDef = z.infer<typeof CustomSkillDef>;
 
+/**
+ * Per-project runner-sandbox configuration (#559). The supervisor reads
+ * this block from the project's lifecycle yaml and threads it through
+ * `SandboxDriver.start({ image, resources })`. Field shapes (k8s-style
+ * memory + duration strings) match what the project-settings UI surfaces.
+ * Parsing into numeric driver inputs lives in `apps/runner/src/runner-config.ts`.
+ */
+export const RunnerResources = z.object({
+  /** Logical CPUs. Accepts integer or fractional ("0.5"). Drivers map to --cpus. */
+  cpu: z.number().positive().optional(),
+  /** k8s-style memory: "512Mi", "1Gi", "4Gi", or a plain number = MB. */
+  memory: z
+    .string()
+    .regex(/^\d+(\.\d+)?(Mi|Gi|G|M)?$/, 'memory must match e.g. 512Mi / 1Gi / 4G')
+    .optional(),
+  /** Maximum processes. Driver maps to --pids-limit. */
+  pids: z.number().int().positive().optional(),
+  /** Sandbox-wide wall clock: "30m", "1h", "120s". */
+  timeout: z
+    .string()
+    .regex(/^\d+(\.\d+)?(s|m|h)?$/, 'timeout must match e.g. 30m / 1h / 120s')
+    .optional(),
+});
+export type RunnerResources = z.infer<typeof RunnerResources>;
+
+export const RunnerConfig = z.object({
+  /**
+   * OCI image ref the docker SandboxDriver pulls and launches. When
+   * absent, the driver falls back to its `defaultImage` (RUNNER_DEFAULT_IMAGE
+   * env, or the hard-coded fallback). See docs/03-infrastructure/22-runner-images.md.
+   */
+  image: z.string().min(1).optional(),
+  resources: RunnerResources.optional(),
+});
+export type RunnerConfig = z.infer<typeof RunnerConfig>;
+
 export const MergecrewConfig = z.object({
   version: z.literal(1),
   lifecycle: z.object({
@@ -93,5 +129,6 @@ export const MergecrewConfig = z.object({
   }),
   agents: z.record(AgentDefinition).default({}),
   skills: z.record(CustomSkillDef).default({}),
+  runner: RunnerConfig.optional(),
 });
 export type MergecrewConfig = z.infer<typeof MergecrewConfig>;

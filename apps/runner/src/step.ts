@@ -88,6 +88,7 @@ import {
   workspacePathForRun,
   bootstrapWorkspace,
 } from './workspace.js';
+import { resolveSandboxResources } from './runner-config.js';
 
 interface StepArgs {
   organizationId: string;
@@ -250,16 +251,35 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   const workspacePath = workspacePathForRun(runId);
   await fs.mkdir(workspacePath, { recursive: true, mode: 0o700 });
 
-  // Start the per-step sandbox (#556). For the default ProcessDriver this
-  // is effectively a no-op that records the workspace path. For
-  // forthcoming container drivers (#557) it provisions a per-run
-  // container. Skills that exec shell will receive the handle via the
-  // SkillExecutionContext in #560.
+  // Resolve per-project image + resources from the lifecycle yaml
+  // (#559). When the project leaves the `runner` block empty the driver
+  // falls back to its supervisor-level defaults. The lifecycle row is
+  // re-read below for agent / gate resolution, but we need the runner
+  // block before driver.start() so the docker driver gets the right
+  // image on container create.
+  const earlyLifecycle = await withTenant(organizationId, (tx) =>
+    tx.lifecycle.findFirst({
+      where: { projectId },
+      orderBy: { version: 'desc' },
+      select: { parsed: true },
+    }),
+  );
+  const earlyCfg = (earlyLifecycle?.parsed ?? {}) as MergecrewConfig;
+  const sandboxResources = resolveSandboxResources(earlyCfg.runner);
+  const sandboxImage = earlyCfg.runner?.image;
+
+  // Start the per-step sandbox (#556, #559). For the default ProcessDriver
+  // this is effectively a no-op that records the workspace path. For
+  // the docker driver (#557) it provisions a per-run container with the
+  // image + resources resolved above. Skills that exec shell will
+  // receive the handle via SkillExecutionContext in #560.
   const sandbox: SandboxHandle = await driver.start({
     runId,
     projectId,
     organizationId,
     workspacePath,
+    image: sandboxImage,
+    resources: sandboxResources,
   });
 
   // VCS adapter from env (used by the workspace bootstrap below and by
