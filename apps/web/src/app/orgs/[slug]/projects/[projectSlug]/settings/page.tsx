@@ -21,10 +21,12 @@ import { BlastRadiusForm } from './blast-radius-form';
 import { RiskScoreForm } from './risk-score-form';
 import { RecentRollbacks } from './recent-rollbacks';
 import { GraphProfileForm } from './graph-profile-form';
+import { RunnerSummary } from './runner-summary';
 
 const TABS: TabDef[] = [
   { id: 'setup', label: 'Setup' },
   { id: 'pipeline', label: 'Pipeline' },
+  { id: 'runner', label: 'Runner' },
   { id: 'guardrails', label: 'Guardrails' },
   { id: 'tools', label: 'Tools' },
 ];
@@ -109,6 +111,17 @@ export default async function ProjectSettings({
   // Org-only operations like API keys / member invites stay admin-gated
   // and live under /orgs/<slug>/settings, not here.
   const canEdit = await hasRole(slug, session, 'operator');
+
+  // Resolved runner.* config (#576-derived UI discoverability pass). Best-
+  // effort fetch from the current lifecycle; a missing/stale lifecycle
+  // leaves the Runner tab in its empty state with copy-paste examples.
+  const lifecycleResp = await api<{ parsed?: { runner?: Record<string, unknown> } } | null>(
+    `/v1/orgs/${slug}/projects/${projectSlug}/lifecycle`,
+    { session },
+  ).catch(() => null);
+  const runnerCfg = (lifecycleResp?.parsed?.runner ?? null) as Parameters<
+    typeof RunnerSummary
+  >[0]['runner'];
 
   // Fetch the list of repos the operator's GitHub App installation can
   // access so the form renders a dropdown instead of free-text input.
@@ -304,6 +317,15 @@ export default async function ProjectSettings({
             />
           </Section>
         </>
+      )}
+
+      {activeTab === 'runner' && (
+        <Section
+          title="Runner sandbox"
+          description="Where the build runs: which image, what resources, what persists between runs, what hostnames it can reach. Read from your lifecycle YAML (mergecrew.yaml); edit on the Lifecycle page."
+        >
+          <RunnerSummary orgSlug={slug} projectSlug={projectSlug} runner={runnerCfg} />
+        </Section>
       )}
 
       {activeTab === 'guardrails' && (
