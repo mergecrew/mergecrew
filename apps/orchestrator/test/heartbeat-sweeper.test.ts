@@ -223,14 +223,21 @@ describe('HeartbeatSweeper', () => {
       logger: pino({ level: 'silent' }),
     });
 
-    const beforeWaiting = await runnerQueue.getWaitingCount();
+    // Snapshot the set of waiting job-ids before+after instead of the
+    // count (#432). The shared `runner.step` queue is also written to
+    // by sibling tests in this file — a sibling's job transitioning
+    // from waiting → active mid-assertion would flip the count without
+    // anything new being enqueued here. The id-set diff is insensitive
+    // to those transitions and only fires on a genuine new enqueue.
+    const idsBefore = (await runnerQueue.getWaiting()).map((j) => j.id).sort();
     await (sweeper as any).tick();
-    const afterWaiting = await runnerQueue.getWaitingCount();
+    const idsAfter = (await runnerQueue.getWaiting()).map((j) => j.id).sort();
 
     const step = await prisma.agentStep.findUnique({ where: { id: seed.stepId } });
-    // Status untouched, heartbeat untouched (no refresh), no new queue job.
+    // Status untouched, heartbeat untouched (no refresh), no new queue job
+    // (the id set is unchanged — sibling-test transitions can't leak in).
     expect(step?.status).toBe('running');
-    expect(afterWaiting).toBe(beforeWaiting);
+    expect(idsAfter).toEqual(idsBefore);
   });
 
   it('per-attempt backoff: re-dispatches once the attempt-2 window elapses', async () => {
