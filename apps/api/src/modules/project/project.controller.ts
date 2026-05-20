@@ -52,6 +52,7 @@ export class ProjectController {
       sensitivePaths?: string[];
       graphProfile?: 'fast' | 'careful' | 'custom';
       graphYaml?: string | null;
+      egressAllowlist?: string[] | null;
     },
   ) {
     return this.projects.update(projectSlug, body);

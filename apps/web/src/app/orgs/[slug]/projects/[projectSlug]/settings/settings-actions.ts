@@ -19,6 +19,7 @@ export async function updateProjectAction(
     sensitivePaths?: string[];
     graphProfile?: 'fast' | 'careful' | 'custom';
     graphYaml?: string | null;
+    egressAllowlist?: string[] | null;
   },
 ) {
   const session = await requireSession();

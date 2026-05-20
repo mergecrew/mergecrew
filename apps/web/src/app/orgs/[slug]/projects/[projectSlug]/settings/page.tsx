@@ -22,6 +22,7 @@ import { RiskScoreForm } from './risk-score-form';
 import { RecentRollbacks } from './recent-rollbacks';
 import { GraphProfileForm } from './graph-profile-form';
 import { RunnerSummary } from './runner-summary';
+import { EgressAllowlistForm } from './egress-allowlist-form';
 
 const TABS: TabDef[] = [
   { id: 'setup', label: 'Setup' },
@@ -58,6 +59,7 @@ export default async function ProjectSettings({
     sensitivePaths: string[] | null;
     graphProfile: 'fast' | 'careful' | 'custom';
     graphYaml: string | null;
+    egressAllowlist: string[] | null;
     connectedRepo: {
       repoFullName: string;
       defaultBranch: string;
@@ -320,12 +322,25 @@ export default async function ProjectSettings({
       )}
 
       {activeTab === 'runner' && (
-        <Section
-          title="Runner sandbox"
-          description="Where the build runs: which image, what resources, what persists between runs, what hostnames it can reach. Read from your lifecycle YAML (mergecrew.yaml); edit on the Lifecycle page."
-        >
-          <RunnerSummary orgSlug={slug} projectSlug={projectSlug} runner={runnerCfg} />
-        </Section>
+        <>
+          <Section
+            title="Egress allowlist"
+            description="Per-project hostname allowlist. Enforced on every HTTP-bound skill, and (when the supervisor runs a docker / kubernetes / fargate / e2b sandbox driver) on the per-run network namespace + DNS resolver. Blocked attempts surface on each run's Network section."
+          >
+            <EgressAllowlistForm
+              slug={slug}
+              projectSlug={projectSlug}
+              initial={project.egressAllowlist}
+              canEdit={canEdit}
+            />
+          </Section>
+          <Section
+            title="Runner sandbox"
+            description="Where the build runs: which image, what resources, what persists between runs. Read from your lifecycle YAML (mergecrew.yaml); edit on the Lifecycle page."
+          >
+            <RunnerSummary orgSlug={slug} projectSlug={projectSlug} runner={runnerCfg} />
+          </Section>
+        </>
       )}
 
       {activeTab === 'guardrails' && (
