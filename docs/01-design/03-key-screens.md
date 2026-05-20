@@ -242,7 +242,7 @@ Sections, in checklist order:
 
 1. **LLM provider** — register one provider/profile (Anthropic, OpenAI, Bedrock, Ollama). Inline form. Skippable while `MERGECREW_DEMO_MODE=1` is set.
 2. **GitHub App** — install on the target org/repo. Status pulled from `Integration` rows.
-3. **Project** — create a project pointed at the connected repo. The Lifecycle page lets the user pick a stock template (`generic-careful`, `nextjs-vercel`, `python-render`, `go-fly`).
+3. **Project** — create a project pointed at the connected repo. The Lifecycle page lets the user pick a stock template (`roster` (default 9-agent graph), `generic-careful` (legacy 3-agent loop), `nextjs-vercel`, `python-render`, `go-fly`).
 4. **Deploy target** — at minimum one `dev` target (configured under project settings → deploy targets).
 5. **Schedule** — set the cron or leave it unscheduled and run on-demand.
 
