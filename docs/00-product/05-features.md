@@ -33,14 +33,14 @@ Concrete feature inventory grouped by surface. Each feature has a brief descript
 | Feature | Persona | Status |
 |---|---|---|
 | Default Lifecycle out of the box | All | Implemented |
-| Stock lifecycle templates (`generic-careful`, `nextjs-vercel`, `python-render`, `go-fly`) selectable from the project Lifecycle page | All | Implemented |
+| Stock lifecycle templates (`roster` (default), `generic-careful` (legacy 3-agent loop), `nextjs-vercel`, `python-render`, `go-fly`) selectable from the project Lifecycle page | All | Implemented |
 | Lifecycle defined as YAML in `mergecrew.yaml` (versioned with the repo) | All | Implemented |
 | Visual lifecycle viewer (DAG render of nodes + edges) | All | Implemented (`apps/web/src/components/lifecycle/lifecycle-graph.tsx`) |
 | Visual lifecycle editor (drag-drop nodes) | All | Planned |
 | Stock agents library (PM, UX, FE, BE, QA, SRE, Bug Triager, Doc Writer) | All | Implemented |
 | Custom agent definitions in `mergecrew.yaml` | Mira | Implemented |
 | `description:` field on agents and workflows (rendered on Lifecycle + Agents pages) | Mira | Implemented (lifecycle YAML schema only — not a Prisma column) |
-| Multi-agent specialization (planner → coder → reviewer) with reviewer loop-back | Mira | Implemented — see [`03-infrastructure/18-multi-agent.md`](../03-infrastructure/18-multi-agent.md) |
+| Multi-agent specialization | Mira | Implemented — `roster` profile (default) drives the 9-agent Discovery → PM → Implementation (BE + FE) → QA → DeployDev → Observation (DesignReviewer + Observation + BugTriage + DocWriter) graph with loop-backs; the legacy `careful` profile (planner → coder → reviewer) is still supported. See [`03-infrastructure/18-multi-agent.md`](../03-infrastructure/18-multi-agent.md). |
 | Stock skills library (~25 skills, see §Skills below) | All | In progress |
 | Custom skill definitions (OpenAPI / JSON-schema-shaped) | Mira | Planned |
 | Per-agent and per-skill model assignment with capability requirements | Mira | Implemented |

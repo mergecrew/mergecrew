@@ -175,6 +175,43 @@ Each agent step produces:
 - **`TimelineEvent`s** — `AGENT_TOOL_CALL` per tool call; agent-step lifecycle events emitted by the runner.
 - **Transcript blob** — the message array is captured for replay (object storage).
 
+## Graph profiles: `roster` (default) and `careful` (legacy)
+
+A project's `graphProfile` column selects which orchestration graph the
+orchestrator dispatches against:
+
+- **`roster`** (default since #516) — the full 9-agent specialized
+  graph: Discovery → PM → Implementation (BackendEngineer + FrontendEngineer)
+  → QA → DeployDev (SRE) → Observation (DesignReviewer + Observation +
+  BugTriage + DocWriter). QA's `tests_fail` verdict loops back to PM for
+  spec revision; the reviewer's `request_changes` loops back to the
+  appropriate engineer. New projects boot on this profile.
+
+- **`careful`** (legacy) — the original 3-agent loop: Planner → Coder →
+  Reviewer with `request_changes` loop-back to Coder. Kept for
+  back-compat; existing projects that booted before #516 still run on
+  this profile and continue to work unchanged.
+
+- **`fast`** — single-agent legacy path. V1 behavior.
+
+- **`custom`** — operator-supplied YAML graph in the project's
+  `graphYaml` column. Validated against the Graph schema in
+  `@mergecrew/domain` on every write.
+
+Operators flip a project between profiles from the Lifecycle page; the
+runtime picks the new profile on the next run.
+
+### Migration policy (#528)
+
+When the schema default flipped to `roster` in #516, existing
+`careful`-profile projects were intentionally left in place — no
+auto-upgrade migration ran. The trade-off (logged in the decision
+ticket #528) was option 2: keep `careful` as a legacy profile
+alongside `roster`. Pros: zero migration risk and the resolver doesn't
+need an alias layer. Cons: doubled maintenance until a future
+release decides to auto-upgrade. Operators wanting to move to roster
+can flip the profile from Lifecycle settings.
+
 ## Replay
 
 A persisted `AgentStep` carries enough context (system prompt + initial input + tool specs + recorded outputs) to re-run offline against a stub model that returns recorded responses, with read-only skills. This makes "what would model X have done?" tractable without re-incurring side effects.
