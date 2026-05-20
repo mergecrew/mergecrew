@@ -189,6 +189,7 @@ export class ProjectService {
       sensitivePaths?: string[];
       graphProfile?: 'fast' | 'careful' | 'custom';
       graphYaml?: string | null;
+      egressAllowlist?: string[] | null;
     },
   ) {
     const project = await this.detail(slug);
@@ -204,6 +205,7 @@ export class ProjectService {
       sensitivePaths?: any;
       graphProfile?: string;
       graphYaml?: string | null;
+      egressAllowlist?: any;
     } = {};
     if (patch.name !== undefined) {
       const trimmed = patch.name.trim();
@@ -265,6 +267,29 @@ export class ProjectService {
           throw new ValidationError((err as Error).message);
         }
         data.graphYaml = patch.graphYaml;
+      }
+    }
+    // Egress allowlist (#10 / #576 surface). `null` clears the column
+    // (back-compat default — no restriction). An empty array means
+    // "block all outbound HTTP" — operators flip there to explicitly
+    // lock down. Otherwise validate each pattern is a non-empty string
+    // before storing.
+    if (patch.egressAllowlist !== undefined) {
+      if (patch.egressAllowlist === null) {
+        data.egressAllowlist = null;
+      } else {
+        if (!Array.isArray(patch.egressAllowlist)) {
+          throw new ValidationError('egressAllowlist must be an array of host patterns or null');
+        }
+        const normalized = patch.egressAllowlist
+          .map((p) => (typeof p === 'string' ? p.trim() : ''))
+          .filter((p) => p.length > 0);
+        if (normalized.length !== patch.egressAllowlist.length) {
+          throw new ValidationError(
+            'egressAllowlist entries must be non-empty host patterns (e.g. "api.github.com", "*.pypi.org", "*")',
+          );
+        }
+        data.egressAllowlist = normalized;
       }
     }
     // Cross-field check: 'custom' profile requires graphYaml to be set
