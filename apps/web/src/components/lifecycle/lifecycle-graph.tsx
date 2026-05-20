@@ -27,6 +27,18 @@ import {
   type GraphEdit,
 } from './lifecycle-actions';
 
+interface TransitionDef {
+  to: string;
+  /**
+   * Routing predicate — defaults to `"true"` in the YAML schema, but
+   * roster-graph workflows use named signals (`tests_pass`,
+   * `tests_fail`, `approve`, `request_changes`) so the lifecycle
+   * viewer can label the edge (#527).
+   */
+  when?: string;
+  gate?: string;
+}
+
 interface WorkflowDef {
   id: string;
   description?: string;
@@ -38,6 +50,14 @@ interface WorkflowDef {
   // component with `out: undefined`. Marking it optional forces every
   // call site below to spell out the `?? []` fallback.
   out?: string[];
+  /**
+   * Conditional transitions — same data as `out` but with a routing
+   * `when` predicate per successor. When both are present we treat
+   * `transitions` as authoritative for edge labels and `out` as a
+   * fallback for any transition that didn't get a `when` (legacy
+   * single-edge workflows).
+   */
+  transitions?: TransitionDef[];
 }
 
 interface ParsedConfigShape {
@@ -335,13 +355,27 @@ export function LifecycleGraph({
   const viewW = maxX + padding * 2;
   const viewH = maxY + padding * 2;
 
-  const edges: Array<{ from: PlacedNode; to: PlacedNode }> = [];
+  const edges: Array<{ from: PlacedNode; to: PlacedNode; label?: string }> = [];
   for (const w of workflows) {
     const fromNode = placedById.get(w.id);
     if (!fromNode) continue;
-    for (const nextId of w.out ?? []) {
-      const toNode = placedById.get(nextId);
-      if (toNode) edges.push({ from: fromNode, to: toNode });
+    // Conditional transitions take precedence: each (to, when) pair is a
+    // distinct edge with a visible label so loop-backs and verdict
+    // routing are obvious. Workflows without transitions fall back to
+    // the plain `out` list (legacy single-edge case).
+    const transitions = w.transitions ?? [];
+    if (transitions.length > 0) {
+      for (const t of transitions) {
+        const toNode = placedById.get(t.to);
+        if (!toNode) continue;
+        const label = t.when && t.when !== 'true' ? t.when : undefined;
+        edges.push({ from: fromNode, to: toNode, label });
+      }
+    } else {
+      for (const nextId of w.out ?? []) {
+        const toNode = placedById.get(nextId);
+        if (toNode) edges.push({ from: fromNode, to: toNode });
+      }
     }
   }
 
@@ -406,23 +440,50 @@ export function LifecycleGraph({
             </marker>
           </defs>
           <g transform={`translate(${padding}, ${padding})`}>
-            {edges.map(({ from, to }, i) => {
+            {edges.map(({ from, to, label }, i) => {
               const x1 = from.x + NODE_W;
               const y1 = from.y + from.height / 2;
               const x2 = to.x;
               const y2 = to.y + to.height / 2;
               const midX = (x1 + x2) / 2;
+              const midY = (y1 + y2) / 2;
               const d = `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2 - 6} ${y2}`;
               return (
-                <path
-                  key={`edge-${i}`}
-                  d={d}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeOpacity={0.35}
-                  strokeWidth={1.5}
-                  markerEnd="url(#lc-arrow)"
-                />
+                <g key={`edge-${i}`}>
+                  <path
+                    d={d}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeOpacity={0.35}
+                    strokeWidth={1.5}
+                    markerEnd="url(#lc-arrow)"
+                  />
+                  {label && (
+                    <g>
+                      {/* Pill background so the label reads on top of the curve.
+                          Width approximated from character count — accurate enough
+                          for the labels we emit (tests_pass, tests_fail, etc.). */}
+                      <rect
+                        x={midX - Math.max(28, label.length * 4 + 6)}
+                        y={midY - 9}
+                        width={Math.max(56, label.length * 8 + 12)}
+                        height={18}
+                        rx={4}
+                        ry={4}
+                        className="fill-white stroke-zinc-300 dark:fill-zinc-950 dark:stroke-zinc-700"
+                        strokeWidth={1}
+                      />
+                      <text
+                        x={midX}
+                        y={midY + 4}
+                        textAnchor="middle"
+                        className="fill-zinc-700 font-mono text-[10px] dark:fill-zinc-300"
+                      >
+                        {label}
+                      </text>
+                    </g>
+                  )}
+                </g>
               );
             })}
             {placed.map((n) => (

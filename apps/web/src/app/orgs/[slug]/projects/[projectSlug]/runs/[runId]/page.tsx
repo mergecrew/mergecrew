@@ -216,12 +216,14 @@ export default async function RunPage({
       )}
 
       <p className="text-sm text-zinc-600 dark:text-zinc-400">
-        Each workflow runs one or more agents. Click an agent to see its input, output, and every
-        model turn and tool call it made.
+        Each stage runs one or more agents. Click a stage to see its agents'
+        inputs, outputs, model turns, and tool calls. Stages run in the order
+        the roster graph specifies — Discovery → PM → Implementation → QA →
+        DeployDev → Observation.
       </p>
 
       <div className="space-y-3">
-        {detail.workflows.map((w) => (
+        {orderByStage(detail.workflows).map((w) => (
           <WorkflowCard key={w.id} workflow={w} />
         ))}
       </div>
@@ -482,16 +484,36 @@ function NetworkPanel({
 function WorkflowCard({ workflow }: { workflow: Workflow }) {
   const dur = fmtDuration(workflow.startedAt, workflow.finishedAt);
   const failed = workflow.status === 'failed';
+  // Stage-level rollup of the contained agent steps (#526): show worst-case
+  // status, total cost, and per-agent kind list so the operator can read the
+  // stage's health without expanding it.
+  const stageStatus = rollUpStageStatus(workflow);
+  const stageUsd = workflow.agentSteps.reduce((acc, s) => acc + Number(s.totalUsdEstimate ?? 0), 0);
+  const stageInTok = workflow.agentSteps.reduce((acc, s) => acc + (s.totalInputTokens ?? 0), 0);
+  const stageOutTok = workflow.agentSteps.reduce((acc, s) => acc + (s.totalOutputTokens ?? 0), 0);
+  const agentKinds = Array.from(new Set(workflow.agentSteps.map((s) => s.agentKind)));
+  const label = STAGE_LABELS[workflow.workflowId] ?? workflow.workflowId;
   return (
     <Card>
       <details open={!failed}>
         <summary className="flex cursor-pointer list-none items-baseline justify-between">
           <div>
-            <div className="font-mono text-sm font-medium">{workflow.workflowId}</div>
-            <div className="text-xs text-zinc-500">{workflow.agentSteps.length} agent step(s)</div>
+            <div className="text-sm font-medium">{label}</div>
+            <div className="text-xs text-zinc-500">
+              <span className="font-mono">{workflow.workflowId}</span>
+              {agentKinds.length > 0 && (
+                <> · {agentKinds.length === 1 ? agentKinds[0] : `${agentKinds.length} agents (${agentKinds.join(', ')})`}</>
+              )}
+              {' · '}
+              {workflow.agentSteps.length} step{workflow.agentSteps.length === 1 ? '' : 's'}
+              {(stageInTok > 0 || stageOutTok > 0) && (
+                <> · {stageInTok.toLocaleString()} in / {stageOutTok.toLocaleString()} out tokens</>
+              )}
+              {stageUsd > 0 && <> · ${stageUsd.toFixed(4)}</>}
+            </div>
           </div>
           <div className="flex items-baseline gap-3 text-xs">
-            <StatusPill status={workflow.status} />
+            <StatusPill status={stageStatus} />
             {dur && <span className="font-mono text-zinc-500">{dur}</span>}
           </div>
         </summary>
@@ -701,6 +723,62 @@ function interleaveActivity(turns: ModelTurn[], tools: ToolCall[]) {
   for (const c of tools) items.push({ kind: 'tool', at: new Date(c.startedAt).getTime(), call: c });
   items.sort((a, b) => a.at - b.at);
   return items;
+}
+
+/**
+ * Canonical roster-stage ordering for the run-detail page (#526).
+ * Workflows that match these ids render in the operator's mental model
+ * order (Discovery → PM → … → Observation); anything else (careful-
+ * legacy profile, custom YAML graphs) falls back to natural startedAt
+ * order so backward-compat single-stage runs still read top-to-bottom.
+ */
+const STAGE_ORDER: string[] = [
+  'discovery',
+  'pm',
+  'implementation',
+  'qa',
+  'deploy_dev',
+  'observation',
+];
+
+const STAGE_LABELS: Record<string, string> = {
+  discovery: 'Discovery',
+  pm: 'Product spec',
+  implementation: 'Implementation',
+  qa: 'QA',
+  deploy_dev: 'Deploy to dev',
+  observation: 'Observation',
+};
+
+function orderByStage(workflows: Workflow[]): Workflow[] {
+  const sorted = [...workflows];
+  sorted.sort((a, b) => {
+    const ai = STAGE_ORDER.indexOf(a.workflowId);
+    const bi = STAGE_ORDER.indexOf(b.workflowId);
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    const at = a.startedAt ? new Date(a.startedAt).getTime() : Number.MAX_SAFE_INTEGER;
+    const bt = b.startedAt ? new Date(b.startedAt).getTime() : Number.MAX_SAFE_INTEGER;
+    return at - bt;
+  });
+  return sorted;
+}
+
+/**
+ * Stage status (#526) — worst-case rollup of the contained agent
+ * steps. Reflects what the operator wants to see at a glance: any
+ * agent failing fails the stage; any agent still running keeps the
+ * stage running; otherwise inherit the workflow's own status.
+ */
+function rollUpStageStatus(w: Workflow): string {
+  const statuses = w.agentSteps.map((s) => s.status);
+  if (statuses.some((s) => s === 'failed')) return 'failed';
+  if (statuses.some((s) => s === 'running' || s === 'pending')) return 'running';
+  if (statuses.length > 0 && statuses.every((s) => s === 'completed' || s === 'done')) {
+    return 'completed';
+  }
+  return w.status;
 }
 
 function fmtDuration(start: string | null, end: string | null): string {
