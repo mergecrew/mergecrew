@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { apiOr404 } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { hasRole } from '@/lib/role';
-import { Card, Chip } from '@/components/ui';
+import { Card, Chip, PageHead, LinkButton, Label } from '@/components/ui';
 import { RollbackButton } from './rollback-button';
 
 interface BlastRadiusReason {
@@ -18,13 +18,13 @@ interface BlastRadiusReason {
 
 function BlockedReasonCallout({ reason }: { reason: any }) {
   const r = reason as BlastRadiusReason;
-  if (r?.kind !== 'blast_radius') {
-    return null;
-  }
+  if (r?.kind !== 'blast_radius') return null;
   return (
-    <div className="rounded border border-rose-300 bg-rose-50 p-3 text-sm text-rose-900 dark:border-rose-700/40 dark:bg-rose-950/30 dark:text-rose-200">
-      <strong>This changeset was blocked by the blast-radius gate.</strong>
-      <ul className="mt-2 space-y-1 text-xs">
+    <div className="border border-energy bg-energy-soft p-4 text-[13.5px] text-energy-deep">
+      <strong className="text-energy-deep">
+        This changeset was blocked by the blast-radius gate.
+      </strong>
+      <ul className="mt-2 space-y-1 text-[12.5px]">
         {r.filesOverLimit && (
           <li>
             • Files changed: <strong>{r.filesChanged}</strong> (cap: {r.maxFilesChanged})
@@ -48,7 +48,7 @@ function BlockedReasonCallout({ reason }: { reason: any }) {
           </li>
         )}
       </ul>
-      <p className="mt-2 text-xs">
+      <p className="mt-3 text-[12.5px]">
         Raise the limits or trim the deny-list under <em>Settings → Guardrails</em>. The next run
         will produce a fresh changeset against current HEAD.
       </p>
@@ -63,113 +63,138 @@ export default async function ChangesetDetail({
 }) {
   const { slug, projectSlug, csId } = await params;
   const session = await requireSession();
-  const cs = await apiOr404<any>(`/v1/orgs/${slug}/projects/${projectSlug}/changesets/${csId}`, { session });
+  const cs = await apiOr404<any>(
+    `/v1/orgs/${slug}/projects/${projectSlug}/changesets/${csId}`,
+    { session },
+  );
   const isAdmin = await hasRole(slug, session, 'admin');
   const canRollback = isAdmin && cs.status === 'promoted' && cs.prNumber && !cs.revertPrNumber;
+
   return (
-    <main className="mx-auto max-w-3xl p-6 space-y-4">
-      <header className="flex items-baseline justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">{cs.title}</h1>
-          <p className="text-sm font-mono text-zinc-500 space-x-1">
+    <main className="mx-auto max-w-[1280px] px-9 py-7">
+      <PageHead
+        crumb={[
+          { label: slug, href: `/orgs/${slug}` },
+          { label: projectSlug, href: `/orgs/${slug}/projects/${projectSlug}` },
+          {
+            label: 'Changesets',
+            href: `/orgs/${slug}/projects/${projectSlug}/changesets`,
+          },
+          { label: cs.prNumber ? `#${cs.prNumber}` : cs.id.slice(0, 8) },
+        ]}
+        title={cs.title ?? cs.id.slice(0, 8)}
+        meta={
+          <div className="flex flex-wrap items-center gap-3 font-mono text-[12px] text-muted">
             <span>{cs.id}</span>
-            <span>·</span>
             <Chip>{cs.status}</Chip>
             {cs.isDryRun && <Chip kind="medium">DRY RUN</Chip>}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {canRollback && (
-            <RollbackButton slug={slug} projectSlug={projectSlug} csId={csId} />
-          )}
-          {cs.prNumber && (
-            <Link
-              href={`/orgs/${slug}/projects/${projectSlug}/changesets/${csId}/diff`}
-              className="rounded border px-3 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800"
-            >
-              View diff
-            </Link>
-          )}
-        </div>
-      </header>
-      {cs.revertPrNumber && cs.revertPrUrl && (
-        <div className="rounded border border-zinc-300 bg-zinc-50 p-3 text-sm dark:border-zinc-700 dark:bg-zinc-900/60">
-          <strong>Rolled back via revert PR.</strong>{' '}
-          <a
-            href={cs.revertPrUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="underline decoration-dotted hover:text-zinc-700 dark:hover:text-zinc-300"
-          >
-            #{cs.revertPrNumber} →
-          </a>
-        </div>
-      )}
-      {cs.isDryRun && (
-        <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700/40 dark:bg-amber-950/30 dark:text-amber-200">
-          <strong>This changeset was produced in dry-run mode.</strong> The agent ran, generated the
-          diff, and recorded the changeset — but the runner skipped <code>git push</code>, PR
-          creation, and deploy. Turn off dry-run in project settings to ship the next run for real.
-        </div>
-      )}
-      {cs.status === 'blocked' && cs.blockedReason && (
-        <BlockedReasonCallout reason={cs.blockedReason} />
-      )}
-      {cs.whyParagraph && (
-        <Card>
-          <h2 className="text-sm font-medium text-zinc-500 mb-1">Why</h2>
-          <p className="whitespace-pre-wrap">{cs.whyParagraph}</p>
-        </Card>
-      )}
-      <Card>
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <div><span className="text-zinc-500">Branch</span><br/><code>{cs.branch}</code></div>
-          <div>
-            <span className="text-zinc-500">PR</span>
-            <br />
-            {cs.prUrl ? (
-              <a className="text-accent" href={cs.prUrl}>
-                #{cs.prNumber}
-              </a>
-            ) : (
-              '—'
-            )}
-            <AgentReviewChip review={cs.agentReview} hasPr={!!cs.prNumber} />
           </div>
-          <div><span className="text-zinc-500">Risk</span><br/><Chip kind={(cs.riskChip ?? 'low') as any}>{cs.riskChip ?? 'low'}</Chip></div>
-          <div><span className="text-zinc-500">Cost</span><br/>${Number(cs.estimatedUsd ?? 0).toFixed(2)}</div>
-        </div>
-      </Card>
+        }
+        actions={
+          <>
+            {canRollback && <RollbackButton slug={slug} projectSlug={projectSlug} csId={csId} />}
+            {cs.prNumber && (
+              <LinkButton
+                href={`/orgs/${slug}/projects/${projectSlug}/changesets/${csId}/diff`}
+                variant="ghost"
+                size="sm"
+              >
+                View diff
+              </LinkButton>
+            )}
+          </>
+        }
+      />
+
+      <div className="space-y-4">
+        {cs.revertPrNumber && cs.revertPrUrl && (
+          <div className="border border-ink bg-ink p-3 text-[13.5px] text-paper">
+            <strong>Rolled back via revert PR.</strong>{' '}
+            <a
+              href={cs.revertPrUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="underline decoration-dotted hover:text-accent-soft"
+            >
+              #{cs.revertPrNumber} →
+            </a>
+          </div>
+        )}
+        {cs.isDryRun && (
+          <div className="border border-warn bg-warn/20 p-4 text-[13.5px] text-ink">
+            <strong>This changeset was produced in dry-run mode.</strong> The agent ran, generated
+            the diff, and recorded the changeset — but the runner skipped <code>git push</code>,
+            PR creation, and deploy. Turn off dry-run in project settings to ship the next run for
+            real.
+          </div>
+        )}
+        {cs.status === 'blocked' && cs.blockedReason && (
+          <BlockedReasonCallout reason={cs.blockedReason} />
+        )}
+
+        {cs.whyParagraph && (
+          <Card className="p-5">
+            <Label className="block mb-2">Why</Label>
+            <p className="m-0 whitespace-pre-wrap text-[13.5px] leading-[1.6] text-ink-2">
+              {cs.whyParagraph}
+            </p>
+          </Card>
+        )}
+
+        <Card className="p-5">
+          <div className="grid grid-cols-2 gap-5 text-[13.5px]">
+            <div>
+              <Label className="block mb-1">Branch</Label>
+              <code className="font-mono text-[12.5px] text-ink">{cs.branch}</code>
+            </div>
+            <div>
+              <Label className="block mb-1">PR</Label>
+              {cs.prUrl ? (
+                <a className="text-accent" href={cs.prUrl}>
+                  #{cs.prNumber}
+                </a>
+              ) : (
+                <span className="text-muted">—</span>
+              )}
+              <AgentReviewChip review={cs.agentReview} hasPr={!!cs.prNumber} />
+            </div>
+            <div>
+              <Label className="block mb-1">Risk</Label>
+              <Chip kind={(cs.riskChip ?? 'low') as any}>{cs.riskChip ?? 'low'}</Chip>
+            </div>
+            <div>
+              <Label className="block mb-1">Cost</Label>
+              <span className="font-mono text-[13.5px] text-ink">
+                ${Number(cs.estimatedUsd ?? 0).toFixed(2)}
+              </span>
+            </div>
+          </div>
+        </Card>
+      </div>
     </main>
   );
 }
 
-/**
- * Agent-review state chip on the changeset detail page (#421, V2.al).
- * Three states the page surfaces:
- *   - approve + flipped → "agent approved · ready for human review"
- *   - request_changes  → "agent: requested changes"
- *   - PR open, no review yet → "awaiting agent review"
- * No chip when there's no PR (the page already shows a "—" placeholder).
- */
 function AgentReviewChip({
   review,
   hasPr,
 }: {
-  review: { verdict: 'approve' | 'request_changes'; flippedToReady: boolean; at: string | null } | null;
+  review:
+    | { verdict: 'approve' | 'request_changes'; flippedToReady: boolean; at: string | null }
+    | null;
   hasPr: boolean;
 }) {
   if (!hasPr) return null;
   if (!review) {
     return (
-      <div className="mt-1">
+      <div className="mt-2">
         <Chip kind="neutral">awaiting agent review</Chip>
       </div>
     );
   }
   if (review.verdict === 'approve') {
     return (
-      <div className="mt-1">
+      <div className="mt-2">
         <Chip kind="low">
           {review.flippedToReady ? 'agent approved · ready for human review' : 'agent approved'}
         </Chip>
@@ -177,7 +202,7 @@ function AgentReviewChip({
     );
   }
   return (
-    <div className="mt-1">
+    <div className="mt-2">
       <Chip kind="medium">agent: requested changes</Chip>
     </div>
   );
