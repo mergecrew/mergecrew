@@ -1,7 +1,7 @@
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { hasRole } from '@/lib/role';
-import { Card } from '@/components/ui';
+import { Card, PageHead } from '@/components/ui';
 import {
   LifecycleEditor,
   type ParsedConfig,
@@ -32,26 +32,45 @@ export default async function OrgLifecycleTemplatePage({
 
   if (!tpl) {
     return (
-      <main className="mx-auto max-w-3xl p-6">
-        <h1 className="text-xl font-semibold">Lifecycle template</h1>
-        <p className="mt-2 text-sm text-zinc-500">
-          No template stored. The first save will create one.
-        </p>
+      <main className="mx-auto max-w-[1080px] px-9 py-7">
+        <PageHead
+          crumb={[
+            { label: slug, href: `/orgs/${slug}` },
+            { label: 'Lifecycle templates' },
+          ]}
+          title="Lifecycle templates"
+        />
+        <Card className="p-5">
+          <p className="m-0 text-[13.5px] text-muted">
+            No template stored. The first save will create one.
+          </p>
+        </Card>
       </main>
     );
   }
 
-  const scope: LifecycleScope = { kind: 'org-template', orgSlug: slug, templateName: 'default' };
+  const scope: LifecycleScope = {
+    kind: 'org-template',
+    orgSlug: slug,
+    templateName: 'default',
+  };
 
   return (
-    <main className="mx-auto max-w-4xl space-y-4 p-6">
-      <header>
-        <h1 className="text-xl font-semibold">Lifecycle template — default</h1>
-        <p className="text-sm text-zinc-500">
-          Org-wide template applied to new projects, or to existing projects via "Apply org default
-          template" on the project's Lifecycle page.
-        </p>
-      </header>
+    <main className="mx-auto max-w-[1280px] px-9 py-7">
+      <PageHead
+        crumb={[
+          { label: slug, href: `/orgs/${slug}` },
+          { label: 'Lifecycle templates' },
+        ]}
+        title="Lifecycle template · default"
+        meta={
+          <span className="font-mono text-[12.5px] text-muted">
+            Org-wide template applied to new projects, or via &quot;Apply org default
+            template&quot; on the project&apos;s Lifecycle page.
+          </span>
+        }
+      />
+
       <Card>
         <LifecycleEditor
           scope={scope}
