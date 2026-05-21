@@ -83,20 +83,13 @@ export class Orchestrator {
   }): Promise<void> {
     const { organizationId, projectId } = data;
 
-    // Pull the project's mergecrew.yaml from its repo and persist a new
-    // Lifecycle version if it changed. Best-effort — failures fall through
-    // to whatever lifecycle version is already in the DB.
-    await syncLifecycleFromRepo({
-      organizationId,
-      projectId,
-      logger: this.deps.logger,
-    }).catch((err) => {
-      this.deps.logger.warn({ err: err?.message ?? err, projectId }, 'lifecycle-sync: unexpected error');
-    });
-
-    const lc = await withTenant(organizationId, (tx) =>
-      tx.lifecycle.findFirst({ where: { projectId }, orderBy: { version: 'desc' } }),
-    );
+    // Operator kill switch (#625), defensive check. Pause could have
+    // flipped on between the API enqueue and this dispatch — the cron
+    // tick and runNow both check first, but a queued job that arrives
+    // mid-pause must not burn LLM tokens *or* a GitHub API call against
+    // the rate-limit window. Check happens before the
+    // `syncLifecycleFromRepo` call below so a paused project doesn't
+    // waste a GitHub request (#639).
     const project = await withTenant(organizationId, (tx) =>
       tx.project.findUnique({
         where: { id: projectId },
@@ -106,12 +99,6 @@ export class Orchestrator {
       }),
     );
     if (!project) return;
-    // Operator kill switch (#625), defensive check. Pause could have
-    // flipped on between the API enqueue and this dispatch — the cron
-    // tick and runNow both check first, but a queued job that arrives
-    // mid-pause must not burn LLM tokens. If the API pre-created a
-    // pending DailyRun (data.runId), mark it cancelled with reason so
-    // the run-detail page tells the operator why nothing happened.
     if (project.organization.runsPausedAt || project.runsPausedAt) {
       const scope = project.organization.runsPausedAt ? 'org' : 'project';
       const reason =
@@ -144,6 +131,22 @@ export class Orchestrator {
       }
       return;
     }
+
+    // Pull the project's mergecrew.yaml from its repo and persist a new
+    // Lifecycle version if it changed. Best-effort — failures fall through
+    // to whatever lifecycle version is already in the DB. Done AFTER the
+    // pause check so a paused project doesn't waste the GitHub call.
+    await syncLifecycleFromRepo({
+      organizationId,
+      projectId,
+      logger: this.deps.logger,
+    }).catch((err) => {
+      this.deps.logger.warn({ err: err?.message ?? err, projectId }, 'lifecycle-sync: unexpected error');
+    });
+
+    const lc = await withTenant(organizationId, (tx) =>
+      tx.lifecycle.findFirst({ where: { projectId }, orderBy: { version: 'desc' } }),
+    );
     if (!lc) {
       // Defensive: the API (RunService.runNow) and the cron tick both
       // refuse to enqueue when there's no lifecycle, so reaching this
