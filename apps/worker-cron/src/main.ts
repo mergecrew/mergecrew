@@ -31,17 +31,22 @@ const eventlog = new Eventlog(pubsub, fanoutToBullmq(fanoutQueue));
 const TICK_MS = Number(process.env.WORKER_CRON_TICK_MS ?? 60_000);
 
 async function tick() {
-  // Pull the project's connectedRepo + deployTargets alongside the
-  // schedule so we can short-circuit paused projects (#229) — onboarding
-  // can finish without a deploy target, and the project stays paused
-  // until the operator wires both up. We still keep `lastFiredAt` ticking
-  // for skipDates, but never enqueue for a paused project.
+  // Pull the project's connectedRepo + deployTargets + run pause state
+  // alongside the schedule so we can short-circuit on every reason the
+  // run.due path can refuse to advance: missing config (#229/#252), or
+  // an operator-set pause (#625). We still keep `lastFiredAt` ticking
+  // in those branches but never enqueue.
   const schedules = await withSystem((tx) =>
     tx.schedule.findMany({
       where: { enabled: true },
       include: {
         project: {
           select: {
+            runsPausedAt: true,
+            runsPauseReason: true,
+            organization: {
+              select: { runsPausedAt: true, runsPauseReason: true },
+            },
             connectedRepo: { select: { id: true } },
             deployTargets: { select: { kind: true } },
             // Pull only the id; we just need to know whether *any*
@@ -65,6 +70,33 @@ async function tick() {
       continue;
     }
     if (!due) continue;
+
+    // Operator kill switch (#625). Org-level pause beats project-level.
+    // Bump lastSkippedAt so the UI's paused banner can say "your cron
+    // ran but nothing happened, here's when" — same accounting as the
+    // missing-config branch below.
+    const orgPausedAt = s.project?.organization?.runsPausedAt ?? null;
+    const projectPausedAt = s.project?.runsPausedAt ?? null;
+    if (orgPausedAt || projectPausedAt) {
+      await withTenant(s.organizationId, (tx) =>
+        tx.schedule.update({
+          where: { id: s.id },
+          data: { lastFiredAt: now, lastSkippedAt: now },
+        }),
+      );
+      logger.info(
+        {
+          projectId: s.projectId,
+          scope: orgPausedAt ? 'org' : 'project',
+          pausedAt: (orgPausedAt ?? projectPausedAt)?.toISOString(),
+          reason: orgPausedAt
+            ? s.project?.organization?.runsPauseReason ?? null
+            : s.project?.runsPauseReason ?? null,
+        },
+        'skipping run.due: runs paused',
+      );
+      continue;
+    }
 
     const hasRepo = s.project?.connectedRepo != null;
     const hasDevTarget = (s.project?.deployTargets ?? []).some((d) => d.kind === 'dev');
