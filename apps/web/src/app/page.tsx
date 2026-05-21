@@ -1,4 +1,28 @@
 import { redirect } from 'next/navigation';
+import {
+  ArrowRight,
+  BookOpen,
+  Bug,
+  CalendarClock,
+  Check,
+  CircleSlash,
+  ClipboardList,
+  Github,
+  Hammer,
+  Heart,
+  Layers,
+  Mail,
+  Map,
+  MessagesSquare,
+  Network,
+  Rocket,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles,
+  Terminal,
+  Workflow,
+  X as IconX,
+} from 'lucide-react';
 import { getSession } from '@/lib/session';
 import { api } from '@/lib/api';
 import { LinkButton } from '@/components/ui';
@@ -93,24 +117,24 @@ function Nav() {
             alpha
           </span>
         </div>
-        <nav className="flex items-center gap-3 text-sm">
+        <nav className="flex items-center gap-1 text-sm sm:gap-3">
           <a
             href="https://github.com/mergecrew/mergecrew"
-            className="hidden text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 sm:inline"
+            className="hidden items-center gap-1.5 text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 sm:inline-flex"
           >
-            GitHub
+            <Github className="h-4 w-4" aria-hidden /> GitHub
           </a>
           <a
             href="https://github.com/mergecrew/mergecrew/blob/main/docs/README.md"
-            className="hidden text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 sm:inline"
+            className="hidden items-center gap-1.5 text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 sm:inline-flex"
           >
-            Docs
+            <BookOpen className="h-4 w-4" aria-hidden /> Docs
           </a>
           <a
             href="https://github.com/orgs/mergecrew/projects/1"
-            className="hidden text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 sm:inline"
+            className="hidden items-center gap-1.5 text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 sm:inline-flex"
           >
-            Roadmap
+            <Map className="h-4 w-4" aria-hidden /> Roadmap
           </a>
           <LinkButton href="/login" variant="primary">Sign in</LinkButton>
         </nav>
@@ -137,53 +161,99 @@ function Hero() {
           <LinkButton href="/login" variant="primary">Sign in</LinkButton>
           <a
             href="https://github.com/mergecrew/mergecrew"
-            className="inline-flex items-center justify-center rounded-md border bg-transparent px-3 py-1.5 text-sm transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            className="inline-flex items-center justify-center gap-1.5 rounded-md border bg-transparent px-3 py-1.5 text-sm transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
           >
-            View on GitHub →
+            <Github className="h-4 w-4" aria-hidden /> View on GitHub
           </a>
           <a
             href="https://github.com/mergecrew/mergecrew#quick-start"
-            className="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            className="inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
           >
-            Self-host quick start
+            <Terminal className="h-4 w-4" aria-hidden /> Self-host quick start
           </a>
         </div>
         <div className="mt-12 flex flex-wrap items-center gap-3 text-xs text-zinc-500 dark:text-zinc-500">
-          <span className="rounded-full bg-zinc-100 px-2 py-1 font-mono dark:bg-zinc-900">Apache 2.0</span>
-          <span className="rounded-full bg-zinc-100 px-2 py-1 font-mono dark:bg-zinc-900">Multi-tenant</span>
-          <span className="rounded-full bg-zinc-100 px-2 py-1 font-mono dark:bg-zinc-900">Self-hostable</span>
-          <span className="rounded-full bg-zinc-100 px-2 py-1 font-mono dark:bg-zinc-900">BYO LLM keys</span>
-          <span className="rounded-full bg-zinc-100 px-2 py-1 font-mono dark:bg-zinc-900">Anthropic · OpenAI · Bedrock · Ollama</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-2 py-1 font-mono dark:bg-zinc-900">
+            <ShieldCheck className="h-3 w-3" aria-hidden /> Apache 2.0
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-2 py-1 font-mono dark:bg-zinc-900">
+            <Layers className="h-3 w-3" aria-hidden /> Multi-tenant
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-2 py-1 font-mono dark:bg-zinc-900">
+            <Terminal className="h-3 w-3" aria-hidden /> Self-hostable
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-2 py-1 font-mono dark:bg-zinc-900">
+            <Sparkles className="h-3 w-3" aria-hidden /> BYO LLM keys
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-2 py-1 font-mono dark:bg-zinc-900">
+            Anthropic · OpenAI · Bedrock · Ollama
+          </span>
         </div>
       </div>
     </section>
   );
 }
 
+const LOOP_STEPS = [
+  {
+    title: 'Spec',
+    body:
+      "A planner agent reads recent intent, the repo, and yesterday's digest. It drafts the day's small, focused tasks.",
+    Icon: ClipboardList,
+    accent: 'text-sky-600 dark:text-sky-400',
+  },
+  {
+    title: 'Build',
+    body: 'Coding agents open PRs against your real branch. Every change is small, reviewable, and explainable.',
+    Icon: Hammer,
+    accent: 'text-amber-600 dark:text-amber-400',
+  },
+  {
+    title: 'Deploy',
+    body: 'Each PR triggers a deploy to your dev environment via a pluggable adapter (GitHub Actions or Vercel).',
+    Icon: Rocket,
+    accent: 'text-emerald-600 dark:text-emerald-400',
+  },
+  {
+    title: 'Scan',
+    body: 'A bug-triage agent runs against the dev URL. Errors get filed back as the next day\'s changesets.',
+    Icon: Bug,
+    accent: 'text-rose-600 dark:text-rose-400',
+  },
+  {
+    title: 'Digest',
+    body: 'At end of working hours you receive a digest. You promote, defer, or roll back. Production never ships without you.',
+    Icon: Mail,
+    accent: 'text-violet-600 dark:text-violet-400',
+  },
+] as const;
+
 function Loop() {
-  const steps: { title: string; body: string }[] = [
-    { title: 'Spec', body: 'A planner agent reads recent intent, the repo, and yesterday\'s digest. It drafts the day\'s small, focused tasks.' },
-    { title: 'Build', body: 'Coding agents open PRs against your real branch. Every change is small, reviewable, and explainable.' },
-    { title: 'Deploy', body: 'Each PR triggers a deploy to your dev environment via a pluggable adapter (GitHub Actions or Vercel).' },
-    { title: 'Scan', body: 'A bug-triage agent runs against the dev URL. Errors get filed back as the next day\'s changesets.' },
-    { title: 'Digest', body: 'At end of working hours you receive a digest. You promote, defer, or roll back. Production never ships without you.' },
-  ];
   return (
     <section className="border-t border-zinc-200/60 dark:border-zinc-800/60">
       <div className="mx-auto max-w-6xl px-6 py-20">
         <h2 className="text-3xl font-semibold tracking-tight">The loop, not the agent.</h2>
         <p className="mt-3 max-w-2xl text-zinc-600 dark:text-zinc-400">
-          Most autonomous-coding tools take a ticket and produce a PR. Mergecrew owns the cycle around that work — runs it daily, deploys it, scans it, and hands you a single moment of judgment per day.
+          Most autonomous-coding tools take a ticket and produce a PR. Mergecrew owns the cycle around that
+          work — runs it daily, deploys it, scans it, and hands you a single moment of judgment per day.
         </p>
         <ol className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          {steps.map((s, i) => (
-            <li
-              key={s.title}
-              className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900"
-            >
-              <div className="font-mono text-xs text-zinc-400">0{i + 1}</div>
-              <div className="mt-2 text-lg font-medium">{s.title}</div>
-              <p className="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">{s.body}</p>
+          {LOOP_STEPS.map((s, i) => (
+            <li key={s.title} className="relative">
+              <div className="h-full rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+                <div className="flex items-center justify-between">
+                  <s.Icon className={`h-6 w-6 ${s.accent}`} aria-hidden />
+                  <span className="font-mono text-xs text-zinc-400">0{i + 1}</span>
+                </div>
+                <div className="mt-3 text-lg font-medium">{s.title}</div>
+                <p className="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">{s.body}</p>
+              </div>
+              {i < LOOP_STEPS.length - 1 && (
+                <ArrowRight
+                  className="absolute right-0 top-1/2 hidden h-5 w-5 -translate-y-1/2 translate-x-1/2 text-zinc-300 dark:text-zinc-700 lg:block"
+                  aria-hidden
+                />
+              )}
             </li>
           ))}
         </ol>
@@ -195,36 +265,46 @@ function Loop() {
   );
 }
 
+const DIFFERENTIATORS = [
+  {
+    title: 'Scheduled, not triggered',
+    body: 'Runs on a cron against your real repo. No tickets to file, no chat to invoke. The crew shows up and does the work.',
+    Icon: CalendarClock,
+    accent: 'text-sky-600 dark:text-sky-400',
+  },
+  {
+    title: 'Full lifecycle',
+    body: 'Spec → design → build → deploy-to-dev → bug scan → digest → human approval → prod. Not just code generation; the whole loop.',
+    Icon: Workflow,
+    accent: 'text-emerald-600 dark:text-emerald-400',
+  },
+  {
+    title: 'Multi-tenant by design',
+    body: 'Postgres row-level security, per-org budgets, per-org provider keys. Self-host privately for your team or run as a service.',
+    Icon: ShieldCheck,
+    accent: 'text-amber-600 dark:text-amber-400',
+  },
+  {
+    title: 'Pluggable agents and providers',
+    body: 'Anthropic, OpenAI, AWS Bedrock, or local Ollama — capability-routed with provider fallover. The bundled LangGraph runner ships by default.',
+    Icon: Network,
+    accent: 'text-violet-600 dark:text-violet-400',
+  },
+] as const;
+
 function Differentiators() {
-  const items: { title: string; body: string }[] = [
-    {
-      title: 'Scheduled, not triggered',
-      body: 'Runs on a cron against your real repo. No tickets to file, no chat to invoke. The crew shows up and does the work.',
-    },
-    {
-      title: 'Full lifecycle',
-      body: 'Spec → design → build → deploy-to-dev → bug scan → digest → human approval → prod. Not just code generation; the whole loop.',
-    },
-    {
-      title: 'Multi-tenant by design',
-      body: 'Postgres row-level security, per-org budgets, per-org provider keys. Self-host privately for your team or run as a service.',
-    },
-    {
-      title: 'Pluggable agents and providers',
-      body: 'Anthropic, OpenAI, AWS Bedrock, or local Ollama — capability-routed with provider fallover. The bundled LangGraph runner ships by default.',
-    },
-  ];
   return (
-    <section className="bg-zinc-50 dark:bg-zinc-950/50 border-y border-zinc-200/60 dark:border-zinc-800/60">
+    <section className="border-y border-zinc-200/60 bg-zinc-50 dark:border-zinc-800/60 dark:bg-zinc-950/50">
       <div className="mx-auto max-w-6xl px-6 py-20">
         <h2 className="text-3xl font-semibold tracking-tight">What makes Mergecrew different</h2>
         <div className="mt-12 grid grid-cols-1 gap-6 sm:grid-cols-2">
-          {items.map((it) => (
+          {DIFFERENTIATORS.map((it) => (
             <div
               key={it.title}
               className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900"
             >
-              <h3 className="text-lg font-medium">{it.title}</h3>
+              <it.Icon className={`h-7 w-7 ${it.accent}`} aria-hidden />
+              <h3 className="mt-4 text-lg font-medium">{it.title}</h3>
               <p className="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">{it.body}</p>
             </div>
           ))}
@@ -232,6 +312,40 @@ function Differentiators() {
       </div>
     </section>
   );
+}
+
+/** Render a comparison cell. `yes` → green check, `no` → muted X, anything else → text. */
+function Cell({ value }: { value: string }) {
+  const v = value.toLowerCase();
+  if (v === 'yes') {
+    return (
+      <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300">
+        <Check className="h-4 w-4" aria-hidden /> yes
+      </span>
+    );
+  }
+  if (v === 'no') {
+    return (
+      <span className="inline-flex items-center gap-1 text-zinc-400 dark:text-zinc-500">
+        <IconX className="h-4 w-4" aria-hidden /> no
+      </span>
+    );
+  }
+  if (v === 'mandatory') {
+    return (
+      <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300">
+        <ShieldCheck className="h-4 w-4" aria-hidden /> mandatory
+      </span>
+    );
+  }
+  if (v === 'none' || v === 'n/a') {
+    return (
+      <span className="inline-flex items-center gap-1 text-rose-600 dark:text-rose-400">
+        <CircleSlash className="h-4 w-4" aria-hidden /> {value}
+      </span>
+    );
+  }
+  return <span className="text-zinc-600 dark:text-zinc-400">{value}</span>;
 }
 
 function Comparison() {
@@ -247,7 +361,7 @@ function Comparison() {
       <div className="mx-auto max-w-6xl px-6 py-20">
         <h2 className="text-3xl font-semibold tracking-tight">How we compare</h2>
         <p className="mt-3 max-w-2xl text-zinc-600 dark:text-zinc-400">
-          Scheduled lifecycle + multi-tenant + mandatory production gate is the combination — that’s the whitespace.
+          Scheduled lifecycle + multi-tenant + mandatory production gate is the combination — that&rsquo;s the whitespace.
         </p>
         <div className="mt-10 overflow-x-auto">
           <table className="w-full border-collapse text-sm">
@@ -271,12 +385,21 @@ function Comparison() {
                       : 'border-b border-zinc-200 dark:border-zinc-800'
                   }
                 >
-                  <td className="px-3 py-3">{r.name}</td>
-                  <td className="px-3 py-3 text-zinc-600 dark:text-zinc-400">{r.trigger}</td>
-                  <td className="px-3 py-3 text-zinc-600 dark:text-zinc-400">{r.scope}</td>
-                  <td className="px-3 py-3 text-zinc-600 dark:text-zinc-400">{r.multitenant}</td>
-                  <td className="px-3 py-3 text-zinc-600 dark:text-zinc-400">{r.gate}</td>
-                  <td className="px-3 py-3 text-zinc-600 dark:text-zinc-400">{r.license}</td>
+                  <td className="px-3 py-3">
+                    {r.us ? (
+                      <span className="inline-flex items-center gap-2">
+                        <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
+                        {r.name}
+                      </span>
+                    ) : (
+                      r.name
+                    )}
+                  </td>
+                  <td className="px-3 py-3"><Cell value={r.trigger} /></td>
+                  <td className="px-3 py-3"><Cell value={r.scope} /></td>
+                  <td className="px-3 py-3"><Cell value={r.multitenant} /></td>
+                  <td className="px-3 py-3"><Cell value={r.gate} /></td>
+                  <td className="px-3 py-3"><Cell value={r.license} /></td>
                 </tr>
               ))}
             </tbody>
@@ -287,32 +410,72 @@ function Comparison() {
   );
 }
 
+const STACK_TAGS: { label: string; group: 'backend' | 'frontend' | 'infra' | 'tooling' }[] = [
+  { label: 'NestJS', group: 'backend' },
+  { label: 'Next.js 15', group: 'frontend' },
+  { label: 'Postgres + pgvector', group: 'infra' },
+  { label: 'Redis', group: 'infra' },
+  { label: 'BullMQ', group: 'infra' },
+  { label: 'LangChain.js', group: 'backend' },
+  { label: 'LangGraph.js', group: 'backend' },
+  { label: 'Prisma', group: 'backend' },
+  { label: 'pnpm workspaces', group: 'tooling' },
+  { label: 'TypeScript', group: 'tooling' },
+];
+
+const STACK_GROUP_STYLES: Record<(typeof STACK_TAGS)[number]['group'], string> = {
+  backend:
+    'border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-700/40 dark:bg-sky-950/40 dark:text-sky-200',
+  frontend:
+    'border-violet-300 bg-violet-50 text-violet-800 dark:border-violet-700/40 dark:bg-violet-950/40 dark:text-violet-200',
+  infra:
+    'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700/40 dark:bg-amber-950/40 dark:text-amber-200',
+  tooling:
+    'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-700/40 dark:bg-emerald-950/40 dark:text-emerald-200',
+};
+
 function Stack() {
-  const tags = [
-    'NestJS', 'Next.js 15', 'Postgres + pgvector', 'Redis', 'BullMQ',
-    'LangChain.js', 'LangGraph.js', 'Prisma', 'pnpm workspaces', 'TypeScript',
-  ];
   return (
-    <section className="border-t border-zinc-200/60 dark:border-zinc-800/60 bg-zinc-50 dark:bg-zinc-950/50">
+    <section className="border-t border-zinc-200/60 bg-zinc-50 dark:border-zinc-800/60 dark:bg-zinc-950/50">
       <div className="mx-auto max-w-6xl px-6 py-16">
         <h2 className="text-2xl font-semibold tracking-tight">Built on a stack you already read</h2>
         <p className="mt-3 max-w-2xl text-zinc-600 dark:text-zinc-400">
           No exotic frameworks. No vendor lock-in. Every dependency is mainstream OSS.
         </p>
         <div className="mt-8 flex flex-wrap gap-2">
-          {tags.map((t) => (
+          {STACK_TAGS.map((t) => (
             <span
-              key={t}
-              className="rounded-full border border-zinc-300 bg-white px-3 py-1 font-mono text-xs text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+              key={t.label}
+              className={`rounded-full border px-3 py-1 font-mono text-xs ${STACK_GROUP_STYLES[t.group]}`}
             >
-              {t}
+              {t.label}
             </span>
           ))}
+        </div>
+        <div className="mt-6 flex flex-wrap gap-4 text-[11px] text-zinc-500 dark:text-zinc-500">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block h-2 w-2 rounded-full bg-sky-400" aria-hidden /> backend
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block h-2 w-2 rounded-full bg-violet-400" aria-hidden /> frontend
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block h-2 w-2 rounded-full bg-amber-400" aria-hidden /> infra
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" aria-hidden /> tooling
+          </span>
         </div>
       </div>
     </section>
   );
 }
+
+const FINAL_CTA_HIGHLIGHTS = [
+  'A seeded demo project with a completed multi-agent run',
+  'No LLM keys needed — bundled stub agents drive the loop end-to-end',
+  'Five-step Spec → Build → Deploy → Scan → Digest loop visible on the timeline',
+];
 
 function FinalCta() {
   return (
@@ -322,20 +485,33 @@ function FinalCta() {
         <p className="mx-auto mt-4 max-w-2xl text-zinc-600 dark:text-zinc-400">
           Run Mergecrew locally with a free local model — no API keys, no signup, no cloud account required.
         </p>
-        <pre className="mx-auto mt-8 max-w-2xl overflow-x-auto rounded-lg bg-zinc-900 p-5 text-left text-sm text-zinc-100">
+        <div className="mx-auto mt-8 max-w-2xl overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 text-left shadow-sm">
+          <div className="flex items-center gap-2 border-b border-zinc-700 px-4 py-2 text-xs text-zinc-400">
+            <Terminal className="h-3.5 w-3.5" aria-hidden /> bash
+          </div>
+          <pre className="overflow-x-auto p-5 text-sm text-zinc-100">
 {`git clone https://github.com/mergecrew/mergecrew.git
 cd mergecrew && cp .env.example .env
 pnpm install && pnpm compose:up
 pnpm db:migrate && pnpm db:seed
 pnpm dev`}
-        </pre>
+          </pre>
+        </div>
+        <ul className="mx-auto mt-6 max-w-2xl space-y-2 text-left text-sm text-zinc-600 dark:text-zinc-400">
+          {FINAL_CTA_HIGHLIGHTS.map((h) => (
+            <li key={h} className="flex items-start gap-2">
+              <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+              <span>{h}</span>
+            </li>
+          ))}
+        </ul>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           <LinkButton href="/login" variant="primary">Sign in</LinkButton>
           <a
             href="https://github.com/mergecrew/mergecrew/blob/main/SPONSORS.md"
-            className="inline-flex items-center justify-center rounded-md border bg-transparent px-3 py-1.5 text-sm transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            className="inline-flex items-center justify-center gap-1.5 rounded-md border bg-transparent px-3 py-1.5 text-sm transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
           >
-            Sponsor the project
+            <Heart className="h-4 w-4" aria-hidden /> Sponsor the project
           </a>
         </div>
       </div>
@@ -344,6 +520,14 @@ pnpm dev`}
 }
 
 function Footer() {
+  const links: { href: string; label: string; Icon: typeof Github }[] = [
+    { href: 'https://github.com/mergecrew/mergecrew', label: 'GitHub', Icon: Github },
+    { href: 'https://github.com/mergecrew/mergecrew/blob/main/docs/README.md', label: 'Docs', Icon: BookOpen },
+    { href: 'https://github.com/orgs/mergecrew/projects/1', label: 'Roadmap', Icon: Map },
+    { href: 'https://github.com/mergecrew/mergecrew/discussions', label: 'Discussions', Icon: MessagesSquare },
+    { href: 'https://github.com/mergecrew/mergecrew/blob/main/SPONSORS.md', label: 'Sponsors', Icon: Heart },
+    { href: 'https://github.com/mergecrew/mergecrew/blob/main/SECURITY.md', label: 'Security', Icon: ShieldAlert },
+  ];
   return (
     <footer className="border-t border-zinc-200/60 dark:border-zinc-800/60">
       <div className="mx-auto flex max-w-6xl flex-col items-start gap-4 px-6 py-10 text-sm text-zinc-500 dark:text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
@@ -351,12 +535,15 @@ function Footer() {
           <span className="font-medium text-zinc-700 dark:text-zinc-300">Mergecrew</span> · Apache 2.0
         </div>
         <div className="flex flex-wrap items-center gap-4">
-          <a href="https://github.com/mergecrew/mergecrew" className="hover:text-zinc-900 dark:hover:text-zinc-200">GitHub</a>
-          <a href="https://github.com/mergecrew/mergecrew/blob/main/docs/README.md" className="hover:text-zinc-900 dark:hover:text-zinc-200">Docs</a>
-          <a href="https://github.com/orgs/mergecrew/projects/1" className="hover:text-zinc-900 dark:hover:text-zinc-200">Roadmap</a>
-          <a href="https://github.com/mergecrew/mergecrew/discussions" className="hover:text-zinc-900 dark:hover:text-zinc-200">Discussions</a>
-          <a href="https://github.com/mergecrew/mergecrew/blob/main/SPONSORS.md" className="hover:text-zinc-900 dark:hover:text-zinc-200">Sponsors</a>
-          <a href="https://github.com/mergecrew/mergecrew/blob/main/SECURITY.md" className="hover:text-zinc-900 dark:hover:text-zinc-200">Security</a>
+          {links.map((l) => (
+            <a
+              key={l.href}
+              href={l.href}
+              className="inline-flex items-center gap-1.5 hover:text-zinc-900 dark:hover:text-zinc-200"
+            >
+              <l.Icon className="h-4 w-4" aria-hidden /> {l.label}
+            </a>
+          ))}
         </div>
       </div>
     </footer>
