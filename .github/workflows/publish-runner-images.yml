@@ -177,9 +177,10 @@ jobs:
       - if: steps.gate.outputs.run == '1'
         name: Image contract — size budget
         env:
+          IMAGE: ${{ env.IMAGE }}
           MAX_MB: ${{ matrix.max_size_mb }}
         run: |
-          IMG="${{ env.IMAGE }}:${{ steps.tags.outputs.primary }}"
+          IMG="${IMAGE}:${{ steps.tags.outputs.primary }}"
           digest=$(docker buildx imagetools inspect "$IMG" --raw \
             | jq -r '.manifests[] | select(.platform.architecture=="amd64") | .digest')
           size=$(docker buildx imagetools inspect "${IMAGE}@${digest}" --raw \
@@ -187,9 +188,6 @@ jobs:
           mb=$((size / 1024 / 1024))
           echo "compressed size (amd64): ${mb} MB (budget: ${MAX_MB} MB)"
           [ "$mb" -le "$MAX_MB" ] || { echo "image exceeds ${MAX_MB} MB compressed budget"; exit 1; }
-        env:
-          IMAGE: ${{ env.IMAGE }}
-          MAX_MB: ${{ matrix.max_size_mb }}
 
       - if: steps.gate.outputs.run == '1'
         name: Stack-specific contract — language toolchain present
