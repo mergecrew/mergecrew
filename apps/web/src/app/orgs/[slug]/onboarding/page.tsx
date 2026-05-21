@@ -3,7 +3,9 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
-import { Card, LinkButton } from '@/components/ui';
+import { Card, Label, PageHead } from '@/components/ui';
+import { TopBar } from '@/components/shell/topbar';
+import { UserMenu } from '@/components/user-menu';
 import { InlineLlmStep } from '@/components/onboarding-inline-llm';
 import { CreateProjectForm } from '@/components/onboarding/create-project-form';
 import { SeedGoalCard } from '@/components/onboarding/seed-goal-card';
@@ -229,128 +231,147 @@ export default async function OnboardingPage({
         ? 'active'
         : 'locked';
 
+  const completedCount = state.steps.filter((s) => s.status === 'complete').length;
+  const totalCount = state.steps.length;
+  const activeLabel =
+    activeIndex === -1
+      ? 'Complete'
+      : `${completedCount} of ${totalCount} · ${state.steps[activeIndex]?.label ?? ''}`;
+
   return (
-    <main className="mx-auto max-w-3xl space-y-6 p-6">
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold">Set up your project</h1>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          mergecrew runs a planner → coder → reviewer chain on your repo each day and proposes
-          changesets for approval. Five steps connect an LLM, a repo, and a dev deploy target so
-          the agents have somewhere to run.
-        </p>
-      </header>
-
-      {state.complete && projectSlug && (
-        <SeedGoalCard
-          orgSlug={slug}
-          projectSlug={projectSlug}
-          action={createSeedGoalAndRunAction}
-        />
-      )}
-      {state.complete && !projectSlug && (
-        <Card className="border-emerald-200 bg-emerald-50/50 dark:border-emerald-700/40 dark:bg-emerald-950/30">
-          <div className="font-medium">You&apos;re all set</div>
-          <p className="text-sm text-zinc-700 dark:text-zinc-200">
-            Setup complete. Visit the project page to trigger a run.
-          </p>
-        </Card>
-      )}
-
-      <ol className="space-y-3">
-        {state.steps.map((step, i) => {
-          const status = rowStatus(i);
-          const description = status === 'active' ? STEP_HELP[step.key] : undefined;
-          let body: React.ReactNode = null;
-          if (status === 'active') {
-            switch (step.key) {
-              case 'llm_provider':
-                body = <InlineLlmStep orgSlug={slug} action={addLlmProviderAction} />;
-                break;
-              case 'first_project':
-                body = (
-                  <CreateProjectForm orgSlug={slug} action={createFirstProjectAction} />
-                );
-                break;
-              case 'connected_repo':
-                body = projectSlug ? (
-                  <RepoForm
-                    slug={slug}
-                    projectSlug={projectSlug}
-                    initial={connectedRepo}
-                    installedInstallationId={installedInstallationId}
-                    availableRepos={availableRepos}
-                    installFrom="wizard"
-                  />
-                ) : (
-                  <BlockedBecauseNoProject />
-                );
-                break;
-              case 'deploy_target':
-                body = projectSlug ? (
-                  <DeployTargetForm
-                    slug={slug}
-                    projectSlug={projectSlug}
-                    initial={deployTargets}
-                    kinds={['dev']}
-                    installFrom="wizard"
-                    baseBranch={
-                      connectedRepo?.basePrBranch?.trim() ||
-                      connectedRepo?.defaultBranch
-                    }
-                  />
-                ) : (
-                  <BlockedBecauseNoProject />
-                );
-                break;
-              case 'promotion_strategy':
-                body = projectSlug ? (
-                  <PromotionStrategyForm
-                    slug={slug}
-                    projectSlug={projectSlug}
-                    orgSlug={slug}
-                    initial={promotionStrategy}
-                    defaultReleaseBranch={
-                      connectedRepo?.basePrBranch?.trim() ||
-                      connectedRepo?.defaultBranch
-                    }
-                  />
-                ) : (
-                  <BlockedBecauseNoProject />
-                );
-                break;
-            }
+    <div className="min-h-screen bg-bg text-ink">
+      <TopBar orgSlug={slug} userMenu={<UserMenu currentOrgSlug={slug} />} />
+      <main className="mx-auto max-w-[860px] px-9 py-9">
+        <PageHead
+          crumb={[
+            { label: slug, href: `/orgs/${slug}` },
+            { label: 'Onboarding' },
+          ]}
+          title="Set up your project"
+          meta={
+            <span className="font-mono text-[12.5px] text-muted">
+              mergecrew runs a Planner → Coder → Reviewer chain on your repo each weekday and
+              proposes changesets for approval. Five steps connect an LLM, a repo, and a dev deploy
+              target so the agents have somewhere to run.
+            </span>
           }
-          return (
-            <WizardRow
-              key={step.key}
-              index={i}
-              label={step.label}
-              status={status}
-              description={description}
-            >
-              {body}
-            </WizardRow>
-          );
-        })}
-      </ol>
+          actions={<Label accent>{activeLabel}</Label>}
+        />
 
-      {demoProject && !state.complete && (
-        <div className="text-center text-sm">
-          <Link
-            href={`/orgs/${slug}/projects/${demoProject.slug}`}
-            className="text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
-          >
-            Or skip for now — explore the demo project →
-          </Link>
-        </div>
-      )}
-    </main>
+        {state.complete && projectSlug && (
+          <div className="mb-6">
+            <SeedGoalCard
+              orgSlug={slug}
+              projectSlug={projectSlug}
+              action={createSeedGoalAndRunAction}
+            />
+          </div>
+        )}
+        {state.complete && !projectSlug && (
+          <Card className="mb-6 border-positive bg-positive-soft p-5">
+            <div className="font-medium text-positive-deep">You&apos;re all set</div>
+            <p className="mt-1 text-[13.5px] text-ink-2">
+              Setup complete. Visit the project page to trigger a run.
+            </p>
+          </Card>
+        )}
+
+        <ol className="space-y-3 list-none p-0 m-0">
+          {state.steps.map((step, i) => {
+            const status = rowStatus(i);
+            const description = status === 'active' ? STEP_HELP[step.key] : undefined;
+            let body: React.ReactNode = null;
+            if (status === 'active') {
+              switch (step.key) {
+                case 'llm_provider':
+                  body = <InlineLlmStep orgSlug={slug} action={addLlmProviderAction} />;
+                  break;
+                case 'first_project':
+                  body = (
+                    <CreateProjectForm orgSlug={slug} action={createFirstProjectAction} />
+                  );
+                  break;
+                case 'connected_repo':
+                  body = projectSlug ? (
+                    <RepoForm
+                      slug={slug}
+                      projectSlug={projectSlug}
+                      initial={connectedRepo}
+                      installedInstallationId={installedInstallationId}
+                      availableRepos={availableRepos}
+                      installFrom="wizard"
+                    />
+                  ) : (
+                    <BlockedBecauseNoProject />
+                  );
+                  break;
+                case 'deploy_target':
+                  body = projectSlug ? (
+                    <DeployTargetForm
+                      slug={slug}
+                      projectSlug={projectSlug}
+                      initial={deployTargets}
+                      kinds={['dev']}
+                      installFrom="wizard"
+                      baseBranch={
+                        connectedRepo?.basePrBranch?.trim() ||
+                        connectedRepo?.defaultBranch
+                      }
+                    />
+                  ) : (
+                    <BlockedBecauseNoProject />
+                  );
+                  break;
+                case 'promotion_strategy':
+                  body = projectSlug ? (
+                    <PromotionStrategyForm
+                      slug={slug}
+                      projectSlug={projectSlug}
+                      orgSlug={slug}
+                      initial={promotionStrategy}
+                      defaultReleaseBranch={
+                        connectedRepo?.basePrBranch?.trim() ||
+                        connectedRepo?.defaultBranch
+                      }
+                    />
+                  ) : (
+                    <BlockedBecauseNoProject />
+                  );
+                  break;
+              }
+            }
+            return (
+              <WizardRow
+                key={step.key}
+                index={i}
+                label={step.label}
+                status={status}
+                description={description}
+              >
+                {body}
+              </WizardRow>
+            );
+          })}
+        </ol>
+
+        {demoProject && !state.complete && (
+          <div className="mt-6 text-center text-sm">
+            <Link
+              href={`/orgs/${slug}/projects/${demoProject.slug}`}
+              className="text-ink-2 underline-offset-[3px] hover:text-accent hover:underline"
+            >
+              Or skip for now — explore the demo project →
+            </Link>
+          </div>
+        )}
+      </main>
+    </div>
   );
 }
 
 function BlockedBecauseNoProject() {
   return (
-    <p className="rounded border border-dashed p-3 text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
+    <p className="border border-dashed border-hair p-3 text-[13px] text-ink-2">
       Finish the project-creation step first; this step targets the project you create.
     </p>
   );

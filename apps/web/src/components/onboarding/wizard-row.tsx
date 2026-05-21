@@ -31,49 +31,58 @@ export function WizardRow({
   children?: ReactNode;
 }) {
   const wrapperClass = clsx(
-    'rounded-lg border p-4 shadow-sm transition-colors',
-    status === 'active' && 'border-sky-400 bg-sky-50/60 dark:border-sky-600 dark:bg-sky-950/30',
-    status === 'complete' &&
-      'border-zinc-200 bg-[rgb(var(--card))] opacity-75 dark:border-zinc-700',
-    status === 'locked' &&
-      'border-zinc-200 bg-zinc-50/60 opacity-60 dark:border-zinc-800 dark:bg-zinc-900/30',
+    'border p-5 transition-colors',
+    status === 'active' && 'border-accent bg-accent-tint shadow-card',
+    status === 'complete' && 'border-hair bg-paper',
+    status === 'locked' && 'border-hair-2 bg-bg/60',
   );
 
   return (
     <li className={wrapperClass}>
       <div className="flex items-start gap-4">
-        <div className="mt-0.5 shrink-0">
+        <div className="mt-1 shrink-0">
           {status === 'complete' ? (
-            <Check
-              className="h-5 w-5 text-emerald-600 dark:text-emerald-400"
+            <span
               aria-label="complete"
-            />
+              className="flex h-[26px] w-[26px] items-center justify-center bg-positive text-paper"
+            >
+              <Check className="h-[14px] w-[14px]" />
+            </span>
           ) : status === 'active' ? (
-            <Circle
-              className="h-5 w-5 text-sky-600 dark:text-sky-400"
+            <span
               aria-label="active"
-            />
+              className="flex h-[26px] w-[26px] items-center justify-center border-2 border-accent bg-paper font-mono text-[12px] font-semibold text-accent"
+            >
+              {index + 1}
+            </span>
           ) : (
-            <Lock
-              className="h-5 w-5 text-zinc-400 dark:text-zinc-500"
+            <span
               aria-label="locked"
-            />
+              className="flex h-[26px] w-[26px] items-center justify-center border border-hair bg-bg text-muted"
+            >
+              <Lock className="h-[13px] w-[13px]" />
+            </span>
           )}
         </div>
         <div className="min-w-0 flex-1 space-y-2">
-          <div
-            className={clsx(
-              'font-medium',
-              status === 'complete' && 'line-through decoration-zinc-300 dark:decoration-zinc-600',
-              status === 'locked' && 'text-zinc-500 dark:text-zinc-400',
-            )}
-          >
-            {`Step ${index + 1} · ${label}`}
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted">
+              Step {index + 1}
+            </span>
+            <span
+              className={clsx(
+                'text-[15px] font-medium tracking-[-0.005em]',
+                status === 'complete' && 'text-ink-3 line-through decoration-hair-strong',
+                status === 'locked' && 'text-muted',
+              )}
+            >
+              {label}
+            </span>
           </div>
           {status === 'active' && description && (
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">{description}</p>
+            <p className="text-[13.5px] leading-[1.55] text-ink-2">{description}</p>
           )}
-          {status === 'active' && children && <div>{children}</div>}
+          {status === 'active' && children && <div className="pt-1">{children}</div>}
         </div>
       </div>
     </li>
