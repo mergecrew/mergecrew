@@ -84,12 +84,12 @@ export function StockTemplatePicker({
             <li
               key={t.id}
               className={clsx(
-                'flex flex-col rounded-lg border bg-[rgb(var(--card))] p-4 shadow-sm transition-colors',
+                'flex flex-col border bg-paper p-4 transition-colors',
                 isConfirming
-                  ? 'border-amber-400 dark:border-amber-600'
+                  ? 'border-warn'
                   : isActive
-                    ? 'border-emerald-400 dark:border-emerald-600'
-                    : 'border-zinc-200 dark:border-zinc-700',
+                    ? 'border-positive'
+                    : 'border-hair',
               )}
             >
               <div className="flex items-start justify-between gap-2">
