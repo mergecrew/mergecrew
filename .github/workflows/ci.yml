@@ -50,7 +50,7 @@ jobs:
         run: pnpm --filter @mergecrew/skills lint:fs-gate
       - name: Raw SQL chokepoint (#582 / #554 T-9)
         run: pnpm lint:no-raw-sql
-      - run: pnpm test --if-present
+      - run: pnpm run --if-present test
       - name: OpenAPI spec is up to date
         run: |
           pnpm --filter @mergecrew/api openapi:export

@@ -24,31 +24,31 @@ datasource db {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model User {
-  id           String    @id @default(uuid()) @db.Uuid
-  email        String    @unique
-  name         String?
-  avatarUrl    String?   @map("avatar_url")
-  defaultOrgId String?   @map("default_org_id") @db.Uuid
+  id                   String                @id @default(uuid()) @db.Uuid
+  email                String                @unique
+  name                 String?
+  avatarUrl            String?               @map("avatar_url")
+  defaultOrgId         String?               @map("default_org_id") @db.Uuid
   /// Confirmed TOTP secret (envelope-encrypted via CryptoService). NULL when
   /// the user hasn't completed MFA enrollment.
-  mfaSecretCiphertext  Bytes?    @map("mfa_secret_ciphertext")
+  mfaSecretCiphertext  Bytes?                @map("mfa_secret_ciphertext")
   /// Pending (unconfirmed) TOTP secret produced by /mfa/setup. Cleared on
   /// successful /mfa/verify or on a fresh setup call.
-  mfaPendingCiphertext Bytes?    @map("mfa_pending_ciphertext")
+  mfaPendingCiphertext Bytes?                @map("mfa_pending_ciphertext")
   /// Set once /mfa/verify accepts the first valid TOTP. NULL means the user
   /// is not enrolled.
-  mfaEnrolledAt        DateTime? @map("mfa_enrolled_at") @db.Timestamptz(6)
+  mfaEnrolledAt        DateTime?             @map("mfa_enrolled_at") @db.Timestamptz(6)
   /// One row per remaining single-use recovery code (sha256 hashed). On
   /// consumption the matching row is deleted, not flipped — keeps the table
   /// honest about how many codes remain.
   mfaRecoveryCodes     UserMfaRecoveryCode[]
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  memberships Membership[]
-  decisions   Decision[]
-  intentItems IntentInboxItem[]
-  approvals   ApprovalRequest[] @relation("ApprovalResolvedBy")
+  memberships       Membership[]
+  decisions         Decision[]
+  intentItems       IntentInboxItem[]
+  approvals         ApprovalRequest[]  @relation("ApprovalResolvedBy")
   changesetComments ChangesetComment[]
 
   @@map("users")
@@ -96,18 +96,26 @@ model Organization {
   /// when the org first toggles telemetry on, so disabled orgs never
   /// pin an id at all. Never leaves this row except as the event uuid.
   telemetryInstallId       String?   @map("telemetry_install_id") @db.Uuid
+  /// Operator kill switch (#625). When non-null, blocks every run-dispatch
+  /// path for every project in the org: cron tick skips enqueue, the
+  /// `runNow` API returns ValidationError, and the orchestrator aborts on
+  /// race. In-flight runs continue — pause is forward-looking, not a kill
+  /// for the running step. Org-scope pause beats project-scope pause.
+  runsPausedAt             DateTime? @map("runs_paused_at") @db.Timestamptz(6)
+  runsPauseReason          String?   @map("runs_pause_reason")
+  runsPausedByUserId       String?   @map("runs_paused_by_user_id") @db.Uuid
   createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt                DateTime? @map("deleted_at") @db.Timestamptz(6)
 
-  memberships         Membership[]
-  projects            Project[]
-  llmProviders        LlmProvider[]
-  llmProfiles         LlmProfile[]
-  auditEntries        AuditLogEntry[]
-  lifecycleTemplates  OrgLifecycleTemplate[]
-  apiKeys             ApiKey[]
-  outboundWebhooks    OutboundWebhook[]
+  memberships        Membership[]
+  projects           Project[]
+  llmProviders       LlmProvider[]
+  llmProfiles        LlmProfile[]
+  auditEntries       AuditLogEntry[]
+  lifecycleTemplates OrgLifecycleTemplate[]
+  apiKeys            ApiKey[]
+  outboundWebhooks   OutboundWebhook[]
 
   @@map("organizations")
 }
@@ -170,40 +178,40 @@ model AuditLogEntry {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Project {
-  id             String    @id @default(uuid()) @db.Uuid
-  organizationId String    @map("organization_id") @db.Uuid
-  slug           String
-  name           String
-  description    String?
-  archivedAt     DateTime? @map("archived_at") @db.Timestamptz(6)
+  id                 String    @id @default(uuid()) @db.Uuid
+  organizationId     String    @map("organization_id") @db.Uuid
+  slug               String
+  name               String
+  description        String?
+  archivedAt         DateTime? @map("archived_at") @db.Timestamptz(6)
   /// Timestamp of the most recent end-of-day digest fan-out. Used by
   /// the worker-cron digest tick to dedup so a flaky tick doesn't
   /// send the same digest twice.
-  lastDigestAt   DateTime? @map("last_digest_at") @db.Timestamptz(6)
+  lastDigestAt       DateTime? @map("last_digest_at") @db.Timestamptz(6)
   /// Array of `AutoPromoteRule` (#31/#150) defining which changesets
   /// can auto-promote without human review. Empty array (default) =
   /// no auto-promotion; every changeset goes through the manual gate.
   /// Validated against the Zod schema in @mergecrew/domain on writes.
-  autoPromoteRules Json    @default("[]") @map("auto_promote_rules")
+  autoPromoteRules   Json      @default("[]") @map("auto_promote_rules")
   /// Egress allowlist for outbound HTTP from agent skills (#10).
   /// `null` (the default) = no restriction (back-compat). Empty array =
   /// block all. Otherwise host patterns ('example.com', '*.example.com',
   /// '*' for explicit allow-all). See packages/skills/src/egress-policy.
-  egressAllowlist  Json?   @map("egress_allowlist")
+  egressAllowlist    Json?     @map("egress_allowlist")
   /// Dry-run mode (#284). When true, the agent loop still produces a
   /// Changeset row + diff but the runner skips git push, PR creation,
   /// and deploy. An admin can later "promote" a specific changeset to
   /// open the real PR. Lowest-risk way to try mergecrew on a real repo.
-  dryRun         Boolean   @default(false) @map("dry_run")
+  dryRun             Boolean   @default(false) @map("dry_run")
   /// Blast-radius limits (#285). Hard caps the runner applies AFTER the
   /// agent produces a diff but BEFORE the push step. A changeset that
   /// exceeds any cap, or that touches a path matching one of the deny
   /// globs, is rejected (status=needs_review, prNumber=null) with the
   /// breakdown surfaced on the changeset detail page + inbox. Picomatch
   /// glob syntax — same as auto-promote rules.
-  maxFilesChanged  Int     @default(25)  @map("max_files_changed")
-  maxLinesChanged  Int     @default(1000) @map("max_lines_changed")
-  deniedPaths      Json    @default("[\"**/migration*\", \"**/secrets*\", \"**/.env*\", \"**/*.pem\", \"**/*.key\"]") @map("denied_paths")
+  maxFilesChanged    Int       @default(25) @map("max_files_changed")
+  maxLinesChanged    Int       @default(1000) @map("max_lines_changed")
+  deniedPaths        Json      @default("[\"**/migration*\", \"**/secrets*\", \"**/.env*\", \"**/*.pem\", \"**/*.key\"]") @map("denied_paths")
   /// Risk-score gate (#286). After a changeset clears blast-radius and a
   /// PR is opened, the runner computes a simple weighted score:
   ///   score = filesChanged + linesChanged*0.1 + sensitivePathHits*10
@@ -214,8 +222,8 @@ model Project {
   /// suppressed even if a rule would match. Threshold=Infinity is the
   /// cheap way to disable the gate; threshold=0 makes every changeset
   /// require human review.
-  autoMergeThreshold Int   @default(50)  @map("auto_merge_threshold")
-  sensitivePaths     Json  @default("[\"**/config/**\", \"**/auth/**\", \"**/*.sql\"]") @map("sensitive_paths")
+  autoMergeThreshold Int       @default(50) @map("auto_merge_threshold")
+  sensitivePaths     Json      @default("[\"**/config/**\", \"**/auth/**\", \"**/*.sql\"]") @map("sensitive_paths")
   /// Multi-agent graph profile (#336).
   ///   - 'fast': single-agent legacy path (V1 behavior).
   ///   - 'careful': planner -> coder -> reviewer with loop-back. The
@@ -228,23 +236,33 @@ model Project {
   ///   - 'custom': use `graphYaml` below.
   /// The default flip only affects projects created after the
   /// migration; existing rows keep whatever the operator chose.
-  graphProfile       String @default("roster") @map("graph_profile")
+  graphProfile       String    @default("roster") @map("graph_profile")
   /// YAML body for graphProfile='custom'. Parsed + validated against
   /// the Graph schema in @mergecrew/domain on every write. Null
   /// otherwise. Operator-editable from project settings.
-  graphYaml          String? @map("graph_yaml") @db.Text
+  graphYaml          String?   @map("graph_yaml") @db.Text
   /// Demo flag (#437). When true, this project is a read-only sample
   /// seeded for FTE walkthroughs — its runs, changesets, and timeline
   /// are illustrative. The API rejects mutations on demo projects (see
   /// `assertNotDemo` in the project module) so the read-only invariant
   /// holds even if the UI surfaces an action button. Seeded per-org on
   /// createOrg when `MERGECREW_SEED_DEMO_PROJECT=1` (default on).
-  demo               Boolean @default(false)
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+  demo               Boolean   @default(false)
+  /// Per-project run kill switch (#625). When non-null, blocks every
+  /// run-dispatch path for this project: cron tick skips enqueue with a
+  /// `paused` log line, the `runNow` API returns ValidationError surfacing
+  /// the reason + actor, and the orchestrator aborts on race. In-flight
+  /// runs continue — the operator can still hit Cancel on the run page.
+  /// Org-scope pause on `organizations.runs_paused_at` overrides this and
+  /// is checked first.
+  runsPausedAt       DateTime? @map("runs_paused_at") @db.Timestamptz(6)
+  runsPauseReason    String?   @map("runs_pause_reason")
+  runsPausedByUserId String?   @map("runs_paused_by_user_id") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt          DateTime? @map("deleted_at") @db.Timestamptz(6)
 
-  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization      Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   connectedRepo     ConnectedRepo?
   deployTargets     DeployTarget[]
   promotionStrategy PromotionStrategy?
@@ -415,17 +433,17 @@ model ProjectSecret {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model LlmProvider {
-  id                    String   @id @default(uuid()) @db.Uuid
-  organizationId        String   @map("organization_id") @db.Uuid
-  kind                  String
-  label                 String
-  endpoint              String?
-  credentialCiphertext  Bytes?   @map("credential_ciphertext")
-  capabilityOverrides   Json?    @map("capability_overrides")
-  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                   String   @id @default(uuid()) @db.Uuid
+  organizationId       String   @map("organization_id") @db.Uuid
+  kind                 String
+  label                String
+  endpoint             String?
+  credentialCiphertext Bytes?   @map("credential_ciphertext")
+  capabilityOverrides  Json?    @map("capability_overrides")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   invocations  LlmInvocation[]
   modelTurns   ModelTurn[]
 
@@ -433,13 +451,13 @@ model LlmProvider {
 }
 
 model LlmProfile {
-  id                  String   @id @default(uuid()) @db.Uuid
-  organizationId      String   @map("organization_id") @db.Uuid
-  name                String
-  preferenceOrder     Json     @map("preference_order")
-  capabilityRouting   Json     @map("capability_routing")
-  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                String   @id @default(uuid()) @db.Uuid
+  organizationId    String   @map("organization_id") @db.Uuid
+  name              String
+  preferenceOrder   Json     @map("preference_order")
+  capabilityRouting Json     @map("capability_routing")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -448,13 +466,13 @@ model LlmProfile {
 }
 
 model ModelPriceTable {
-  providerKind             String   @map("provider_kind")
-  modelId                  String   @map("model_id")
-  effectiveAt              DateTime @map("effective_at") @db.Timestamptz(6)
-  inputPerMillionUsd       Decimal  @map("input_per_million_usd") @db.Decimal(10, 6)
-  outputPerMillionUsd      Decimal  @map("output_per_million_usd") @db.Decimal(10, 6)
-  cacheReadPerMillionUsd   Decimal? @map("cache_read_per_million_usd") @db.Decimal(10, 6)
-  cacheWritePerMillionUsd  Decimal? @map("cache_write_per_million_usd") @db.Decimal(10, 6)
+  providerKind            String   @map("provider_kind")
+  modelId                 String   @map("model_id")
+  effectiveAt             DateTime @map("effective_at") @db.Timestamptz(6)
+  inputPerMillionUsd      Decimal  @map("input_per_million_usd") @db.Decimal(10, 6)
+  outputPerMillionUsd     Decimal  @map("output_per_million_usd") @db.Decimal(10, 6)
+  cacheReadPerMillionUsd  Decimal? @map("cache_read_per_million_usd") @db.Decimal(10, 6)
+  cacheWritePerMillionUsd Decimal? @map("cache_write_per_million_usd") @db.Decimal(10, 6)
 
   @@id([providerKind, modelId, effectiveAt])
   @@map("model_price_table")
@@ -546,8 +564,8 @@ model DailyRun {
   status         DailyRunStatus @default(pending)
   metadata       Json           @default("{}")
 
-  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  lifecycle     Lifecycle      @relation(fields: [lifecycleId], references: [id])
+  project       Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  lifecycle     Lifecycle         @relation(fields: [lifecycleId], references: [id])
   workflowRuns  WorkflowRun[]
   changesets    Changeset[]
   pauses        RunPause[]
@@ -563,45 +581,45 @@ model DailyRun {
 }
 
 model WorkflowRun {
-  id                   String      @id @default(uuid()) @db.Uuid
-  organizationId       String      @map("organization_id") @db.Uuid
-  dailyRunId           String      @map("daily_run_id") @db.Uuid
-  workflowId           String      @map("workflow_id")
-  parentWorkflowRunId  String?     @map("parent_workflow_run_id") @db.Uuid
-  status               String
-  startedAt            DateTime?   @map("started_at") @db.Timestamptz(6)
-  finishedAt           DateTime?   @map("finished_at") @db.Timestamptz(6)
+  id                  String    @id @default(uuid()) @db.Uuid
+  organizationId      String    @map("organization_id") @db.Uuid
+  dailyRunId          String    @map("daily_run_id") @db.Uuid
+  workflowId          String    @map("workflow_id")
+  parentWorkflowRunId String?   @map("parent_workflow_run_id") @db.Uuid
+  status              String
+  startedAt           DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt          DateTime? @map("finished_at") @db.Timestamptz(6)
 
-  dailyRun  DailyRun     @relation(fields: [dailyRunId], references: [id], onDelete: Cascade)
-  steps     AgentStep[]
-  parent    WorkflowRun? @relation("WorkflowRunParent", fields: [parentWorkflowRunId], references: [id])
-  children  WorkflowRun[] @relation("WorkflowRunParent")
+  dailyRun   DailyRun      @relation(fields: [dailyRunId], references: [id], onDelete: Cascade)
+  steps      AgentStep[]
+  parent     WorkflowRun?  @relation("WorkflowRunParent", fields: [parentWorkflowRunId], references: [id])
+  children   WorkflowRun[] @relation("WorkflowRunParent")
   changesets Changeset[]
 
   @@map("workflow_runs")
 }
 
 model AgentStep {
-  id                   String   @id @default(uuid()) @db.Uuid
-  organizationId       String   @map("organization_id") @db.Uuid
-  workflowRunId        String   @map("workflow_run_id") @db.Uuid
-  agentKind            String   @map("agent_kind")
-  agentInstanceId      String   @map("agent_instance_id") @db.Uuid
-  attempt              Int      @default(1)
-  status               String
-  input                Json
-  output               Json?
-  failureReason        String?  @map("failure_reason")
-  startedAt            DateTime? @map("started_at") @db.Timestamptz(6)
-  finishedAt           DateTime? @map("finished_at") @db.Timestamptz(6)
-  totalInputTokens     Int      @default(0) @map("total_input_tokens")
-  totalOutputTokens    Int      @default(0) @map("total_output_tokens")
-  totalUsdEstimate     Decimal  @default(0) @map("total_usd_estimate") @db.Decimal(12, 6)
+  id                String    @id @default(uuid()) @db.Uuid
+  organizationId    String    @map("organization_id") @db.Uuid
+  workflowRunId     String    @map("workflow_run_id") @db.Uuid
+  agentKind         String    @map("agent_kind")
+  agentInstanceId   String    @map("agent_instance_id") @db.Uuid
+  attempt           Int       @default(1)
+  status            String
+  input             Json
+  output            Json?
+  failureReason     String?   @map("failure_reason")
+  startedAt         DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt        DateTime? @map("finished_at") @db.Timestamptz(6)
+  totalInputTokens  Int       @default(0) @map("total_input_tokens")
+  totalOutputTokens Int       @default(0) @map("total_output_tokens")
+  totalUsdEstimate  Decimal   @default(0) @map("total_usd_estimate") @db.Decimal(12, 6)
   /// Pointer to the agent's full message transcript (#4). Format is the
   /// scheme-prefixed location: `s3://bucket/key`, `file:///path`, etc.
   /// Null when the runner couldn't persist (no S3 + no local dir, or
   /// the step never produced messages — e.g. cancelled before LLM call).
-  transcriptUrl        String?  @map("transcript_url")
+  transcriptUrl     String?   @map("transcript_url")
 
   /// Liveness heartbeat (#10 V1.4). Stamped every RUNNER_HEARTBEAT_INTERVAL_MS
   /// while a step is executing. The orchestrator's heartbeat sweeper
@@ -610,18 +628,18 @@ model AgentStep {
   /// Null while the step is queued/pending; cleared lazily on terminal
   /// states. Index is partial-friendly because the sweeper only ever scans
   /// rows with status='running'.
-  heartbeatAt          DateTime? @map("heartbeat_at") @db.Timestamptz(6)
+  heartbeatAt DateTime? @map("heartbeat_at") @db.Timestamptz(6)
 
   /// Multi-agent graph node key (#331). Null for legacy single-agent runs.
   /// Set by the runner when a step is produced by a named node in a
   /// project's graph profile — e.g. 'planner', 'coder', 'reviewer'. The
   /// run-detail UI groups steps by this key to render per-agent costs.
-  graphNodeKey         String?  @map("graph_node_key")
+  graphNodeKey String? @map("graph_node_key")
 
-  workflowRun WorkflowRun @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
-  toolCalls   ToolCall[]
-  modelTurns  ModelTurn[]
-  pauses      RunPause[]
+  workflowRun  WorkflowRun   @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+  toolCalls    ToolCall[]
+  modelTurns   ModelTurn[]
+  pauses       RunPause[]
   egressEvents EgressEvent[]
 
   @@index([status, startedAt])
@@ -630,17 +648,17 @@ model AgentStep {
 }
 
 model ToolCall {
-  id              String   @id @default(uuid()) @db.Uuid
-  organizationId  String   @map("organization_id") @db.Uuid
-  agentStepId     String   @map("agent_step_id") @db.Uuid
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @map("organization_id") @db.Uuid
+  agentStepId     String    @map("agent_step_id") @db.Uuid
   sequence        Int
-  skillName       String   @map("skill_name")
+  skillName       String    @map("skill_name")
   input           Json
   output          Json?
-  isError         Boolean  @default(false) @map("is_error")
-  startedAt       DateTime @map("started_at") @db.Timestamptz(6)
+  isError         Boolean   @default(false) @map("is_error")
+  startedAt       DateTime  @map("started_at") @db.Timestamptz(6)
   finishedAt      DateTime? @map("finished_at") @db.Timestamptz(6)
-  sideEffectClass String   @map("side_effect_class")
+  sideEffectClass String    @map("side_effect_class")
 
   step AgentStep @relation(fields: [agentStepId], references: [id], onDelete: Cascade)
 
@@ -649,22 +667,22 @@ model ToolCall {
 }
 
 model ModelTurn {
-  id                   String   @id @default(uuid()) @db.Uuid
-  organizationId       String   @map("organization_id") @db.Uuid
-  agentStepId          String   @map("agent_step_id") @db.Uuid
-  sequence             Int
-  providerId           String   @map("provider_id") @db.Uuid
-  modelId              String   @map("model_id")
-  inputTokens          Int      @map("input_tokens")
-  outputTokens         Int      @map("output_tokens")
-  cacheReadTokens      Int      @default(0) @map("cache_read_tokens")
-  cacheWriteTokens     Int      @default(0) @map("cache_write_tokens")
-  thinkingTokens       Int?     @map("thinking_tokens")
-  latencyMs            Int      @map("latency_ms")
-  usdEstimate          Decimal  @map("usd_estimate") @db.Decimal(12, 6)
-  rawRequestBlobUrl    String?  @map("raw_request_blob_url")
-  rawResponseBlobUrl   String?  @map("raw_response_blob_url")
-  occurredAt           DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  id                 String   @id @default(uuid()) @db.Uuid
+  organizationId     String   @map("organization_id") @db.Uuid
+  agentStepId        String   @map("agent_step_id") @db.Uuid
+  sequence           Int
+  providerId         String   @map("provider_id") @db.Uuid
+  modelId            String   @map("model_id")
+  inputTokens        Int      @map("input_tokens")
+  outputTokens       Int      @map("output_tokens")
+  cacheReadTokens    Int      @default(0) @map("cache_read_tokens")
+  cacheWriteTokens   Int      @default(0) @map("cache_write_tokens")
+  thinkingTokens     Int?     @map("thinking_tokens")
+  latencyMs          Int      @map("latency_ms")
+  usdEstimate        Decimal  @map("usd_estimate") @db.Decimal(12, 6)
+  rawRequestBlobUrl  String?  @map("raw_request_blob_url")
+  rawResponseBlobUrl String?  @map("raw_response_blob_url")
+  occurredAt         DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
 
   step     AgentStep   @relation(fields: [agentStepId], references: [id], onDelete: Cascade)
   provider LlmProvider @relation(fields: [providerId], references: [id])
@@ -674,21 +692,21 @@ model ModelTurn {
 }
 
 model LlmInvocation {
-  id              String   @id @default(uuid()) @db.Uuid
-  organizationId  String   @map("organization_id") @db.Uuid
-  projectId       String   @map("project_id") @db.Uuid
-  runId           String?  @map("run_id") @db.Uuid
-  agentStepId     String?  @map("agent_step_id") @db.Uuid
-  providerId      String   @map("provider_id") @db.Uuid
-  modelId         String   @map("model_id")
-  inputTokens     Int      @map("input_tokens")
-  outputTokens    Int      @map("output_tokens")
-  cacheReadTokens Int      @default(0) @map("cache_read_tokens")
-  cacheWriteTokens Int     @default(0) @map("cache_write_tokens")
-  thinkingTokens  Int?     @map("thinking_tokens")
-  latencyMs       Int      @map("latency_ms")
-  usdEstimate     Decimal  @map("usd_estimate") @db.Decimal(12, 6)
-  occurredAt      DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @map("organization_id") @db.Uuid
+  projectId        String   @map("project_id") @db.Uuid
+  runId            String?  @map("run_id") @db.Uuid
+  agentStepId      String?  @map("agent_step_id") @db.Uuid
+  providerId       String   @map("provider_id") @db.Uuid
+  modelId          String   @map("model_id")
+  inputTokens      Int      @map("input_tokens")
+  outputTokens     Int      @map("output_tokens")
+  cacheReadTokens  Int      @default(0) @map("cache_read_tokens")
+  cacheWriteTokens Int      @default(0) @map("cache_write_tokens")
+  thinkingTokens   Int?     @map("thinking_tokens")
+  latencyMs        Int      @map("latency_ms")
+  usdEstimate      Decimal  @map("usd_estimate") @db.Decimal(12, 6)
+  occurredAt       DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
 
   provider LlmProvider @relation(fields: [providerId], references: [id])
 
@@ -741,18 +759,18 @@ model EgressEvent {
 }
 
 model RunPause {
-  id                 String   @id @default(uuid()) @db.Uuid
-  organizationId     String   @map("organization_id") @db.Uuid
-  dailyRunId         String   @map("daily_run_id") @db.Uuid
-  stepId             String?  @map("step_id") @db.Uuid
-  kind               String
-  providerId         String?  @map("provider_id") @db.Uuid
-  approvalRequestId  String?  @map("approval_request_id") @db.Uuid
-  pausedAt           DateTime @default(now()) @map("paused_at") @db.Timestamptz(6)
-  wakeAt             DateTime? @map("wake_at") @db.Timestamptz(6)
-  resumedAt          DateTime? @map("resumed_at") @db.Timestamptz(6)
+  id                String    @id @default(uuid()) @db.Uuid
+  organizationId    String    @map("organization_id") @db.Uuid
+  dailyRunId        String    @map("daily_run_id") @db.Uuid
+  stepId            String?   @map("step_id") @db.Uuid
+  kind              String
+  providerId        String?   @map("provider_id") @db.Uuid
+  approvalRequestId String?   @map("approval_request_id") @db.Uuid
+  pausedAt          DateTime  @default(now()) @map("paused_at") @db.Timestamptz(6)
+  wakeAt            DateTime? @map("wake_at") @db.Timestamptz(6)
+  resumedAt         DateTime? @map("resumed_at") @db.Timestamptz(6)
 
-  dailyRun DailyRun  @relation(fields: [dailyRunId], references: [id], onDelete: Cascade)
+  dailyRun DailyRun   @relation(fields: [dailyRunId], references: [id], onDelete: Cascade)
   step     AgentStep? @relation(fields: [stepId], references: [id])
 
   @@index([wakeAt])
@@ -764,20 +782,20 @@ model RunPause {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model EvalRun {
-  id              String    @id @default(uuid()) @db.Uuid
-  organizationId  String    @map("organization_id") @db.Uuid
-  llmProfileId    String?   @map("llm_profile_id") @db.Uuid
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  llmProfileId   String?   @map("llm_profile_id") @db.Uuid
   /// What triggered this run. `cli` = `pnpm eval run`; `cron` = nightly
   /// scheduler (#303); `ab` = paired half of an A/B compare (#302).
-  source          String
-  startedAt       DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
-  finishedAt      DateTime? @map("finished_at") @db.Timestamptz(6)
-  totalCases      Int       @default(0) @map("total_cases")
-  passCount       Int       @default(0) @map("pass_count")
-  failCount       Int       @default(0) @map("fail_count")
-  errorCount      Int       @default(0) @map("error_count")
-  totalUsd        Decimal   @default(0) @map("total_usd") @db.Decimal(12, 6)
-  totalLatencyMs  Int       @default(0) @map("total_latency_ms")
+  source         String
+  startedAt      DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt     DateTime? @map("finished_at") @db.Timestamptz(6)
+  totalCases     Int       @default(0) @map("total_cases")
+  passCount      Int       @default(0) @map("pass_count")
+  failCount      Int       @default(0) @map("fail_count")
+  errorCount     Int       @default(0) @map("error_count")
+  totalUsd       Decimal   @default(0) @map("total_usd") @db.Decimal(12, 6)
+  totalLatencyMs Int       @default(0) @map("total_latency_ms")
 
   cases EvalCase[]
 
@@ -786,18 +804,18 @@ model EvalRun {
 }
 
 model EvalCase {
-  id            String   @id @default(uuid()) @db.Uuid
-  evalRunId     String   @map("eval_run_id") @db.Uuid
+  id           String   @id @default(uuid()) @db.Uuid
+  evalRunId    String   @map("eval_run_id") @db.Uuid
   /// Matches `manifest.id` from @mergecrew/eval-fixtures.
-  fixtureId     String   @map("fixture_id")
+  fixtureId    String   @map("fixture_id")
   /// `pass` = snapshot comparison agreed; `fail` = disagreed; `error`
   /// = the harness itself crashed (provider error, timeout, etc.).
-  status        String
-  agentDiff     String?  @db.Text @map("agent_diff")
-  errorMessage  String?  @db.Text @map("error_message")
-  usdEstimate   Decimal  @default(0) @map("usd_estimate") @db.Decimal(12, 6)
-  latencyMs     Int      @default(0) @map("latency_ms")
-  finishedAt    DateTime @default(now()) @map("finished_at") @db.Timestamptz(6)
+  status       String
+  agentDiff    String?  @map("agent_diff") @db.Text
+  errorMessage String?  @map("error_message") @db.Text
+  usdEstimate  Decimal  @default(0) @map("usd_estimate") @db.Decimal(12, 6)
+  latencyMs    Int      @default(0) @map("latency_ms")
+  finishedAt   DateTime @default(now()) @map("finished_at") @db.Timestamptz(6)
 
   run EvalRun @relation(fields: [evalRunId], references: [id], onDelete: Cascade)
 
@@ -811,14 +829,14 @@ model EvalCase {
 /// LLM profile each side used — the runs themselves also link back
 /// via llmProfileId but having it on the parent saves a join.
 model EvalAbRun {
-  id              String    @id @default(uuid()) @db.Uuid
-  organizationId  String    @map("organization_id") @db.Uuid
-  profileAId      String    @map("profile_a_id") @db.Uuid
-  profileBId      String    @map("profile_b_id") @db.Uuid
-  runAId          String    @map("run_a_id") @db.Uuid
-  runBId          String    @map("run_b_id") @db.Uuid
-  startedAt       DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
-  finishedAt      DateTime? @map("finished_at") @db.Timestamptz(6)
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  profileAId     String    @map("profile_a_id") @db.Uuid
+  profileBId     String    @map("profile_b_id") @db.Uuid
+  runAId         String    @map("run_a_id") @db.Uuid
+  runBId         String    @map("run_b_id") @db.Uuid
+  startedAt      DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt     DateTime? @map("finished_at") @db.Timestamptz(6)
 
   @@index([organizationId, startedAt(sort: Desc)])
   @@map("eval_ab_runs")
@@ -847,66 +865,66 @@ enum ChangesetStatus {
 }
 
 model Changeset {
-  id              String           @id
-  organizationId  String           @map("organization_id") @db.Uuid
-  projectId       String           @map("project_id") @db.Uuid
-  dailyRunId      String           @map("daily_run_id") @db.Uuid
-  workflowRunId   String?          @map("workflow_run_id") @db.Uuid
-  title           String
-  whyParagraph    String?          @map("why_paragraph") @db.Text
-  branch          String
-  status          ChangesetStatus  @default(proposed)
-  prNumber        Int?             @map("pr_number")
-  prUrl           String?          @map("pr_url")
-  devDeployId     String?          @map("dev_deploy_id") @db.Uuid
-  testSummary     Json?            @map("test_summary")
-  riskChip        String?          @map("risk_chip")
-  estimatedUsd    Decimal          @default(0) @map("estimated_usd") @db.Decimal(12, 6)
+  id                 String          @id
+  organizationId     String          @map("organization_id") @db.Uuid
+  projectId          String          @map("project_id") @db.Uuid
+  dailyRunId         String          @map("daily_run_id") @db.Uuid
+  workflowRunId      String?         @map("workflow_run_id") @db.Uuid
+  title              String
+  whyParagraph       String?         @map("why_paragraph") @db.Text
+  branch             String
+  status             ChangesetStatus @default(proposed)
+  prNumber           Int?            @map("pr_number")
+  prUrl              String?         @map("pr_url")
+  devDeployId        String?         @map("dev_deploy_id") @db.Uuid
+  testSummary        Json?           @map("test_summary")
+  riskChip           String?         @map("risk_chip")
+  estimatedUsd       Decimal         @default(0) @map("estimated_usd") @db.Decimal(12, 6)
   /// True when the parent project was in dry-run mode (#284) at the
   /// moment the agent produced this changeset. The runner sets it once
   /// at creation; toggling project.dryRun afterwards does NOT rewrite
   /// existing changesets. Operators promote a dry-run changeset via the
   /// changeset detail page → "Promote to real PR" button.
-  isDryRun        Boolean          @default(false) @map("is_dry_run")
+  isDryRun           Boolean         @default(false) @map("is_dry_run")
   /// Blast-radius rejection breakdown (#285). Set when status=blocked.
   /// Shape: {kind:'files'|'lines'|'denied_paths', filesChanged?, maxFiles?,
   /// linesChanged?, maxLines?, deniedHits?:[{path,glob}]}. Null otherwise.
-  blockedReason   Json?            @map("blocked_reason")
+  blockedReason      Json?           @map("blocked_reason")
   /// Risk score (#286) — null until the post-push gate evaluates the
   /// changeset. Higher = more attention needed. Compared against the
   /// project's autoMergeThreshold to decide auto-promote eligibility.
-  riskScore       Float?           @map("risk_score")
+  riskScore          Float?          @map("risk_score")
   /// Per-component breakdown the inbox + detail page render so operators
   /// see WHY a score is high. Shape: {filesChanged,linesChanged,
   /// sensitiveHits:[{path,glob}]}.
-  riskScoreBreakdown Json?         @map("risk_score_breakdown")
+  riskScoreBreakdown Json?           @map("risk_score_breakdown")
   /// One-click rollback target (#287). When an admin rolls back a
   /// merged changeset we open a `git revert` PR via the VCS adapter
   /// and stamp its number + URL here so the detail page can link to
   /// the active revert without re-querying the host.
-  revertPrNumber  Int?             @map("revert_pr_number")
-  revertPrUrl     String?          @map("revert_pr_url")
+  revertPrNumber     Int?            @map("revert_pr_number")
+  revertPrUrl        String?         @map("revert_pr_url")
   /// Which PromoteRun (#471) shipped this changeset to prod. Null
   /// while pending / deferred / dropped.
-  lastPromoteRunId String?         @map("last_promote_run_id") @db.Uuid
+  lastPromoteRunId   String?         @map("last_promote_run_id") @db.Uuid
   /// When the user clicked Drop in the promote digest (#471). Once set,
   /// the changeset is excluded from all subsequent promote digests.
-  droppedAt       DateTime?        @map("dropped_at") @db.Timestamptz(6)
+  droppedAt          DateTime?       @map("dropped_at") @db.Timestamptz(6)
   /// URL of the revert PR mergecrew opened on basePrBranch when the
   /// user dropped this changeset (#471). Idempotent: re-dropping
   /// returns this same PR rather than opening a duplicate.
-  dropRevertPrUrl String?          @map("drop_revert_pr_url")
-  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  dropRevertPrUrl    String?         @map("drop_revert_pr_url")
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project        Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  dailyRun       DailyRun          @relation(fields: [dailyRunId], references: [id], onDelete: Cascade)
-  workflowRun    WorkflowRun?      @relation(fields: [workflowRunId], references: [id])
-  decisions      Decision[]
-  deploys        Deploy[]
+  project          Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  dailyRun         DailyRun           @relation(fields: [dailyRunId], references: [id], onDelete: Cascade)
+  workflowRun      WorkflowRun?       @relation(fields: [workflowRunId], references: [id])
+  decisions        Decision[]
+  deploys          Deploy[]
   approvalRequests ApprovalRequest[]
-  comments       ChangesetComment[]
-  lastPromoteRun PromoteRun?       @relation(fields: [lastPromoteRunId], references: [id])
+  comments         ChangesetComment[]
+  lastPromoteRun   PromoteRun?        @relation(fields: [lastPromoteRunId], references: [id])
 
   @@index([projectId, status, updatedAt(sort: Desc)])
   @@map("changesets")
@@ -953,22 +971,22 @@ model PromoteRun {
 }
 
 model Deploy {
-  id              String   @id @default(uuid()) @db.Uuid
-  organizationId  String   @map("organization_id") @db.Uuid
-  projectId       String   @map("project_id") @db.Uuid
-  changesetId     String?  @map("changeset_id")
-  deployTargetId  String   @map("deploy_target_id") @db.Uuid
-  ref             String
-  correlationId   String   @map("correlation_id")
-  externalRunId   String?  @map("external_run_id")
-  url             String?
-  status          String
-  startedAt       DateTime @map("started_at") @db.Timestamptz(6)
-  finishedAt      DateTime? @map("finished_at") @db.Timestamptz(6)
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  projectId      String    @map("project_id") @db.Uuid
+  changesetId    String?   @map("changeset_id")
+  deployTargetId String    @map("deploy_target_id") @db.Uuid
+  ref            String
+  correlationId  String    @map("correlation_id")
+  externalRunId  String?   @map("external_run_id")
+  url            String?
+  status         String
+  startedAt      DateTime  @map("started_at") @db.Timestamptz(6)
+  finishedAt     DateTime? @map("finished_at") @db.Timestamptz(6)
 
-  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  changeset     Changeset?    @relation(fields: [changesetId], references: [id])
-  deployTarget  DeployTarget  @relation(fields: [deployTargetId], references: [id])
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  changeset    Changeset?   @relation(fields: [changesetId], references: [id])
+  deployTarget DeployTarget @relation(fields: [deployTargetId], references: [id])
 
   @@unique([projectId, correlationId])
   @@map("deploys")
@@ -993,10 +1011,10 @@ model Decision {
 /// the cleartext only exists in the response that issues them. Consuming
 /// a code deletes the row.
 model UserMfaRecoveryCode {
-  id          String   @id @default(uuid()) @db.Uuid
-  userId      String   @map("user_id") @db.Uuid
-  codeHash    String   @unique @map("code_hash")
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  codeHash  String   @unique @map("code_hash")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1033,18 +1051,18 @@ model ChangesetComment {
 }
 
 model ApprovalRequest {
-  id                 String    @id @default(uuid()) @db.Uuid
-  organizationId     String    @map("organization_id") @db.Uuid
-  projectId          String    @map("project_id") @db.Uuid
-  workflowRunId      String    @map("workflow_run_id") @db.Uuid
-  changesetId        String?   @map("changeset_id")
-  reason             String
-  details            Json
-  requiredRole       String    @map("required_role")
-  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  resolvedAt         DateTime? @map("resolved_at") @db.Timestamptz(6)
-  resolvedByUserId   String?   @map("resolved_by_user_id") @db.Uuid
-  resolution         String?
+  id               String    @id @default(uuid()) @db.Uuid
+  organizationId   String    @map("organization_id") @db.Uuid
+  projectId        String    @map("project_id") @db.Uuid
+  workflowRunId    String    @map("workflow_run_id") @db.Uuid
+  changesetId      String?   @map("changeset_id")
+  reason           String
+  details          Json
+  requiredRole     String    @map("required_role")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  resolvedAt       DateTime? @map("resolved_at") @db.Timestamptz(6)
+  resolvedByUserId String?   @map("resolved_by_user_id") @db.Uuid
+  resolution       String?
 
   project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
   changeset Changeset? @relation(fields: [changesetId], references: [id])
@@ -1055,22 +1073,22 @@ model ApprovalRequest {
 }
 
 model IntentInboxItem {
-  id                 String    @id @default(uuid()) @db.Uuid
-  organizationId     String    @map("organization_id") @db.Uuid
-  projectId          String    @map("project_id") @db.Uuid
+  id                String   @id @default(uuid()) @db.Uuid
+  organizationId    String   @map("organization_id") @db.Uuid
+  projectId         String   @map("project_id") @db.Uuid
   /// Nullable for system-originated intents (Sentry webhook, etc.).
-  submittedByUserId  String?   @map("submitted_by_user_id") @db.Uuid
-  body               String    @db.Text
-  status             String    @default("queued")
+  submittedByUserId String?  @map("submitted_by_user_id") @db.Uuid
+  body              String   @db.Text
+  status            String   @default("queued")
   /// Optional source tag, e.g. `sentry:issue:1234`. Used by webhook
   /// dedup to suppress duplicate intents within a short window.
-  sourceKey          String?   @map("source_key")
-  pickedUpRunId      String?   @map("picked_up_run_id") @db.Uuid
-  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  sourceKey         String?  @map("source_key")
+  pickedUpRunId     String?  @map("picked_up_run_id") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  user          User?     @relation(fields: [submittedByUserId], references: [id])
-  pickedUpRun   DailyRun? @relation(fields: [pickedUpRunId], references: [id])
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user        User?     @relation(fields: [submittedByUserId], references: [id])
+  pickedUpRun DailyRun? @relation(fields: [pickedUpRunId], references: [id])
 
   @@index([projectId, status, createdAt])
   @@index([projectId, sourceKey, createdAt])
@@ -1082,15 +1100,15 @@ model IntentInboxItem {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Schedule {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  projectId      String   @unique @map("project_id") @db.Uuid
-  cron           String   @default("0 8 * * 1-5")
-  timezone       String   @default("UTC")
-  enabled        Boolean  @default(true)
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  projectId      String    @unique @map("project_id") @db.Uuid
+  cron           String    @default("0 8 * * 1-5")
+  timezone       String    @default("UTC")
+  enabled        Boolean   @default(true)
   /// Per-project list of `YYYY-MM-DD` dates the scheduler must skip (holidays,
   /// freezes, etc.). Compared in the schedule's tz by the worker-cron tick.
-  skipDates      String[] @default([]) @map("skip_dates")
+  skipDates      String[]  @default([]) @map("skip_dates")
   lastFiredAt    DateTime? @map("last_fired_at") @db.Timestamptz(6)
   /// Set by worker-cron when a tick that would have fired was skipped
   /// (currently: project paused — no connectedRepo or no dev deploy
@@ -1099,8 +1117,8 @@ model Schedule {
   /// showing a stale `lastFiredAt`.
   lastSkippedAt  DateTime? @map("last_skipped_at") @db.Timestamptz(6)
   nextFireAt     DateTime? @map("next_fire_at") @db.Timestamptz(6)
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
@@ -1117,19 +1135,19 @@ model Schedule {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model TimelineEvent {
-  id              BigInt   @id @default(autoincrement())
-  eventId         String   @unique @map("event_id") @db.Uuid
-  organizationId  String   @map("organization_id") @db.Uuid
-  projectId       String   @map("project_id") @db.Uuid
-  dailyRunId      String?  @map("daily_run_id") @db.Uuid
-  workflowRunId   String?  @map("workflow_run_id") @db.Uuid
-  agentStepId     String?  @map("agent_step_id") @db.Uuid
-  changesetId     String?  @map("changeset_id")
-  parentEventId   String?  @map("parent_event_id") @db.Uuid
-  type            String
-  actor           Json
-  payload         Json
-  occurredAt      DateTime @map("occurred_at") @db.Timestamptz(6)
+  id             BigInt   @id @default(autoincrement())
+  eventId        String   @unique @map("event_id") @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  projectId      String   @map("project_id") @db.Uuid
+  dailyRunId     String?  @map("daily_run_id") @db.Uuid
+  workflowRunId  String?  @map("workflow_run_id") @db.Uuid
+  agentStepId    String?  @map("agent_step_id") @db.Uuid
+  changesetId    String?  @map("changeset_id")
+  parentEventId  String?  @map("parent_event_id") @db.Uuid
+  type           String
+  actor          Json
+  payload        Json
+  occurredAt     DateTime @map("occurred_at") @db.Timestamptz(6)
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
@@ -1218,7 +1236,7 @@ model OutboundWebhook {
   lastDeliveredAt DateTime? @map("last_delivered_at") @db.Timestamptz(6)
   failureCount    Int       @default(0) @map("failure_count")
 
-  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   deliveries   WebhookDelivery[]
 
   @@index([organizationId])
@@ -1228,17 +1246,17 @@ model OutboundWebhook {
 /// Per-attempt delivery log for outbound webhooks. Bounded retention
 /// (the worker trims to the last N per webhook on each insert).
 model WebhookDelivery {
-  id           String    @id @default(uuid()) @db.Uuid
-  webhookId    String    @map("webhook_id") @db.Uuid
+  id           String   @id @default(uuid()) @db.Uuid
+  webhookId    String   @map("webhook_id") @db.Uuid
   /// Same UUID as the X-Mergecrew-Delivery header sent to the receiver,
   /// so they can dedupe on retries.
-  deliveryUuid String    @unique @map("delivery_uuid") @db.Uuid
-  eventType    String    @map("event_type")
+  deliveryUuid String   @unique @map("delivery_uuid") @db.Uuid
+  eventType    String   @map("event_type")
   /// Null until the request returns (or the worker gives up).
-  statusCode   Int?      @map("status_code")
-  attempt      Int       @default(1)
-  occurredAt   DateTime  @default(now()) @map("occurred_at") @db.Timestamptz(6)
-  errorMessage String?   @map("error_message")
+  statusCode   Int?     @map("status_code")
+  attempt      Int      @default(1)
+  occurredAt   DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  errorMessage String?  @map("error_message")
 
   webhook OutboundWebhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
 
