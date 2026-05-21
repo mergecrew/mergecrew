@@ -1,6 +1,6 @@
 import { api, apiOr404 } from '@/lib/api';
 import { requireSession } from '@/lib/session';
-import { Card, Chip, Button } from '@/components/ui';
+import { Card, Chip, Button, PageHead } from '@/components/ui';
 
 export default async function DigestPage({
   params,
@@ -15,19 +15,29 @@ export default async function DigestPage({
   );
 
   return (
-    <main className="mx-auto max-w-2xl p-4 sm:p-6 space-y-4">
-      <header>
-        <h1 className="text-xl font-semibold">Digest · {digest.date}</h1>
-        <p className="text-sm text-zinc-500">
-          {digest.items.length} changeset{digest.items.length === 1 ? '' : 's'} · est. ${digest.totalCost.toFixed(2)}
-        </p>
-      </header>
+    <main className="mx-auto max-w-[1080px] px-9 py-7">
+      <PageHead
+        crumb={[
+          { label: slug, href: `/orgs/${slug}` },
+          { label: projectSlug, href: `/orgs/${slug}/projects/${projectSlug}` },
+          { label: 'Digests' },
+        ]}
+        title={`Digest · ${digest.date}`}
+        meta={
+          <span className="font-mono text-[12.5px] text-muted">
+            {digest.items.length} changeset{digest.items.length === 1 ? '' : 's'} · est.{' '}
+            <b className="text-ink">${digest.totalCost.toFixed(2)}</b>
+          </span>
+        }
+      />
 
       {digest.items.length === 0 && (
-        <Card><p className="text-zinc-500">No changesets today.</p></Card>
+        <Card className="p-5">
+          <p className="text-[13.5px] text-muted">Quiet day — no changesets dispatched.</p>
+        </Card>
       )}
 
-      <ul className="space-y-3">
+      <ul className="space-y-3 m-0 list-none p-0">
         {digest.items.map((cs) => (
           <li key={cs.id}>
             <ChangesetCard cs={cs} orgSlug={slug} projectSlug={projectSlug} />
@@ -38,27 +48,68 @@ export default async function DigestPage({
   );
 }
 
-function ChangesetCard({ cs, orgSlug, projectSlug }: { cs: any; orgSlug: string; projectSlug: string }) {
+function ChangesetCard({
+  cs,
+  orgSlug,
+  projectSlug,
+}: {
+  cs: any;
+  orgSlug: string;
+  projectSlug: string;
+}) {
   return (
-    <Card>
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1">
-          <div className="font-medium">{cs.title}</div>
-          {cs.whyParagraph && <p className="text-sm text-zinc-600 dark:text-zinc-300 mt-1">{cs.whyParagraph}</p>}
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+    <Card className="p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="text-[15px] font-medium tracking-[-0.005em]">{cs.title}</div>
+          {cs.whyParagraph && (
+            <p className="mt-2 text-[13.5px] leading-[1.55] text-ink-2">{cs.whyParagraph}</p>
+          )}
+          <div className="mt-3 flex flex-wrap items-center gap-3 font-mono text-[11.5px] text-muted">
             <Chip kind={(cs.riskChip ?? 'low') as any}>{cs.riskChip ?? 'low'}</Chip>
-            <span className="text-zinc-500">${Number(cs.estimatedUsd ?? 0).toFixed(2)}</span>
-            {cs.prUrl && <a href={cs.prUrl} target="_blank" className="text-accent">PR</a>}
-            {cs.testSummary && (
-              <span className="text-zinc-500">tests {cs.testSummary.passed}/{cs.testSummary.passed + cs.testSummary.failed}</span>
+            <span>
+              <b className="text-ink">${Number(cs.estimatedUsd ?? 0).toFixed(2)}</b>
+            </span>
+            {cs.prUrl && (
+              <a
+                href={cs.prUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent underline-offset-[3px] hover:underline"
+              >
+                PR
+              </a>
             )}
-            <span className="font-mono text-zinc-400">{cs.id}</span>
+            {cs.testSummary && (
+              <span>
+                tests {cs.testSummary.passed}/{cs.testSummary.passed + cs.testSummary.failed}
+              </span>
+            )}
+            <span className="text-muted-2">{cs.id}</span>
           </div>
         </div>
-        <div className="flex flex-col gap-1.5">
-          <DecisionForm orgSlug={orgSlug} projectSlug={projectSlug} csId={cs.id} kind="promote" label="Promote" />
-          <DecisionForm orgSlug={orgSlug} projectSlug={projectSlug} csId={cs.id} kind="rollback" label="Rollback" />
-          <DecisionForm orgSlug={orgSlug} projectSlug={projectSlug} csId={cs.id} kind="defer" label="Defer" />
+        <div className="flex shrink-0 flex-col gap-2">
+          <DecisionForm
+            orgSlug={orgSlug}
+            projectSlug={projectSlug}
+            csId={cs.id}
+            kind="promote"
+            label="Promote"
+          />
+          <DecisionForm
+            orgSlug={orgSlug}
+            projectSlug={projectSlug}
+            csId={cs.id}
+            kind="rollback"
+            label="Rollback"
+          />
+          <DecisionForm
+            orgSlug={orgSlug}
+            projectSlug={projectSlug}
+            csId={cs.id}
+            kind="defer"
+            label="Defer"
+          />
         </div>
       </div>
     </Card>
@@ -72,10 +123,11 @@ async function decisionAction(formData: FormData) {
   const csId = String(formData.get('csId') ?? '');
   const kind = String(formData.get('kind') ?? '');
   const session = await requireSession();
-  await api(
-    `/v1/orgs/${orgSlug}/projects/${projectSlug}/changesets/${csId}/decisions`,
-    { method: 'POST', body: JSON.stringify({ kind }), session },
-  );
+  await api(`/v1/orgs/${orgSlug}/projects/${projectSlug}/changesets/${csId}/decisions`, {
+    method: 'POST',
+    body: JSON.stringify({ kind }),
+    session,
+  });
 }
 
 function DecisionForm({
@@ -97,7 +149,10 @@ function DecisionForm({
       <input type="hidden" name="projectSlug" value={projectSlug} />
       <input type="hidden" name="csId" value={csId} />
       <input type="hidden" name="kind" value={kind} />
-      <Button variant={kind === 'promote' ? 'primary' : kind === 'rollback' ? 'destructive' : 'secondary'}>
+      <Button
+        size="sm"
+        variant={kind === 'promote' ? 'energy' : kind === 'rollback' ? 'danger' : 'ghost'}
+      >
         {label}
       </Button>
     </form>
