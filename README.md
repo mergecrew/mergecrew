@@ -2,9 +2,13 @@
 
 > Autonomous product team in a box: every day, `mergecrew` specifies, designs, builds, deploys to dev, scans for bugs, and hands you a digest to approve before anything reaches production.
 
-[![status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](#status)
+[![CI](https://github.com/mergecrew/mergecrew/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mergecrew/mergecrew/actions/workflows/ci.yml)
+[![GitHub stars](https://img.shields.io/github/stars/mergecrew/mergecrew?style=flat&logo=github&color=yellow)](https://github.com/mergecrew/mergecrew/stargazers)
 [![license: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](#status)
 [![docs](https://img.shields.io/badge/docs-spec-green.svg)](docs/README.md)
+[![Discussions](https://img.shields.io/badge/discussions-ask-blueviolet?logo=github)](https://github.com/mergecrew/mergecrew/discussions)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 Mergecrew is the open-source platform for running an **agentic software development lifecycle** — multi-agent product teams that operate on a daily cadence against your real repo, deploy automatically to your dev environment, and require an explicit human approval before anything ships to prod.
 
@@ -35,7 +39,42 @@ flowchart LR
     class Draft,Ready vcs
 ```
 
-> **Try it in 5 minutes:** `docker compose -f docker-compose.full.yml up`, open `http://localhost:3000`. You land directly in the seeded `demo-saas` project — a guided coachmark tour walks you through the completed sample run, then drops you in the wizard when you click **Set up your own project →**. Full walkthrough: [docs/00-quickstart.md](docs/00-quickstart.md). Screenshots of the live UI live in [docs/assets/screenshots](docs/assets/screenshots/).
+> **Try it in 5 minutes:** `docker compose -f docker-compose.full.yml up`, open `http://localhost:3000`. You land directly in the seeded `demo-saas` project — a guided coachmark tour walks you through the completed sample run, then drops you in the wizard when you click **Set up your own project →**. Full walkthrough: [docs/00-quickstart.md](docs/00-quickstart.md).
+
+### What it looks like
+
+<table>
+  <tr>
+    <td width="50%">
+      <a href="docs/assets/screenshots/02-today.light.desktop.png">
+        <img src="docs/assets/screenshots/02-today.light.desktop.png" alt="Today dashboard — post-login hub with welcome card, project list, and recent activity feed." />
+      </a>
+      <p><strong>Today</strong> — post-login dashboard. Welcome card on first visit, projects list with status, recent activity from every run.</p>
+    </td>
+    <td width="50%">
+      <a href="docs/assets/screenshots/06-timeline.light.desktop.png">
+        <img src="docs/assets/screenshots/06-timeline.light.desktop.png" alt="Live run timeline — planner, coder, reviewer agent cards with token counts and costs." />
+      </a>
+      <p><strong>Live run timeline</strong> — per-agent steps streaming over SSE with input, output, tool calls, token usage and cost as the run unfolds.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <a href="docs/assets/screenshots/07-digest.light.desktop.png">
+        <img src="docs/assets/screenshots/07-digest.light.desktop.png" alt="Daily digest — one changeset with Promote, Rollback, and Defer buttons." />
+      </a>
+      <p><strong>Digest</strong> — what the agents produced today, ready for one human decision: Promote, Defer, or Rollback.</p>
+    </td>
+    <td width="50%">
+      <a href="docs/assets/screenshots/10-lifecycle.light.desktop.png">
+        <img src="docs/assets/screenshots/10-lifecycle.light.desktop.png" alt="Lifecycle configuration — Coder, Planner, and Reviewer agents with bound skills." />
+      </a>
+      <p><strong>Lifecycle</strong> — agents, workflows, skills, and human gates. Versioned <code>mergecrew.yaml</code>, editable from the UI or your repo.</p>
+    </td>
+  </tr>
+</table>
+
+More captures live in [`docs/assets/screenshots/`](docs/assets/screenshots/). Regenerate with `pnpm screenshots`.
 
 ### What you get on first boot
 
