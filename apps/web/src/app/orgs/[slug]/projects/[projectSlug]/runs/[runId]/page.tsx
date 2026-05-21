@@ -13,7 +13,7 @@ import {
 import { api, apiOr404 } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { hasRole } from '@/lib/role';
-import { Card } from '@/components/ui';
+import { Card, PageHead } from '@/components/ui';
 import { DensityToggle } from '@/components/density-toggle';
 import { densityClasses, getDensity } from '@/lib/preferences';
 import { LiveTimeline, ReplayTimeline } from './live-timeline';
@@ -175,81 +175,103 @@ export default async function RunPage({
   }
 
   return (
-    <main className={`mx-auto max-w-4xl ${dc.gapBlock} ${dc.pad}`}>
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Run</h1>
-          <div className={`mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1 ${dc.text} text-zinc-500`}>
+    <main className={`mx-auto max-w-[1280px] ${dc.pad}`}>
+      <PageHead
+        crumb={[
+          { label: slug, href: `/orgs/${slug}` },
+          { label: projectSlug, href: `/orgs/${slug}/projects/${projectSlug}` },
+          { label: 'Runs', href: `/orgs/${slug}/projects/${projectSlug}/runs` },
+          { label: runId.slice(0, 8) },
+        ]}
+        title="Run detail"
+        meta={
+          <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 ${dc.text}`}>
             <StatusPill status={detail.run.status} />
-            <span>started {detail.run.startedAt ? new Date(detail.run.startedAt).toLocaleString() : '—'}</span>
+            <span className="text-muted">
+              started{' '}
+              {detail.run.startedAt
+                ? new Date(detail.run.startedAt).toLocaleString()
+                : '—'}
+            </span>
             {detail.run.finishedAt && (
-              <span>· duration {fmtDuration(detail.run.startedAt, detail.run.finishedAt)}</span>
+              <span className="text-muted">
+                · duration {fmtDuration(detail.run.startedAt, detail.run.finishedAt)}
+              </span>
             )}
-            <span>· {totals.steps} agent steps · {totals.turns} model turns · {totals.tools} tool calls</span>
-            <span>· {totals.inTok.toLocaleString()} in / {totals.outTok.toLocaleString()} out tokens</span>
-            {totals.usd > 0 && <span>· ${totals.usd.toFixed(4)}</span>}
+            <span className="font-mono text-muted">
+              · {totals.steps} steps · {totals.turns} turns · {totals.tools} tools
+            </span>
+            <span className="font-mono text-muted">
+              · {totals.inTok.toLocaleString()} in / {totals.outTok.toLocaleString()} out
+            </span>
+            {totals.usd > 0 && (
+              <span className="font-mono text-ink">· ${totals.usd.toFixed(4)}</span>
+            )}
             {replayMode && (
-              <span className="rounded bg-amber-100 px-1.5 py-0.5 font-mono text-[10px] uppercase text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+              <span className="bg-warn/20 px-[8px] py-[2px] font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink">
                 replay mode
               </span>
             )}
           </div>
+        }
+        actions={
+          <>
+            <DensityToggle revalidate={`/orgs/${slug}/projects/${projectSlug}/runs/${runId}`} />
+            {canForceCancel && (
+              <ForceCancelButton
+                slug={slug}
+                projectSlug={projectSlug}
+                runId={runId}
+                status={detail.run.status}
+              />
+            )}
+          </>
+        }
+      />
+
+      <div className={dc.gapBlock}>
+        {discoveryDirections.length > 0 && (
+          <DiscoveryDirectionsPicker
+            directions={discoveryDirections}
+            action={pickDirectionAction}
+            picked={intentsExist}
+          />
+        )}
+
+        <AgentPanel detail={detail} />
+
+        {network && (
+          <NetworkPanel
+            summary={network}
+            allowlistHref={`/orgs/${slug}/projects/${projectSlug}/settings`}
+          />
+        )}
+
+        <p className="text-[13px] text-ink-2">
+          Each stage runs one or more agents. Click a stage to see its agents&apos;
+          inputs, outputs, model turns, and tool calls. Stages run in the order the roster
+          graph specifies — Discovery → PM → Implementation → QA → DeployDev → Observation.
+        </p>
+
+        <div className="space-y-3">
+          {orderByStage(detail.workflows).map((w) => (
+            <WorkflowCard key={w.id} workflow={w} />
+          ))}
         </div>
-        <div className="flex flex-col items-end gap-2">
-          <DensityToggle revalidate={`/orgs/${slug}/projects/${projectSlug}/runs/${runId}`} />
-          {canForceCancel && (
-            <ForceCancelButton
-              slug={slug}
-              projectSlug={projectSlug}
-              runId={runId}
-              status={detail.run.status}
-            />
-          )}
-        </div>
-      </header>
 
-      {discoveryDirections.length > 0 && (
-        <DiscoveryDirectionsPicker
-          directions={discoveryDirections}
-          action={pickDirectionAction}
-          picked={intentsExist}
-        />
-      )}
-
-      <AgentPanel detail={detail} />
-
-      {network && (
-        <NetworkPanel
-          summary={network}
-          allowlistHref={`/orgs/${slug}/projects/${projectSlug}/settings`}
-        />
-      )}
-
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">
-        Each stage runs one or more agents. Click a stage to see its agents'
-        inputs, outputs, model turns, and tool calls. Stages run in the order
-        the roster graph specifies — Discovery → PM → Implementation → QA →
-        DeployDev → Observation.
-      </p>
-
-      <div className="space-y-3">
-        {orderByStage(detail.workflows).map((w) => (
-          <WorkflowCard key={w.id} workflow={w} />
-        ))}
+        <details>
+          <summary className="cursor-pointer text-[13px] text-muted hover:text-ink">
+            Engine timeline ({replayMode ? 'replay' : 'live'}) — raw events
+          </summary>
+          <Card className="mt-2">
+            {replayMode ? (
+              <ReplayTimeline events={initial.items} />
+            ) : (
+              <LiveTimeline initial={initial.items} streamUrl={streamUrl} />
+            )}
+          </Card>
+        </details>
       </div>
-
-      <details>
-        <summary className="cursor-pointer text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">
-          Engine timeline ({replayMode ? 'replay' : 'live'}) — raw events
-        </summary>
-        <Card className="mt-2">
-          {replayMode ? (
-            <ReplayTimeline events={initial.items} />
-          ) : (
-            <LiveTimeline initial={initial.items} streamUrl={streamUrl} />
-          )}
-        </Card>
-      </details>
     </main>
   );
 }
@@ -720,22 +742,24 @@ function JsonBlock({ value }: { value: unknown }) {
 function StatusPill({ status }: { status: string }) {
   const tone =
     status === 'done' || status === 'completed'
-      ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+      ? 'bg-positive-soft text-positive-deep'
       : status === 'running'
-        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+        ? 'bg-accent-soft text-accent-deep'
         : status === 'failed'
-          ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'
+          ? 'bg-energy-soft text-energy-deep'
           : status === 'cancelled'
-            ? 'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
-            : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300';
+            ? 'bg-bg-2 text-ink-2 border border-hair'
+            : 'bg-bg text-ink-2 border border-hair';
   return (
-    <span className={`rounded px-1.5 py-0.5 font-mono text-[10px] uppercase ${tone}`}>{status}</span>
+    <span className={`px-[8px] py-[2px] font-mono text-[10.5px] uppercase tracking-[0.06em] ${tone}`}>
+      {status}
+    </span>
   );
 }
 
 function SideEffectChip({ cls }: { cls: string }) {
   return (
-    <span className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[10px] uppercase text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+    <span className="bg-bg px-[8px] py-[2px] font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-2 border border-hair">
       {cls.replace(/_/g, ' ')}
     </span>
   );
