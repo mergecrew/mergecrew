@@ -70,6 +70,16 @@ export async function dispatchSlackDigest(args: {
     return;
   }
 
+  // Suppress empty digests (#635). Same rationale as the email path —
+  // "no active changesets" is no signal, not a heartbeat.
+  if (changesets.length === 0) {
+    logger.info(
+      { projectId, eod: eod.toISOString() },
+      'digest.slack: no changesets; skipping send',
+    );
+    return;
+  }
+
   const { text, blocks } = buildDigestBlocks({
     project: { slug: project.slug, name: project.name },
     changesets,

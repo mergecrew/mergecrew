@@ -35,9 +35,23 @@ export async function digestTick(deps: {
   const { digestQueue, logger } = deps;
   const now = deps.now ?? new Date();
 
+  // Skip projects that should never send a digest at the source rather
+  // than at the dispatch fan-out: demo projects (seeded read-only
+  // samples that can never produce real changesets — #635), and any
+  // project where ops has hit the kill switch (project- or org-scope,
+  // per #625). Doing it here also keeps `lastDigestAt` from advancing
+  // on a skipped project, so resuming a paused project immediately
+  // delivers the next eod's digest instead of having to wait an extra
+  // tick.
   const projects = await withSystem((tx) =>
     tx.project.findMany({
-      where: { archivedAt: null, deletedAt: null },
+      where: {
+        archivedAt: null,
+        deletedAt: null,
+        demo: false,
+        runsPausedAt: null,
+        organization: { runsPausedAt: null },
+      },
       select: {
         id: true,
         organizationId: true,
