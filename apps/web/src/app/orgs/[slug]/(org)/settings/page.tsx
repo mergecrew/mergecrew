@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { hasRole } from '@/lib/role';
-import { Card, Button, LinkButton } from '@/components/ui';
+import { Card, Button, LinkButton, PageHead } from '@/components/ui';
 import { LlmProvidersCard } from '@/components/llm-providers-card';
 import { LlmProfilesCard } from '@/components/llm-profiles-card';
 import { MfaRequiredCallout } from '@/components/mfa-required-callout';
@@ -128,12 +128,21 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
   const showMfaNudge = canEdit && !mfaStatus.enrolled;
 
   return (
-    <main className="mx-auto max-w-3xl space-y-4 p-6">
-      <header>
-        <h1 className="text-xl font-semibold">Settings</h1>
-        <p className="text-sm text-zinc-500">Org &nbsp;<code>{org.slug}</code></p>
-      </header>
+    <main className="mx-auto max-w-[1080px] px-9 py-7">
+      <PageHead
+        crumb={[
+          { label: org.slug, href: `/orgs/${org.slug}` },
+          { label: 'Org settings' },
+        ]}
+        title="Org settings"
+        meta={
+          <span className="font-mono text-[12.5px] text-muted">
+            Org-scoped config — members, LLM providers, budgets, telemetry.
+          </span>
+        }
+      />
 
+      <div className="space-y-4">
       {showMfaNudge && <MfaRequiredCallout />}
 
       <Card>
@@ -650,6 +659,7 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
           <p className="mt-4 text-xs text-zinc-500">Only admins can change this.</p>
         )}
       </Card>
+      </div>
     </main>
   );
 }
