@@ -13,7 +13,7 @@
 <!-- How did you verify this change? -->
 - [ ] `pnpm typecheck` passes
 - [ ] `pnpm build` passes
-- [ ] `pnpm test --if-present` passes
+- [ ] `pnpm run --if-present test` passes
 - [ ] Manual verification (describe what you exercised):
 
 ## Screenshots / recordings (if UI)
