@@ -22,7 +22,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@langchain/core": "^1.1.45",
+    "@langchain/core": "^1.1.47",
     "@mergecrew/db": "workspace:*",
     "@mergecrew/eval-fixtures": "workspace:*",
     "@mergecrew/llm": "workspace:*",
