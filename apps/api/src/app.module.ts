@@ -54,9 +54,9 @@ export class AppModule implements NestModule {
     // JSON parser everywhere except webhooks (which need raw bodies for signature verification).
     consumer
       .apply(json.json({ limit: '5mb' }))
-      .exclude({ path: 'v1/webhooks/(.*)', method: 0 } as any)
+      .exclude({ path: 'v1/webhooks/*path', method: 0 } as any)
       .forRoutes('*');
-    consumer.apply(json.raw({ type: '*/*', limit: '5mb' })).forRoutes('v1/webhooks/*');
+    consumer.apply(json.raw({ type: '*/*', limit: '5mb' })).forRoutes('v1/webhooks/*path');
     // TenantMiddleware is registered as plain Express middleware in main.ts to
     // sidestep NestJS forRoutes glob quirks.
   }
