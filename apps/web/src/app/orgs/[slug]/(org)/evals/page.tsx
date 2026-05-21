@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
-import { Card, Chip } from '@/components/ui';
+import { Card, PageHead, Tile, Label } from '@/components/ui';
 import { relativeTime } from '@/lib/format';
 
 interface EvalRunRow {
@@ -24,19 +24,23 @@ interface Trailing {
   perRun: Array<{ startedAt: string; passRate: number | null }>;
 }
 
-function passRateChipKind(rate: number | null): 'low' | 'medium' | 'high' | 'neutral' {
-  if (rate == null) return 'neutral';
-  if (rate >= 0.95) return 'low'; // green
-  if (rate >= 0.8) return 'medium'; // amber
-  return 'high'; // red
-}
-
 function fmtPct(rate: number | null): string {
   if (rate == null) return '—';
   return `${(rate * 100).toFixed(1)}%`;
 }
 
-export default async function EvalsPage({ params }: { params: Promise<{ slug: string }> }) {
+function rateToneClass(rate: number | null): string {
+  if (rate == null) return 'text-muted';
+  if (rate >= 0.95) return 'text-positive-deep';
+  if (rate >= 0.8) return 'text-ink';
+  return 'text-energy-deep';
+}
+
+export default async function EvalsPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
   const { slug } = await params;
   const session = await requireSession();
   const data = await api<{ items: EvalRunRow[]; trailing: Trailing }>(
@@ -44,103 +48,147 @@ export default async function EvalsPage({ params }: { params: Promise<{ slug: st
     { session },
   );
   const trailing = data.trailing;
+  const items = data.items ?? [];
+
+  const totalCases = items.reduce((s, r) => s + r.totalCases, 0);
+  const totalFailures = items.reduce((s, r) => s + r.failCount + r.errorCount, 0);
+  const totalCost = items.reduce((s, r) => s + r.totalUsd, 0);
 
   return (
-    <main className="mx-auto max-w-3xl space-y-4 p-6">
-      <header className="flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold">Evals</h1>
-        <a
-          href="https://github.com/mergecrew/mergecrew/blob/main/docs/03-infrastructure/15-evals.md"
-          target="_blank"
-          rel="noreferrer"
-          className="text-xs text-zinc-500 underline decoration-dotted hover:text-zinc-700 dark:hover:text-zinc-300"
-        >
-          Eval cookbook →
-        </a>
-      </header>
+    <main className="mx-auto max-w-[1280px] px-9 py-7">
+      <PageHead
+        crumb={[
+          { label: slug, href: `/orgs/${slug}` },
+          { label: 'Evals' },
+        ]}
+        title="Evals"
+        meta={
+          <span className="font-mono text-[12.5px] text-muted">
+            {items.length} recent runs · trailing {trailing.windowDays}d
+          </span>
+        }
+        actions={
+          <a
+            href="https://github.com/mergecrew/mergecrew/blob/main/docs/03-infrastructure/15-evals.md"
+            target="_blank"
+            rel="noreferrer"
+            className="text-[12.5px] text-muted underline-offset-[3px] hover:text-ink hover:underline"
+          >
+            Eval cookbook →
+          </a>
+        }
+      />
 
-      <Card>
-        <div className="flex items-baseline justify-between">
-          <h2 className="font-medium">Trailing {trailing.windowDays}-day pass-rate</h2>
-          <Chip kind={passRateChipKind(trailing.passRate)}>
-            {fmtPct(trailing.passRate)}
-          </Chip>
-        </div>
-        <p className="mt-1 text-sm text-zinc-500">
-          Aggregate across {trailing.runCount} run{trailing.runCount === 1 ? '' : 's'} in the
-          window. Per-run trend below — leftmost is oldest.
-        </p>
-        {trailing.perRun.length > 0 && (
-          <div className="mt-3 flex h-12 items-end gap-1">
+      <section className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Tile
+          k={`Trailing ${trailing.windowDays}d`}
+          v={fmtPct(trailing.passRate)}
+          positive={trailing.passRate != null && trailing.passRate >= 0.95}
+          energy={trailing.passRate != null && trailing.passRate < 0.8}
+        />
+        <Tile k="Runs" v={String(trailing.runCount)} />
+        <Tile k="Cases" v={String(totalCases)} n={`${totalFailures} failures`} />
+        <Tile k="Spent" v={`$${totalCost.toFixed(2)}`} accent />
+      </section>
+
+      <Card className="mb-6 p-5">
+        <Label className="block mb-3">Trailing pass-rate sparkline</Label>
+        {trailing.perRun.length === 0 ? (
+          <p className="m-0 text-[13px] text-muted">No runs yet in the window.</p>
+        ) : (
+          <div className="flex h-14 items-end gap-[3px]">
             {trailing.perRun.map((r, i) => {
-              const h = r.passRate == null ? 0 : Math.max(4, r.passRate * 48);
+              const h = r.passRate == null ? 0 : Math.max(4, r.passRate * 100);
               const color =
                 r.passRate == null
-                  ? 'bg-zinc-300 dark:bg-zinc-700'
+                  ? 'bg-hair-strong'
                   : r.passRate >= 0.95
-                    ? 'bg-emerald-500'
+                    ? 'bg-positive'
                     : r.passRate >= 0.8
-                      ? 'bg-amber-500'
-                      : 'bg-rose-500';
+                      ? 'bg-warn'
+                      : 'bg-energy';
               return (
                 <div
                   key={i}
-                  className={`flex-1 rounded-t ${color}`}
-                  style={{ height: `${h}px` }}
+                  className={`flex-1 min-h-[2px] ${color}`}
+                  style={{ height: `${h}%` }}
                   title={`${new Date(r.startedAt).toLocaleString()}: ${fmtPct(r.passRate)}`}
                 />
               );
             })}
           </div>
         )}
+        <p className="mt-3 m-0 font-mono text-[11.5px] text-muted">
+          oldest → newest · hover for pass-rate
+        </p>
       </Card>
 
-      <section>
-        <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-zinc-500">
-          Recent runs
-        </h2>
-        {data.items.length === 0 ? (
-          <Card>
-            <p className="text-sm text-zinc-500">
-              No eval runs yet. Trigger one with{' '}
-              <code>pnpm --filter @mergecrew/eval-runner run -- --org {slug}</code>.
-            </p>
-          </Card>
+      <div className="mb-3 font-mono text-[11px] uppercase tracking-[0.1em] text-muted">
+        Recent runs
+      </div>
+      <Card>
+        {items.length === 0 ? (
+          <div className="p-5 text-[13px] text-muted">
+            No eval runs yet. Trigger one with{' '}
+            <code className="font-mono text-[12px] text-ink">
+              pnpm --filter @mergecrew/eval-runner run -- --org {slug}
+            </code>
+            .
+          </div>
         ) : (
-          <Card className="p-0">
-            <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
-              {data.items.map((r) => {
-                const rate =
-                  r.totalCases > 0 ? r.passCount / r.totalCases : null;
-                return (
-                  <li key={r.id}>
-                    <Link
-                      href={`/orgs/${slug}/evals/${r.id}`}
-                      className="flex items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900"
+          <ul className="m-0 list-none p-0">
+            <li className="hidden border-b border-ink px-5 py-2 font-mono text-[10.5px] uppercase tracking-[0.06em] text-muted md:grid md:grid-cols-[100px_110px_70px_70px_70px_100px_90px_1fr] md:gap-3">
+              <span>Started</span>
+              <span>Source</span>
+              <span>Cases</span>
+              <span>Pass</span>
+              <span>Fail</span>
+              <span>Rate</span>
+              <span>Cost</span>
+              <span>Latency</span>
+            </li>
+            {items.map((r, i) => {
+              const rate = r.totalCases > 0 ? r.passCount / r.totalCases : null;
+              return (
+                <li
+                  key={r.id}
+                  className={i < items.length - 1 ? 'border-b border-hair-2' : ''}
+                >
+                  <Link
+                    href={`/orgs/${slug}/evals/${r.id}`}
+                    className="grid grid-cols-1 items-center gap-2 px-5 py-3 text-[13px] text-ink no-underline hover:bg-paper-2 md:grid-cols-[100px_110px_70px_70px_70px_100px_90px_1fr] md:gap-3"
+                  >
+                    <span className="font-mono text-[11.5px] text-muted">
+                      {relativeTime(r.startedAt)}
+                    </span>
+                    <span className="bg-accent-tint px-[8px] py-[2px] font-mono text-[10.5px] uppercase tracking-[0.06em] text-accent-deep">
+                      {r.source}
+                    </span>
+                    <span className="font-mono text-[12px]">{r.totalCases}</span>
+                    <span className="font-mono text-[12px] text-positive-deep">
+                      {r.passCount}
+                    </span>
+                    <span className="font-mono text-[12px] text-energy-deep">
+                      {r.failCount}
+                    </span>
+                    <span
+                      className={`font-mono text-[13px] font-semibold ${rateToneClass(rate)}`}
                     >
-                      <div className="flex min-w-0 flex-1 items-center gap-3">
-                        <Chip kind={passRateChipKind(rate)}>{fmtPct(rate)}</Chip>
-                        <div className="min-w-0">
-                          <div className="font-mono text-xs text-zinc-500">
-                            {r.id.slice(0, 8)} · {r.source}
-                          </div>
-                          <div className="truncate text-xs text-zinc-500">
-                            {r.passCount} pass · {r.failCount} fail · {r.errorCount} error
-                          </div>
-                        </div>
-                      </div>
-                      <div className="shrink-0 text-right text-xs text-zinc-500">
-                        <div>${r.totalUsd.toFixed(2)} · {(r.totalLatencyMs / 1000).toFixed(1)}s</div>
-                        <div>{relativeTime(r.startedAt)}</div>
-                      </div>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </Card>
+                      {fmtPct(rate)}
+                    </span>
+                    <span className="font-mono text-[12px] text-ink">
+                      ${r.totalUsd.toFixed(2)}
+                    </span>
+                    <span className="font-mono text-[11.5px] text-muted">
+                      {(r.totalLatencyMs / 1000).toFixed(1)}s
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
         )}
-      </section>
+      </Card>
     </main>
   );
 }
