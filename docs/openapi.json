@@ -215,6 +215,34 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/pause": {
+      "post": {
+        "operationId": "OrgController_pauseRuns",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/resume": {
+      "post": {
+        "operationId": "OrgController_resumeRuns",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/telemetry": {
       "get": {
         "operationId": "OrgController_telemetrySettings",
@@ -655,6 +683,34 @@
         "parameters": [],
         "responses": {
           "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/pause": {
+      "post": {
+        "operationId": "ProjectController_pauseRuns",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Project"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/resume": {
+      "post": {
+        "operationId": "ProjectController_resumeRuns",
+        "parameters": [],
+        "responses": {
+          "201": {
             "description": ""
           }
         },

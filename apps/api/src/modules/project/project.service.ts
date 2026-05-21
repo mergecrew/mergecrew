@@ -12,7 +12,10 @@ import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
 import { CryptoService } from '../../common/crypto.service.js';
 import { TelemetryService } from '../../common/telemetry.service.js';
+import { EventlogService } from '../../common/eventlog.service.js';
 import { defaultConfig } from '@mergecrew/config-yaml';
+
+const PAUSE_REASON_MAX = 500;
 
 const TRACKER_TOKEN_SECRET = 'TRACKER_TOKEN';
 const SUPPORTED_TRACKERS = ['github-issues', 'linear'] as const;
@@ -54,6 +57,7 @@ export class ProjectService {
     private tenant: TenantContextService,
     private crypto: CryptoService,
     private telemetry: TelemetryService,
+    private eventlogSvc: EventlogService,
   ) {}
 
   async list() {
@@ -679,6 +683,93 @@ export class ProjectService {
       tx.schedule.findUnique({ where: { projectId: project.id } }),
     );
     return schedule;
+  }
+
+  /**
+   * Operator kill switch (#625) — project scope. Sets `runsPausedAt` so
+   * worker-cron, RunService.runNow, and orchestrator.handleRunDue all
+   * refuse to start new runs. In-flight runs continue; cancel them on
+   * the run-detail page if needed. Idempotent (re-pausing updates the
+   * timestamp + reason + actor).
+   */
+  async pauseRuns(slug: string, reason: string | null) {
+    const t = this.tenant.require();
+    const project = await this.detail(slug);
+    const trimmedReason = reason?.trim() || null;
+    if (trimmedReason && trimmedReason.length > PAUSE_REASON_MAX) {
+      throw new ValidationError(`reason must be ≤ ${PAUSE_REASON_MAX} chars`);
+    }
+    const now = new Date();
+    const updated = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.project.update({
+        where: { id: project.id },
+        data: {
+          runsPausedAt: now,
+          runsPauseReason: trimmedReason,
+          runsPausedByUserId: t.userId,
+        },
+      }),
+    );
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.auditLogEntry.create({
+        data: {
+          organizationId: t.organizationId,
+          actorUserId: t.userId,
+          action: 'project.runs.paused',
+          target: { projectId: project.id, projectSlug: project.slug },
+          metadata: { reason: trimmedReason },
+        },
+      }),
+    );
+    await this.eventlogSvc.eventlog.emit({
+      organizationId: t.organizationId,
+      projectId: project.id,
+      type: 'PROJECT_RUNS_PAUSED',
+      actor: { kind: 'user', id: t.userId },
+      payload: { reason: trimmedReason, pausedAt: now.toISOString() },
+    });
+    return {
+      runsPausedAt: updated.runsPausedAt,
+      runsPauseReason: updated.runsPauseReason,
+      runsPausedByUserId: updated.runsPausedByUserId,
+    };
+  }
+
+  async resumeRuns(slug: string) {
+    const t = this.tenant.require();
+    const project = await this.detail(slug);
+    if (!project.runsPausedAt) {
+      return { runsPausedAt: null, runsPauseReason: null, runsPausedByUserId: null };
+    }
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.project.update({
+        where: { id: project.id },
+        data: {
+          runsPausedAt: null,
+          runsPauseReason: null,
+          runsPausedByUserId: null,
+        },
+      }),
+    );
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.auditLogEntry.create({
+        data: {
+          organizationId: t.organizationId,
+          actorUserId: t.userId,
+          action: 'project.runs.resumed',
+          target: { projectId: project.id, projectSlug: project.slug },
+          metadata: { previousReason: project.runsPauseReason ?? null },
+        },
+      }),
+    );
+    await this.eventlogSvc.eventlog.emit({
+      organizationId: t.organizationId,
+      projectId: project.id,
+      type: 'PROJECT_RUNS_RESUMED',
+      actor: { kind: 'user', id: t.userId },
+      payload: {},
+    });
+    return { runsPausedAt: null, runsPauseReason: null, runsPausedByUserId: null };
   }
 
   async updateSchedule(

@@ -120,6 +120,11 @@ export const TimelineEventType = z.enum([
   'HUMAN_REJECTED',
   // digest
   'DIGEST_DISPATCHED',
+  // Operator kill switch (#625). Project-scope pause emits these on the
+  // project timeline. Org-scope pause is audit-log only (per-project
+  // emit would fan out to N writes for a single operator action).
+  'PROJECT_RUNS_PAUSED',
+  'PROJECT_RUNS_RESUMED',
 ]);
 export type TimelineEventType = z.infer<typeof TimelineEventType>;
 

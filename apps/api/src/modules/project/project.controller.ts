@@ -248,6 +248,21 @@ export class ProjectController {
     return this.promote.digest(projectSlug);
   }
 
+  @Post(':projectSlug/pause')
+  @RequireRole('operator')
+  async pauseRuns(
+    @Param('projectSlug') projectSlug: string,
+    @Body() body: { reason?: string | null } = {},
+  ) {
+    return this.projects.pauseRuns(projectSlug, body?.reason ?? null);
+  }
+
+  @Post(':projectSlug/resume')
+  @RequireRole('operator')
+  async resumeRuns(@Param('projectSlug') projectSlug: string) {
+    return this.projects.resumeRuns(projectSlug);
+  }
+
   @Post(':projectSlug/inception')
   @RequireRole('operator')
   async runInception(@Param('projectSlug') projectSlug: string) {
