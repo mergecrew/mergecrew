@@ -1,8 +1,18 @@
 import type { ReactNode } from 'react';
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
-import { AppBar } from '@/components/app-bar';
+import { TopBar } from '@/components/shell/topbar';
+import { ProjectSidebar } from '@/components/shell/sidebar';
 import { UserMenu } from '@/components/user-menu';
+
+type Project = {
+  name: string;
+  slug: string;
+  status?: 'running' | 'paused' | 'failed';
+  awaitingApproval?: boolean;
+};
+
+type OrgSummary = { name: string; slug: string };
 
 export default async function ProjectLayout({
   children,
@@ -13,20 +23,39 @@ export default async function ProjectLayout({
 }) {
   const { slug, projectSlug } = await params;
   const session = await requireSession();
-  let project: { name: string; slug: string } | null = null;
+  const demoMode = process.env.MERGECREW_DEMO_MODE === '1';
+
+  let project: Project | null = null;
+  let org: OrgSummary | null = null;
   try {
-    project = await api(`/v1/orgs/${slug}/projects/${projectSlug}`, { session });
+    [project, org] = await Promise.all([
+      api<Project>(`/v1/orgs/${slug}/projects/${projectSlug}`, { session }),
+      api<OrgSummary>(`/v1/orgs/${slug}`, { session }).catch(() => null) as Promise<OrgSummary | null>,
+    ]);
   } catch {
     /* fall through; pages will surface the error */
   }
+
   return (
-    <>
-      <AppBar
+    <div className="grid h-screen grid-rows-[56px_1fr] grid-cols-[260px_1fr] bg-bg">
+      <div className="col-span-2">
+        <TopBar
+          orgSlug={slug}
+          orgName={org?.name}
+          projectSlug={projectSlug}
+          projectName={project?.name}
+          demoMode={demoMode}
+          userMenu={<UserMenu currentOrgSlug={slug} />}
+        />
+      </div>
+      <ProjectSidebar
         orgSlug={slug}
-        project={{ slug: projectSlug, name: project?.name ?? projectSlug }}
-        userMenu={<UserMenu currentOrgSlug={slug} />}
+        projectSlug={projectSlug}
+        projectName={project?.name}
+        status={project?.status ?? 'running'}
+        awaitingApproval={project?.awaitingApproval}
       />
-      <div className="flex-1">{children}</div>
-    </>
+      <main className="overflow-y-auto">{children}</main>
+    </div>
   );
 }

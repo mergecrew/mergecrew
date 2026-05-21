@@ -1,17 +1,10 @@
 import type { ReactNode } from 'react';
-import { DemoModeBanner } from '@/components/demo-mode-banner';
 
 export default async function OrgLayout({ children }: { children: ReactNode }) {
-  // Server reads MERGECREW_DEMO_MODE once per render. The runner reads
-  // the same env on dispatch — if a self-host operator flips the env
-  // mid-session, both sides converge on a redeploy. The banner only
-  // mounts when demo mode is active, so production deployments never
-  // ship the markup.
-  const demoMode = process.env.MERGECREW_DEMO_MODE === '1';
-  return (
-    <div className="flex min-h-screen flex-col">
-      {demoMode && <DemoModeBanner />}
-      {children}
-    </div>
-  );
+  // The redesigned shell surfaces the demo-mode indicator as a
+  // persistent pill inside the TopBar (see `(org)/layout.tsx` and
+  // project layout). The previous full-width DemoModeBanner was
+  // dismissible — the pill is always-visible, which is safer for an
+  // operator who set MERGECREW_DEMO_MODE=1 on purpose.
+  return <>{children}</>;
 }
