@@ -24,7 +24,7 @@
     "@mergecrew/sandbox-driver": "workspace:*",
     "@mergecrew/skills": "workspace:*",
     "@mergecrew/transcript-store": "workspace:*",
-    "@prisma/client": "^5.22.0",
+    "@prisma/client": "^7.8.0",
     "bullmq": "^5.21.0",
     "ioredis": "^5.4.1",
     "pino": "^10.3.1",
