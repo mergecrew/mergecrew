@@ -79,7 +79,11 @@ async function captureOne(
 
   try {
     const url = `${baseUrl}${route.path}`;
-    const response = await page.goto(url, { waitUntil: 'networkidle', timeout: timeoutMs });
+    // `domcontentloaded` rather than `networkidle` — the timeline and a
+    // few other pages keep an SSE stream open, so the network is never
+    // idle. `waitForSelector` + the breathing-room timeout below handle
+    // any actual readiness needs.
+    const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
     if (!response) return { ok: false, reason: 'no response' };
     if (!response.ok() && response.status() !== 304) {
       return { ok: false, reason: `HTTP ${response.status()}` };
@@ -89,8 +93,10 @@ async function captureOne(
       await page.waitForSelector(route.waitForSelector, { timeout: timeoutMs }).catch(() => {});
     }
 
-    // Small breathing room for streaming UIs / SSE / fade-ins.
-    await page.waitForTimeout(600);
+    // Breathing room for streaming UIs / SSE / fade-ins. Longer than the
+    // old 600ms because `domcontentloaded` returns sooner than
+    // `networkidle` did — give server-component hydration time to land.
+    await page.waitForTimeout(1500);
 
     const file = join(outDir, `${route.name}.${theme}.${viewport}.png`);
     const buf = await page.screenshot({ fullPage: true, type: 'png' });

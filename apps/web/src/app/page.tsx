@@ -97,6 +97,7 @@ function Landing() {
     <div className="min-h-screen bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <Nav />
       <Hero />
+      <Screenshots />
       <Loop />
       <Differentiators />
       <Comparison />
@@ -227,6 +228,74 @@ const LOOP_STEPS = [
     accent: 'text-violet-600 dark:text-violet-400',
   },
 ] as const;
+
+const SCREENSHOTS: { src: string; alt: string; title: string; body: string }[] = [
+  {
+    src: '/landing/today.png',
+    alt: 'Mergecrew Today dashboard with a welcome card, project list, and recent activity feed.',
+    title: 'Today',
+    body: 'The post-login hub. Welcome card on first visit, project list with status, recent activity from every run.',
+  },
+  {
+    src: '/landing/timeline.png',
+    alt: 'Run timeline showing Planner, Coder, and Reviewer agents with token counts, costs, and per-step input/output.',
+    title: 'Live run timeline',
+    body: 'Per-agent step cards stream over SSE — input, output, tool calls, token usage, cost — as the run unfolds.',
+  },
+  {
+    src: '/landing/digest.png',
+    alt: 'Daily digest page showing one changeset with Promote, Rollback, and Defer buttons.',
+    title: 'Digest',
+    body: "What the agents produced today, ready for one human decision. Promote, defer, or roll back — that's the gate.",
+  },
+  {
+    src: '/landing/lifecycle.png',
+    alt: 'Lifecycle configuration page with Coder, Planner, and Reviewer agents listed alongside their bound skills.',
+    title: 'Lifecycle',
+    body: 'Agents, workflows, custom skills, human gates — versioned mergecrew.yaml, editable from the UI or your repo.',
+  },
+];
+
+function Screenshots() {
+  return (
+    <section className="border-t border-zinc-200/60 bg-zinc-50 dark:border-zinc-800/60 dark:bg-zinc-950/50">
+      <div className="mx-auto max-w-6xl px-6 py-20">
+        <h2 className="text-3xl font-semibold tracking-tight">See it in action</h2>
+        <p className="mt-3 max-w-2xl text-zinc-600 dark:text-zinc-400">
+          Four moments from the seeded demo project — the same surfaces you land in after{' '}
+          <code className="rounded bg-zinc-200 px-1.5 py-0.5 font-mono text-xs dark:bg-zinc-800">
+            docker compose up
+          </code>
+          .
+        </p>
+        <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2">
+          {SCREENSHOTS.map((s) => (
+            <figure
+              key={s.src}
+              className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+            >
+              {/* Use a plain <img> so this server component doesn't have
+                  to thread next/image's width/height into the static
+                  set — these PNGs are pre-sized desktop captures and
+                  CSS resizes them for the grid. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={s.src}
+                alt={s.alt}
+                loading="lazy"
+                className="block h-auto w-full border-b border-zinc-200 dark:border-zinc-800"
+              />
+              <figcaption className="p-4">
+                <div className="font-medium">{s.title}</div>
+                <p className="mt-1.5 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">{s.body}</p>
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function Loop() {
   return (
