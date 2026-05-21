@@ -1,5 +1,12 @@
 import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
+import {
+  Activity as ActivityIcon,
+  AlertTriangle,
+  FolderGit2,
+  Plus,
+  UserCheck,
+} from 'lucide-react';
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { Card, StatusDot, LinkButton, Chip } from '@/components/ui';
@@ -206,12 +213,15 @@ export default async function OrgHomePage({
       {inbox.length > 0 && (
         <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-700/40 dark:bg-amber-950/30">
           <div className="flex items-center justify-between gap-4">
-            <div>
-              <div className="font-medium">
-                {inbox.length} pending approval{inbox.length === 1 ? '' : 's'}
-              </div>
-              <div className="text-sm text-zinc-500">
-                Decisions block the next run. Resolve them in the inbox.
+            <div className="flex items-start gap-3">
+              <UserCheck className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+              <div>
+                <div className="font-medium">
+                  {inbox.length} pending approval{inbox.length === 1 ? '' : 's'}
+                </div>
+                <div className="text-sm text-zinc-500">
+                  Decisions block the next run. Resolve them in the inbox.
+                </div>
               </div>
             </div>
             <LinkButton href={`/orgs/${slug}/inbox`} variant="primary">
@@ -224,16 +234,19 @@ export default async function OrgHomePage({
       {spendCap?.projectionExceedsCap && spendCap.monthlySpendCapUsd !== null && (
         <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-700/40 dark:bg-amber-950/30">
           <div className="flex items-center justify-between gap-4">
-            <div>
-              <div className="font-medium">
-                Spend forecast: on track to exceed the monthly cap
-              </div>
-              <div className="text-sm text-zinc-500">
-                Projected month-end ${spendCap.projectedMonthEndUsd.toFixed(0)} vs cap $
-                {spendCap.monthlySpendCapUsd.toFixed(0)}.
-                {spendCap.daysToCapExceedance != null && (
-                  <> Cap likely hit around day {spendCap.daysToCapExceedance} at the current pace.</>
-                )}
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+              <div>
+                <div className="font-medium">
+                  Spend forecast: on track to exceed the monthly cap
+                </div>
+                <div className="text-sm text-zinc-500">
+                  Projected month-end ${spendCap.projectedMonthEndUsd.toFixed(0)} vs cap $
+                  {spendCap.monthlySpendCapUsd.toFixed(0)}.
+                  {spendCap.daysToCapExceedance != null && (
+                    <> Cap likely hit around day {spendCap.daysToCapExceedance} at the current pace.</>
+                  )}
+                </div>
               </div>
             </div>
             <LinkButton href={`/orgs/${slug}/settings`} variant="secondary">
@@ -245,11 +258,16 @@ export default async function OrgHomePage({
 
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
+          <h2 className="flex items-center gap-2 text-sm font-medium uppercase tracking-wide text-zinc-500">
+            <FolderGit2 className="h-3.5 w-3.5" aria-hidden />
             Projects {projects.length > 0 && <span className="ml-1 text-zinc-400">({projects.length})</span>}
           </h2>
           {projects.length > 0 && (
-            <LinkButton href={`/orgs/${slug}/projects/new`}>New project</LinkButton>
+            <LinkButton href={`/orgs/${slug}/projects/new`}>
+              <span className="inline-flex items-center gap-1.5">
+                <Plus className="h-3.5 w-3.5" aria-hidden /> New project
+              </span>
+            </LinkButton>
           )}
         </div>
         {projects.length === 0 ? (
@@ -309,7 +327,8 @@ export default async function OrgHomePage({
       {activity.length > 0 && (
         <section>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
+            <h2 className="flex items-center gap-2 text-sm font-medium uppercase tracking-wide text-zinc-500">
+              <ActivityIcon className="h-3.5 w-3.5" aria-hidden />
               Recent activity
             </h2>
             <LinkButton href={`/orgs/${slug}/activity`}>View all</LinkButton>
