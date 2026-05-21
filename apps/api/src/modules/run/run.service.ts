@@ -56,10 +56,32 @@ export class RunService {
     const project = await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.project.findFirst({
         where: { slug: projectSlug, organizationId: t.organizationId },
-        include: { connectedRepo: true, deployTargets: true },
+        include: {
+          connectedRepo: true,
+          deployTargets: true,
+          organization: {
+            select: { runsPausedAt: true, runsPauseReason: true },
+          },
+        },
       }),
     );
     if (!project) throw new NotFoundError();
+    // Operator kill switch (#625). Org-scope pause beats project-scope —
+    // it would still be blocked at the orchestrator's defensive check
+    // either way, but raising here keeps the error close to the click
+    // and shows the reason in the UI tooltip.
+    if (project.organization.runsPausedAt) {
+      throw new ValidationError(
+        `runs paused org-wide${
+          project.organization.runsPauseReason ? `: ${project.organization.runsPauseReason}` : ''
+        }`,
+      );
+    }
+    if (project.runsPausedAt) {
+      throw new ValidationError(
+        `runs paused for this project${project.runsPauseReason ? `: ${project.runsPauseReason}` : ''}`,
+      );
+    }
     if (!project.connectedRepo) {
       throw new ValidationError(
         'project is paused — connect a GitHub repo from Settings → Integrations to enable runs',

@@ -97,8 +97,53 @@ export class Orchestrator {
     const lc = await withTenant(organizationId, (tx) =>
       tx.lifecycle.findFirst({ where: { projectId }, orderBy: { version: 'desc' } }),
     );
-    const project = await withTenant(organizationId, (tx) => tx.project.findUnique({ where: { id: projectId } }));
+    const project = await withTenant(organizationId, (tx) =>
+      tx.project.findUnique({
+        where: { id: projectId },
+        include: {
+          organization: { select: { runsPausedAt: true, runsPauseReason: true } },
+        },
+      }),
+    );
     if (!project) return;
+    // Operator kill switch (#625), defensive check. Pause could have
+    // flipped on between the API enqueue and this dispatch — the cron
+    // tick and runNow both check first, but a queued job that arrives
+    // mid-pause must not burn LLM tokens. If the API pre-created a
+    // pending DailyRun (data.runId), mark it cancelled with reason so
+    // the run-detail page tells the operator why nothing happened.
+    if (project.organization.runsPausedAt || project.runsPausedAt) {
+      const scope = project.organization.runsPausedAt ? 'org' : 'project';
+      const reason =
+        project.organization.runsPausedAt
+          ? project.organization.runsPauseReason
+          : project.runsPauseReason;
+      this.deps.logger.warn(
+        { projectId, projectSlug: project.slug, scope, reason },
+        'run.due aborted: runs paused',
+      );
+      if (data.runId) {
+        await withTenant(organizationId, (tx) =>
+          tx.dailyRun.update({
+            where: { id: data.runId! },
+            data: {
+              status: 'cancelled',
+              finishedAt: new Date(),
+              metadata: { manual: !!data.manual, cancelReason: 'paused', pauseScope: scope },
+            },
+          }),
+        );
+        await this.deps.eventlog.emit({
+          organizationId,
+          projectId,
+          dailyRunId: data.runId,
+          type: 'RUN_CANCELLED',
+          actor: { kind: 'system' },
+          payload: { reason: 'paused', scope },
+        });
+      }
+      return;
+    }
     if (!lc) {
       // Defensive: the API (RunService.runNow) and the cron tick both
       // refuse to enqueue when there's no lifecycle, so reaching this
