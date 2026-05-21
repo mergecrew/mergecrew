@@ -8,6 +8,8 @@ import { DemoProjectTour } from '@/components/demo-project-tour';
 import { PromoteDigest, type DigestChangeset } from '@/components/promote-digest';
 import type { PromoteRunSnapshot } from './settings/settings-actions';
 import { relativeTime, runStatusToDot } from '@/lib/format';
+import { revalidatePath } from 'next/cache';
+import { PauseRunsControl } from './pause-runs-control';
 
 type Project = {
   id: string;
@@ -21,6 +23,9 @@ type Project = {
     basePrBranch?: string | null;
   } | null;
   deployTargets?: Array<{ kind: 'dev' | 'staging' | 'prod' }>;
+  runsPausedAt?: string | null;
+  runsPauseReason?: string | null;
+  runsPausedByUserId?: string | null;
 };
 
 type Run = {
@@ -115,9 +120,43 @@ export default async function ProjectOverview({
   const hasRepo = Boolean(project.connectedRepo);
   const hasDevTarget = (project.deployTargets ?? []).some((d) => d.kind === 'dev');
   const hasCompletedRun = runs.some((r) => r.status === 'done');
-  const isPaused = !hasRepo || !hasDevTarget;
+  const runsPaused = Boolean(project.runsPausedAt);
+  const isPaused = !hasRepo || !hasDevTarget || runsPaused;
   const isDemo = Boolean(project.demo);
   const orgWizardComplete = orgOnboardingRes?.complete ?? false;
+
+  // Bind the server actions to this project's slug pair so the client
+  // component doesn't need to know either.
+  const pauseRunsActionBound = async (reason: string | null) => {
+    'use server';
+    const s = await requireSession();
+    try {
+      await api(`/v1/orgs/${slug}/projects/${projectSlug}/pause`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+        session: s,
+      });
+      revalidatePath(`/orgs/${slug}/projects/${projectSlug}`);
+      return { ok: true } as const;
+    } catch (e: unknown) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) } as const;
+    }
+  };
+  const resumeRunsActionBound = async () => {
+    'use server';
+    const s = await requireSession();
+    try {
+      await api(`/v1/orgs/${slug}/projects/${projectSlug}/resume`, {
+        method: 'POST',
+        body: '{}',
+        session: s,
+      });
+      revalidatePath(`/orgs/${slug}/projects/${projectSlug}`);
+      return { ok: true } as const;
+    } catch (e: unknown) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) } as const;
+    }
+  };
 
   return (
     <main className="mx-auto max-w-5xl space-y-8 p-6">
@@ -166,11 +205,32 @@ export default async function ProjectOverview({
       )}
 
 
+      {runsPaused && (
+        <div
+          className="rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20"
+          role="status"
+        >
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-sm font-medium text-red-900 dark:text-red-200">
+                Runs are paused for this project
+              </div>
+              <p className="text-xs text-red-800 dark:text-red-300">
+                Paused {relativeTime(project.runsPausedAt!)}
+                {project.runsPauseReason ? ` — ${project.runsPauseReason}` : ''}.
+                Scheduled and manual runs will not fire until resumed.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <header className="flex flex-wrap items-start justify-between gap-3" data-tour="project-header">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-semibold">{project.name}</h1>
             {isDemo && <Chip kind="medium">DEMO</Chip>}
+            {runsPaused && <Chip kind="high">PAUSED</Chip>}
           </div>
           {project.description && (
             <p className="mt-1.5 max-w-2xl text-sm text-zinc-600 dark:text-zinc-400">
@@ -187,17 +247,26 @@ export default async function ProjectOverview({
             </p>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-start gap-2">
           <LinkButton href={`/orgs/${slug}/projects/${projectSlug}/digest`}>
             Today's digest
           </LinkButton>
+          {!isDemo && (
+            <PauseRunsControl
+              paused={runsPaused}
+              pauseAction={pauseRunsActionBound}
+              resumeAction={resumeRunsActionBound}
+            />
+          )}
           {!isDemo && (
             <RunNowForm
               orgSlug={slug}
               projectSlug={projectSlug}
               disabled={isPaused}
               disabledReason={
-                !hasRepo
+                runsPaused
+                  ? `Runs paused${project.runsPauseReason ? `: ${project.runsPauseReason}` : ''}`
+                  : !hasRepo
                   ? 'Connect a GitHub repo to enable runs'
                   : 'Add a dev deploy target to enable runs'
               }
