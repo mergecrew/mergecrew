@@ -1,5 +1,14 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import {
+  Activity,
+  Bot,
+  GitPullRequest,
+  Mail,
+  Settings as SettingsIcon,
+  UserCheck,
+  Workflow,
+} from 'lucide-react';
 import { api, apiOr404 } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { Card, LinkButton, StatusDot, Chip } from '@/components/ui';
@@ -345,7 +354,10 @@ export default async function ProjectOverview({
 
       <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <Card data-tour="latest-run">
-          <div className="text-xs uppercase tracking-wide text-zinc-500">Latest run</div>
+          <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-500">
+            <Activity className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden />
+            Latest run
+          </div>
           {latestRun ? (
             <div className="mt-2 flex items-center gap-2">
               <StatusDot status={runStatusToDot(latestRun.status)} />
@@ -364,7 +376,10 @@ export default async function ProjectOverview({
           )}
         </Card>
         <Card data-tour="approvals">
-          <div className="text-xs uppercase tracking-wide text-zinc-500">Pending approvals</div>
+          <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-500">
+            <UserCheck className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" aria-hidden />
+            Pending approvals
+          </div>
           <div className="mt-2 flex items-center gap-2">
             <span className="text-2xl font-semibold">{approvals.length}</span>
             {approvals.length > 0 && (
@@ -378,7 +393,10 @@ export default async function ProjectOverview({
           </div>
         </Card>
         <Card data-tour="changesets">
-          <div className="text-xs uppercase tracking-wide text-zinc-500">Open changesets</div>
+          <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-500">
+            <GitPullRequest className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" aria-hidden />
+            Open changesets
+          </div>
           <div className="mt-2 flex items-center gap-2">
             <span className="text-2xl font-semibold">
               {changesets.filter((c) => !['merged', 'closed', 'rejected'].includes(c.status)).length}
@@ -499,22 +517,30 @@ export default async function ProjectOverview({
             href={`/orgs/${slug}/projects/${projectSlug}/lifecycle`}
             title="Lifecycle"
             sub="Workflow graph"
+            Icon={Workflow}
+            accent="text-sky-600 dark:text-sky-400"
             dataTour="manage-lifecycle"
           />
           <NavTile
             href={`/orgs/${slug}/projects/${projectSlug}/agents`}
             title="Agents"
             sub="Roster & models"
+            Icon={Bot}
+            accent="text-amber-600 dark:text-amber-400"
           />
           <NavTile
             href={`/orgs/${slug}/projects/${projectSlug}/digest`}
             title="Digest"
             sub="Today's summary"
+            Icon={Mail}
+            accent="text-violet-600 dark:text-violet-400"
           />
           <NavTile
             href={`/orgs/${slug}/projects/${projectSlug}/settings`}
             title="Settings"
             sub="Repo, deploys, gates"
+            Icon={SettingsIcon}
+            accent="text-zinc-600 dark:text-zinc-400"
           />
         </div>
       </section>
@@ -526,16 +552,21 @@ function NavTile({
   href,
   title,
   sub,
+  Icon,
+  accent,
   dataTour,
 }: {
   href: string;
   title: string;
   sub: string;
+  Icon?: typeof Workflow;
+  accent?: string;
   dataTour?: string;
 }) {
   return (
     <Link href={href} data-tour={dataTour}>
       <Card className="h-full transition-colors hover:border-accent">
+        {Icon && <Icon className={`mb-2 h-5 w-5 ${accent ?? 'text-zinc-500'}`} aria-hidden />}
         <div className="font-medium">{title}</div>
         <div className="text-sm text-zinc-500">{sub}</div>
       </Card>
