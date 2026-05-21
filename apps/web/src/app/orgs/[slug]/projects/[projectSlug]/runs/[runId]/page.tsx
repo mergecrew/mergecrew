@@ -1,5 +1,15 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import {
+  Activity,
+  Bot,
+  ClipboardList,
+  Compass,
+  Hammer,
+  Rocket,
+  ShieldCheck,
+  type LucideIcon,
+} from 'lucide-react';
 import { api, apiOr404 } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { hasRole } from '@/lib/role';
@@ -311,10 +321,14 @@ function AgentPanel({ detail }: { detail: RunDetail }) {
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         {kinds.map((kind) => {
           const r = byKind.get(kind)!;
+          const ic = agentIcon(kind);
           return (
             <Card key={kind}>
               <div className="flex items-baseline justify-between">
-                <div className="font-medium">{kind}</div>
+                <div className="flex items-center gap-2">
+                  <ic.Icon className={`h-4 w-4 ${ic.accent}`} aria-hidden />
+                  <div className="font-medium">{kind}</div>
+                </div>
                 {r.stepCount > 1 && (
                   <span
                     className="rounded-full bg-zinc-200 px-2 py-0.5 font-mono text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
@@ -493,23 +507,32 @@ function WorkflowCard({ workflow }: { workflow: Workflow }) {
   const stageOutTok = workflow.agentSteps.reduce((acc, s) => acc + (s.totalOutputTokens ?? 0), 0);
   const agentKinds = Array.from(new Set(workflow.agentSteps.map((s) => s.agentKind)));
   const label = STAGE_LABELS[workflow.workflowId] ?? workflow.workflowId;
+  const stageIcon = STAGE_ICONS[workflow.workflowId];
   return (
     <Card>
       <details open={!failed}>
         <summary className="flex cursor-pointer list-none items-baseline justify-between">
-          <div>
-            <div className="text-sm font-medium">{label}</div>
-            <div className="text-xs text-zinc-500">
-              <span className="font-mono">{workflow.workflowId}</span>
-              {agentKinds.length > 0 && (
-                <> · {agentKinds.length === 1 ? agentKinds[0] : `${agentKinds.length} agents (${agentKinds.join(', ')})`}</>
-              )}
-              {' · '}
-              {workflow.agentSteps.length} step{workflow.agentSteps.length === 1 ? '' : 's'}
-              {(stageInTok > 0 || stageOutTok > 0) && (
-                <> · {stageInTok.toLocaleString()} in / {stageOutTok.toLocaleString()} out tokens</>
-              )}
-              {stageUsd > 0 && <> · ${stageUsd.toFixed(4)}</>}
+          <div className="flex items-start gap-3">
+            {stageIcon && (
+              <stageIcon.Icon
+                className={`mt-0.5 h-5 w-5 shrink-0 ${stageIcon.accent}`}
+                aria-hidden
+              />
+            )}
+            <div>
+              <div className="text-sm font-medium">{label}</div>
+              <div className="text-xs text-zinc-500">
+                <span className="font-mono">{workflow.workflowId}</span>
+                {agentKinds.length > 0 && (
+                  <> · {agentKinds.length === 1 ? agentKinds[0] : `${agentKinds.length} agents (${agentKinds.join(', ')})`}</>
+                )}
+                {' · '}
+                {workflow.agentSteps.length} step{workflow.agentSteps.length === 1 ? '' : 's'}
+                {(stageInTok > 0 || stageOutTok > 0) && (
+                  <> · {stageInTok.toLocaleString()} in / {stageOutTok.toLocaleString()} out tokens</>
+                )}
+                {stageUsd > 0 && <> · ${stageUsd.toFixed(4)}</>}
+              </div>
             </div>
           </div>
           <div className="flex items-baseline gap-3 text-xs">
@@ -530,16 +553,20 @@ function WorkflowCard({ workflow }: { workflow: Workflow }) {
 function AgentStepCard({ step }: { step: AgentStep }) {
   const dur = fmtDuration(step.startedAt, step.finishedAt);
   const activity = interleaveActivity(step.modelTurns, step.toolCalls);
+  const ic = agentIcon(step.agentKind);
   return (
     <div className="rounded border border-zinc-200 p-3 dark:border-zinc-800">
       <details open>
         <summary className="flex cursor-pointer list-none items-baseline justify-between">
-          <div>
-            <div className="font-medium">{step.agentKind}</div>
-            <div className="text-xs text-zinc-500">
-              {step.modelTurns.length} model turn(s) · {step.toolCalls.length} tool call(s)
-              · {step.totalInputTokens.toLocaleString()} in / {step.totalOutputTokens.toLocaleString()} out tokens
-              {step.totalUsdEstimate > 0 && ` · $${step.totalUsdEstimate.toFixed(6)}`}
+          <div className="flex items-start gap-2">
+            <ic.Icon className={`mt-0.5 h-4 w-4 shrink-0 ${ic.accent}`} aria-hidden />
+            <div>
+              <div className="font-medium">{step.agentKind}</div>
+              <div className="text-xs text-zinc-500">
+                {step.modelTurns.length} model turn(s) · {step.toolCalls.length} tool call(s)
+                · {step.totalInputTokens.toLocaleString()} in / {step.totalOutputTokens.toLocaleString()} out tokens
+                {step.totalUsdEstimate > 0 && ` · $${step.totalUsdEstimate.toFixed(6)}`}
+              </div>
             </div>
           </div>
           <div className="flex items-baseline gap-3 text-xs">
@@ -749,6 +776,36 @@ const STAGE_LABELS: Record<string, string> = {
   deploy_dev: 'Deploy to dev',
   observation: 'Observation',
 };
+
+/**
+ * Per-stage icon + accent. The accent palette is intentionally the same
+ * one the landing's Loop section uses so the vocabulary the visitor
+ * saw on `/` matches the run-detail page — Spec→sky, Build→amber,
+ * Deploy→emerald, Scan→rose, etc.
+ */
+const STAGE_ICONS: Record<string, { Icon: LucideIcon; accent: string }> = {
+  discovery: { Icon: Compass, accent: 'text-violet-600 dark:text-violet-400' },
+  pm: { Icon: ClipboardList, accent: 'text-sky-600 dark:text-sky-400' },
+  implementation: { Icon: Hammer, accent: 'text-amber-600 dark:text-amber-400' },
+  qa: { Icon: ShieldCheck, accent: 'text-rose-600 dark:text-rose-400' },
+  deploy_dev: { Icon: Rocket, accent: 'text-emerald-600 dark:text-emerald-400' },
+  observation: { Icon: Activity, accent: 'text-zinc-600 dark:text-zinc-400' },
+};
+
+/**
+ * Per-agent-kind icon. Used on the Agents panel + per-step cards.
+ * Reviewer maps to ShieldCheck (matches the QA stage) — they share
+ * the "verification" mental model.
+ */
+const AGENT_ICONS: Record<string, { Icon: LucideIcon; accent: string }> = {
+  Planner: { Icon: ClipboardList, accent: 'text-sky-600 dark:text-sky-400' },
+  Coder: { Icon: Hammer, accent: 'text-amber-600 dark:text-amber-400' },
+  Reviewer: { Icon: ShieldCheck, accent: 'text-rose-600 dark:text-rose-400' },
+};
+
+function agentIcon(kind: string): { Icon: LucideIcon; accent: string } {
+  return AGENT_ICONS[kind] ?? { Icon: Bot, accent: 'text-zinc-600 dark:text-zinc-400' };
+}
 
 function orderByStage(workflows: Workflow[]): Workflow[] {
   const sorted = [...workflows];
