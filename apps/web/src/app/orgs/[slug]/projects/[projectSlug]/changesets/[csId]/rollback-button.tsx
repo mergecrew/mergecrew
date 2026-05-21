@@ -34,29 +34,29 @@ export function RollbackButton({
 
   if (!open) {
     return (
-      <Button variant="destructive" onClick={() => setOpen(true)}>
+      <Button variant="danger" size="sm" onClick={() => setOpen(true)}>
         Roll back
       </Button>
     );
   }
 
   return (
-    <div className="rounded border border-rose-300 bg-rose-50 p-3 text-sm dark:border-rose-700/40 dark:bg-rose-950/30">
-      <p className="text-rose-900 dark:text-rose-200">
+    <div className="border border-energy bg-energy-soft p-4 text-[13px]">
+      <p className="m-0 text-energy-deep">
         <strong>Confirm rollback.</strong> This opens a <code>git revert</code> PR for the merged
         change. If the original changeset touched database migrations, you&apos;ll need to handle
         the schema reversal manually — review the revert PR before merging it.
       </p>
       {error && (
-        <p className="mt-2 rounded bg-rose-100 p-2 text-xs text-rose-900 dark:bg-rose-900/40 dark:text-rose-100">
+        <p className="mt-2 border border-energy bg-paper p-2 text-[12px] text-energy-deep">
           {error}
         </p>
       )}
       <div className="mt-3 flex gap-2">
-        <Button variant="destructive" onClick={submit} disabled={pending}>
+        <Button variant="danger" size="sm" onClick={submit} disabled={pending}>
           {pending ? 'Opening revert PR…' : 'Yes, roll back'}
         </Button>
-        <Button variant="secondary" onClick={() => setOpen(false)} disabled={pending}>
+        <Button variant="ghost" size="sm" onClick={() => setOpen(false)} disabled={pending}>
           Cancel
         </Button>
       </div>
