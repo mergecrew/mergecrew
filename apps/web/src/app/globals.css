@@ -29,14 +29,6 @@
   --positive-deep: #047857;
   --positive-soft: #D1F0E1;
   --warn:          #FFC83D;
-
-  /* Legacy aliases — kept so any unmigrated `rgb(var(--card))` callers
-     still resolve while the redesign rolls out. They map to the
-     closest new neutrals and should be deleted once every page has
-     been ported to the new palette. */
-  --card:   247 248 250;
-  --border: 200 207 217;
-  --fg:     11 19 32;
 }
 
 html, body {
