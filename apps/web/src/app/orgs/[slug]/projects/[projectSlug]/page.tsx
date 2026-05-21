@@ -1,17 +1,9 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import {
-  Activity,
-  Bot,
-  GitPullRequest,
-  Mail,
-  Settings as SettingsIcon,
-  UserCheck,
-  Workflow,
-} from 'lucide-react';
+import { Bot, Mail, Settings as SettingsIcon, Workflow } from 'lucide-react';
 import { api, apiOr404 } from '@/lib/api';
 import { requireSession } from '@/lib/session';
-import { Card, LinkButton, StatusDot, Chip } from '@/components/ui';
+import { Card, LinkButton, StatusDot, Chip, PageHead, Tile } from '@/components/ui';
 import { OnboardingChecklist } from '@/components/onboarding-checklist';
 import { DemoProjectTour } from '@/components/demo-project-tour';
 import { PromoteDigest, type DigestChangeset } from '@/components/promote-digest';
@@ -176,374 +168,367 @@ export default async function ProjectOverview({
     }
   };
 
+  const openChangesetsCount = changesets.filter(
+    (c) => !['merged', 'closed', 'rejected'].includes(c.status),
+  ).length;
+
   return (
-    <main className="mx-auto max-w-5xl space-y-8 p-6">
+    <main className="mx-auto max-w-[1280px] px-9 py-7">
       {isDemo && <DemoProjectTour orgSlug={slug} />}
-      {isDemo && (
-        <Card
-          className="border-amber-200 bg-amber-50/50 dark:border-amber-700/40 dark:bg-amber-950/30"
-          data-tour="setup-cta"
-        >
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="font-medium">This is a read-only demo project</div>
-              <p className="text-sm text-zinc-600 dark:text-zinc-300">
-                Explore the seeded run, agent steps, and changeset. Set up your own project to trigger real runs.
-              </p>
+      <PageHead
+        crumb={[
+          { label: slug, href: `/orgs/${slug}` },
+          { label: 'Projects', href: `/orgs/${slug}/projects` },
+          { label: project.name },
+        ]}
+        title={project.name}
+        meta={
+          <div className="flex flex-wrap items-center gap-3">
+            {isDemo && <Chip kind="medium">DEMO</Chip>}
+            {runsPaused && <Chip kind="high">PAUSED</Chip>}
+            {project.connectedRepo && (
+              <span className="font-mono text-[12px] text-muted">
+                {project.connectedRepo.repoFullName} ·{' '}
+                <span className="text-muted-2">
+                  {project.connectedRepo.basePrBranch?.trim() ||
+                    project.connectedRepo.defaultBranch}
+                </span>
+              </span>
+            )}
+            {project.description && (
+              <span className="text-[13px] text-ink-2">{project.description}</span>
+            )}
+          </div>
+        }
+        actions={
+          <>
+            <LinkButton
+              href={`/orgs/${slug}/projects/${projectSlug}/digest`}
+              variant="ghost"
+              size="sm"
+            >
+              Today&apos;s digest
+            </LinkButton>
+            {!isDemo && !orgPaused && (
+              <PauseRunsControl
+                paused={runsPaused}
+                pauseAction={pauseRunsActionBound}
+                resumeAction={resumeRunsActionBound}
+              />
+            )}
+            {!isDemo && (
+              <RunNowForm
+                orgSlug={slug}
+                projectSlug={projectSlug}
+                disabled={isPaused}
+                disabledReason={
+                  orgPaused
+                    ? `Org-wide pause active${orgRes?.runsPauseReason ? `: ${orgRes.runsPauseReason}` : ''}`
+                    : runsPaused
+                    ? `Runs paused${project.runsPauseReason ? `: ${project.runsPauseReason}` : ''}`
+                    : !hasRepo
+                    ? 'Connect a GitHub repo to enable runs'
+                    : 'Add a dev deploy target to enable runs'
+                }
+              />
+            )}
+          </>
+        }
+      />
+
+      <div className="space-y-6">
+        {isDemo && (
+          <Card className="border-energy bg-energy-soft p-5" data-tour="setup-cta">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="font-medium text-energy-deep">
+                  This is a read-only demo project
+                </div>
+                <p className="text-[13px] text-ink-2">
+                  Explore the seeded run, agent steps, and changeset. Set up your own project to
+                  trigger real runs.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <Link
+                  href={`/orgs/${slug}/projects/${projectSlug}?tour=replay`}
+                  className="text-[13px] text-ink-2 underline-offset-[3px] hover:text-accent hover:underline"
+                >
+                  Replay tour
+                </Link>
+                <LinkButton href={`/orgs/${slug}/onboarding`} variant="energy">
+                  Set up your own project →
+                </LinkButton>
+              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Link
-                href={`/orgs/${slug}/projects/${projectSlug}?tour=replay`}
-                className="text-sm text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
-              >
-                Replay tour
-              </Link>
-              <LinkButton href={`/orgs/${slug}/onboarding`} variant="primary">
-                Set up your own project →
+          </Card>
+        )}
+
+        {!isDemo && orgWizardComplete && (
+          <OnboardingChecklist
+            orgSlug={slug}
+            projectSlug={projectSlug}
+            hasRepo={hasRepo}
+            hasDevTarget={hasDevTarget}
+            hasLifecycle={true}
+            hasCompletedRun={hasCompletedRun}
+            lastSkippedAt={schedule?.lastSkippedAt ?? null}
+          />
+        )}
+
+        {orgPaused && (
+          <div
+            className="border border-energy bg-energy-soft p-4"
+            role="status"
+          >
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-[13.5px] font-medium text-energy-deep">
+                  Org-wide pause is active
+                </div>
+                <p className="mt-1 text-[12.5px] text-energy-deep/80">
+                  Paused {relativeTime(orgRes!.runsPausedAt!)}
+                  {orgRes!.runsPauseReason ? ` — ${orgRes!.runsPauseReason}` : ''}. Org pause
+                  overrides per-project resume; lift it from the org dashboard.
+                </p>
+              </div>
+              <LinkButton href={`/orgs/${slug}`} variant="ghost">
+                Open org dashboard
               </LinkButton>
             </div>
           </div>
-        </Card>
-      )}
+        )}
 
-      {!isDemo && orgWizardComplete && (
-        <OnboardingChecklist
-          orgSlug={slug}
-          projectSlug={projectSlug}
-          hasRepo={hasRepo}
-          hasDevTarget={hasDevTarget}
-          // Project creation seeds a v1 lifecycle and the GET endpoint
-          // lazy-creates one too, so once the project exists this is
-          // effectively always true (#252 closes the silent-skip path
-          // for the theoretical "manually-deleted row" case).
-          hasLifecycle={true}
-          hasCompletedRun={hasCompletedRun}
-          lastSkippedAt={schedule?.lastSkippedAt ?? null}
-        />
-      )}
-
-
-      {orgPaused && (
-        <div
-          className="rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20"
-          role="status"
-        >
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="text-sm font-medium text-red-900 dark:text-red-200">
-                Org-wide pause is active
-              </div>
-              <p className="text-xs text-red-800 dark:text-red-300">
-                Paused {relativeTime(orgRes!.runsPausedAt!)}
-                {orgRes!.runsPauseReason ? ` — ${orgRes!.runsPauseReason}` : ''}.
-                Org pause overrides per-project resume; lift it from the org dashboard.
-              </p>
+        {runsPaused && !orgPaused && (
+          <div className="border border-energy bg-energy-soft p-4" role="status">
+            <div className="text-[13.5px] font-medium text-energy-deep">
+              Runs are paused for this project
             </div>
-            <LinkButton href={`/orgs/${slug}`} variant="secondary">
-              Open org dashboard
-            </LinkButton>
-          </div>
-        </div>
-      )}
-
-      {runsPaused && !orgPaused && (
-        <div
-          className="rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20"
-          role="status"
-        >
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="text-sm font-medium text-red-900 dark:text-red-200">
-                Runs are paused for this project
-              </div>
-              <p className="text-xs text-red-800 dark:text-red-300">
-                Paused {relativeTime(project.runsPausedAt!)}
-                {project.runsPauseReason ? ` — ${project.runsPauseReason}` : ''}.
-                Scheduled and manual runs will not fire until resumed.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <header className="flex flex-wrap items-start justify-between gap-3" data-tour="project-header">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold">{project.name}</h1>
-            {isDemo && <Chip kind="medium">DEMO</Chip>}
-            {runsPaused && <Chip kind="high">PAUSED</Chip>}
-          </div>
-          {project.description && (
-            <p className="mt-1.5 max-w-2xl text-sm text-zinc-600 dark:text-zinc-400">
-              {project.description}
+            <p className="mt-1 text-[12.5px] text-energy-deep/80">
+              Paused {relativeTime(project.runsPausedAt!)}
+              {project.runsPauseReason ? ` — ${project.runsPauseReason}` : ''}. Scheduled and
+              manual runs will not fire until resumed.
             </p>
-          )}
-          {project.connectedRepo && (
-            <p className="mt-2 font-mono text-xs text-zinc-500">
-              {project.connectedRepo.repoFullName} ·{' '}
-              <span className="text-zinc-400">
-                {project.connectedRepo.basePrBranch?.trim() ||
-                  project.connectedRepo.defaultBranch}
-              </span>
-            </p>
-          )}
-        </div>
-        <div className="flex items-start gap-2">
-          <LinkButton href={`/orgs/${slug}/projects/${projectSlug}/digest`}>
-            Today's digest
-          </LinkButton>
-          {!isDemo && !orgPaused && (
-            <PauseRunsControl
-              paused={runsPaused}
-              pauseAction={pauseRunsActionBound}
-              resumeAction={resumeRunsActionBound}
-            />
-          )}
-          {!isDemo && (
-            <RunNowForm
-              orgSlug={slug}
-              projectSlug={projectSlug}
-              disabled={isPaused}
-              disabledReason={
-                orgPaused
-                  ? `Org-wide pause active${orgRes?.runsPauseReason ? `: ${orgRes.runsPauseReason}` : ''}`
-                  : runsPaused
-                  ? `Runs paused${project.runsPauseReason ? `: ${project.runsPauseReason}` : ''}`
-                  : !hasRepo
-                  ? 'Connect a GitHub repo to enable runs'
-                  : 'Add a dev deploy target to enable runs'
-              }
-            />
-          )}
-        </div>
-      </header>
+          </div>
+        )}
 
-      {!isDemo && promotionConfigured && digest && (
-        <PromoteDigest
-          orgSlug={slug}
-          projectSlug={projectSlug}
-          changesets={digest.changesets}
-          latestRun={digest.latestRun}
-          strategyKind={digest.strategy?.kind ?? null}
-          basePrBranch={
-            project.connectedRepo?.basePrBranch?.trim() ||
-            project.connectedRepo?.defaultBranch ||
-            null
-          }
-        />
-      )}
+        {!isDemo && promotionConfigured && digest && (
+          <PromoteDigest
+            orgSlug={slug}
+            projectSlug={projectSlug}
+            changesets={digest.changesets}
+            latestRun={digest.latestRun}
+            strategyKind={digest.strategy?.kind ?? null}
+            basePrBranch={
+              project.connectedRepo?.basePrBranch?.trim() ||
+              project.connectedRepo?.defaultBranch ||
+              null
+            }
+          />
+        )}
 
-      {!isDemo && !promotionConfigured && (
-        <Card className="border-zinc-200 dark:border-zinc-700">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-0.5">
-              <div className="text-sm font-medium">Promotion not configured</div>
-              <p className="text-xs text-zinc-500">
-                Pick how dev graduates to prod in settings before the daily promote ritual lights up.
-              </p>
+        {!isDemo && !promotionConfigured && (
+          <Card className="p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-[14px] font-medium">Promotion not configured</div>
+                <p className="mt-1 text-[12.5px] text-muted">
+                  Pick how dev graduates to prod in settings before the daily promote ritual lights
+                  up.
+                </p>
+              </div>
+              <LinkButton
+                href={`/orgs/${slug}/projects/${projectSlug}/settings`}
+                variant="ghost"
+                size="sm"
+              >
+                Configure promotion →
+              </LinkButton>
             </div>
-            <LinkButton
-              href={`/orgs/${slug}/projects/${projectSlug}/settings`}
-              variant="secondary"
-            >
-              Configure promotion →
-            </LinkButton>
-          </div>
-        </Card>
-      )}
-
-      <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
-        <Card data-tour="latest-run">
-          <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-500">
-            <Activity className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden />
-            Latest run
-          </div>
-          {latestRun ? (
-            <div className="mt-2 flex items-center gap-2">
-              <StatusDot status={runStatusToDot(latestRun.status)} />
-              <Link
-                href={`/orgs/${slug}/projects/${projectSlug}/runs/${latestRun.id}`}
-                className="font-medium hover:underline"
-              >
-                {latestRun.status}
-              </Link>
-              <span className="text-sm text-zinc-500">
-                · {relativeTime(latestRun.startedAt ?? latestRun.scheduledAt)}
-              </span>
-            </div>
-          ) : (
-            <div className="mt-2 text-sm text-zinc-500">No runs yet</div>
-          )}
-        </Card>
-        <Card data-tour="approvals">
-          <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-500">
-            <UserCheck className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" aria-hidden />
-            Pending approvals
-          </div>
-          <div className="mt-2 flex items-center gap-2">
-            <span className="text-2xl font-semibold">{approvals.length}</span>
-            {approvals.length > 0 && (
-              <Link
-                href={`/orgs/${slug}/inbox`}
-                className="text-sm text-accent hover:underline"
-              >
-                review →
-              </Link>
-            )}
-          </div>
-        </Card>
-        <Card data-tour="changesets">
-          <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-500">
-            <GitPullRequest className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" aria-hidden />
-            Open changesets
-          </div>
-          <div className="mt-2 flex items-center gap-2">
-            <span className="text-2xl font-semibold">
-              {changesets.filter((c) => !['merged', 'closed', 'rejected'].includes(c.status)).length}
-            </span>
-            {changesets.length > 0 && (
-              <Link
-                href={`/orgs/${slug}/projects/${projectSlug}/changesets`}
-                className="text-sm text-accent hover:underline"
-              >
-                view →
-              </Link>
-            )}
-          </div>
-        </Card>
-      </section>
-
-      {approvals.length > 0 && (
-        <section>
-          <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">
-            Awaiting your decision
-          </h2>
-          <Card className="p-0 border-amber-200 dark:border-amber-700/40">
-            <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
-              {approvals.map((a) => (
-                <li key={a.id} className="px-4 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="font-medium">{a.kind ?? 'Approval'}</div>
-                      <div className="text-xs text-zinc-500">{relativeTime(a.createdAt)}</div>
-                    </div>
-                    <LinkButton href={`/orgs/${slug}/inbox`} variant="primary">
-                      Review
-                    </LinkButton>
-                  </div>
-                </li>
-              ))}
-            </ul>
           </Card>
-        </section>
-      )}
+        )}
 
-      <section className="grid grid-cols-1 gap-6 md:grid-cols-2">
-        <div>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
-              Recent runs
-            </h2>
-            <LinkButton href={`/orgs/${slug}/projects/${projectSlug}/timeline`}>
-              Timeline
-            </LinkButton>
-          </div>
-          <Card className="p-0">
-            {runs.length === 0 ? (
-              <div className="p-4 text-sm text-zinc-500">No runs yet.</div>
-            ) : (
-              <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                {runs.map((r) => (
-                  <li key={r.id}>
-                    <Link
-                      href={`/orgs/${slug}/projects/${projectSlug}/runs/${r.id}`}
-                      className="flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900"
-                    >
-                      <StatusDot status={runStatusToDot(r.status)} />
-                      <div className="flex-1">
-                        <div className="font-medium">{r.status}</div>
-                        <div className="text-xs text-zinc-500">
-                          {relativeTime(r.startedAt ?? r.scheduledAt)}
+        <section className="grid grid-cols-1 gap-3 md:grid-cols-4">
+          <Tile
+            k="Latest run"
+            v={latestRun ? latestRun.status : '—'}
+            n={
+              latestRun
+                ? relativeTime(latestRun.startedAt ?? latestRun.scheduledAt)
+                : 'No runs yet'
+            }
+          />
+          <Tile
+            k="Pending approvals"
+            v={String(approvals.length)}
+            n={approvals.length > 0 ? 'awaiting decision' : 'none'}
+            energy={approvals.length > 0}
+          />
+          <Tile
+            k="Open changesets"
+            v={String(openChangesetsCount)}
+            n={`${changesets.length} total`}
+          />
+          <Tile
+            k="Status"
+            v={isPaused ? 'paused' : 'active'}
+            n={isPaused ? 'Resume in actions above' : 'Schedule armed'}
+            accent={!isPaused}
+            energy={isPaused}
+          />
+        </section>
+
+        {approvals.length > 0 && (
+          <section>
+            <div className="mb-3 font-mono text-[11px] uppercase tracking-[0.1em] text-muted">
+              Awaiting your decision
+            </div>
+            <Card>
+              <ul className="m-0 list-none p-0">
+                {approvals.map((a, i) => (
+                  <li
+                    key={a.id}
+                    className={i < approvals.length - 1 ? 'border-b border-hair-2' : ''}
+                  >
+                    <div className="flex items-center justify-between gap-3 px-4 py-3">
+                      <div>
+                        <div className="text-[14px] font-medium">{a.kind ?? 'Approval'}</div>
+                        <div className="font-mono text-[11.5px] text-muted">
+                          {relativeTime(a.createdAt)}
                         </div>
                       </div>
-                    </Link>
+                      <LinkButton href={`/orgs/${slug}/inbox`} variant="accent" size="sm">
+                        Review
+                      </LinkButton>
+                    </div>
                   </li>
                 ))}
               </ul>
-            )}
-          </Card>
-        </div>
+            </Card>
+          </section>
+        )}
 
-        <div>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
-              Recent changesets
-            </h2>
-            <LinkButton href={`/orgs/${slug}/projects/${projectSlug}/changesets`}>
-              All
-            </LinkButton>
-          </div>
-          <Card className="p-0">
-            {changesets.length === 0 ? (
-              <div className="p-4 text-sm text-zinc-500">No changesets yet.</div>
-            ) : (
-              <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                {changesets.map((c) => (
-                  <li key={c.id}>
-                    <Link
-                      href={`/orgs/${slug}/projects/${projectSlug}/changesets`}
-                      className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900"
+        <section className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <div>
+            <div className="mb-3 flex items-center justify-between">
+              <div className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted">
+                Recent runs
+              </div>
+              <LinkButton
+                href={`/orgs/${slug}/projects/${projectSlug}/runs`}
+                variant="ghost"
+                size="sm"
+              >
+                All runs
+              </LinkButton>
+            </div>
+            <Card>
+              {runs.length === 0 ? (
+                <div className="p-4 text-[13px] text-muted">No runs yet.</div>
+              ) : (
+                <ul className="m-0 list-none p-0">
+                  {runs.map((r, i) => (
+                    <li
+                      key={r.id}
+                      className={i < runs.length - 1 ? 'border-b border-hair-2' : ''}
                     >
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-medium">{c.title ?? c.id.slice(0, 8)}</div>
-                        <div className="text-xs text-zinc-500">{relativeTime(c.updatedAt)}</div>
-                      </div>
-                      <Chip kind={changesetKind(c.status)}>{c.status}</Chip>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
-        </div>
-      </section>
+                      <Link
+                        href={`/orgs/${slug}/projects/${projectSlug}/runs/${r.id}`}
+                        className="flex items-center gap-3 px-4 py-3 text-[13px] text-ink no-underline hover:bg-paper-2"
+                      >
+                        <StatusDot status={runStatusToDot(r.status)} />
+                        <div className="flex-1">
+                          <div className="font-medium">{r.status}</div>
+                          <div className="font-mono text-[11.5px] text-muted">
+                            {relativeTime(r.startedAt ?? r.scheduledAt)}
+                          </div>
+                        </div>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </div>
 
-      <section>
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">
-          Manage
-        </h2>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <NavTile
-            href={`/orgs/${slug}/projects/${projectSlug}/lifecycle`}
-            title="Lifecycle"
-            sub="Workflow graph"
-            Icon={Workflow}
-            accent="text-sky-600 dark:text-sky-400"
-            dataTour="manage-lifecycle"
-          />
-          <NavTile
-            href={`/orgs/${slug}/projects/${projectSlug}/agents`}
-            title="Agents"
-            sub="Roster & models"
-            Icon={Bot}
-            accent="text-amber-600 dark:text-amber-400"
-          />
-          <NavTile
-            href={`/orgs/${slug}/projects/${projectSlug}/digest`}
-            title="Digest"
-            sub="Today's summary"
-            Icon={Mail}
-            accent="text-violet-600 dark:text-violet-400"
-          />
-          <NavTile
-            href={`/orgs/${slug}/projects/${projectSlug}/settings`}
-            title="Settings"
-            sub="Repo, deploys, gates"
-            Icon={SettingsIcon}
-            accent="text-zinc-600 dark:text-zinc-400"
-          />
-        </div>
-      </section>
+          <div>
+            <div className="mb-3 flex items-center justify-between">
+              <div className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted">
+                Recent changesets
+              </div>
+              <LinkButton
+                href={`/orgs/${slug}/projects/${projectSlug}/changesets`}
+                variant="ghost"
+                size="sm"
+              >
+                All
+              </LinkButton>
+            </div>
+            <Card>
+              {changesets.length === 0 ? (
+                <div className="p-4 text-[13px] text-muted">No changesets yet.</div>
+              ) : (
+                <ul className="m-0 list-none p-0">
+                  {changesets.map((c, i) => (
+                    <li
+                      key={c.id}
+                      className={i < changesets.length - 1 ? 'border-b border-hair-2' : ''}
+                    >
+                      <Link
+                        href={`/orgs/${slug}/projects/${projectSlug}/changesets`}
+                        className="flex items-center justify-between gap-3 px-4 py-3 text-[13px] text-ink no-underline hover:bg-paper-2"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-medium">
+                            {c.title ?? c.id.slice(0, 8)}
+                          </div>
+                          <div className="font-mono text-[11.5px] text-muted">
+                            {relativeTime(c.updatedAt)}
+                          </div>
+                        </div>
+                        <Chip kind={changesetKind(c.status)}>{c.status}</Chip>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </div>
+        </section>
+
+        <section>
+          <div className="mb-3 font-mono text-[11px] uppercase tracking-[0.1em] text-muted">
+            Manage
+          </div>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <NavTile
+              href={`/orgs/${slug}/projects/${projectSlug}/lifecycle`}
+              title="Lifecycle"
+              sub="Workflow graph"
+              Icon={Workflow}
+              dataTour="manage-lifecycle"
+            />
+            <NavTile
+              href={`/orgs/${slug}/projects/${projectSlug}/agents`}
+              title="Agents"
+              sub="Roster & models"
+              Icon={Bot}
+            />
+            <NavTile
+              href={`/orgs/${slug}/projects/${projectSlug}/digest`}
+              title="Digest"
+              sub="Today's summary"
+              Icon={Mail}
+            />
+            <NavTile
+              href={`/orgs/${slug}/projects/${projectSlug}/settings`}
+              title="Settings"
+              sub="Repo, deploys, gates"
+              Icon={SettingsIcon}
+            />
+          </div>
+        </section>
+      </div>
     </main>
   );
 }
@@ -553,23 +538,21 @@ function NavTile({
   title,
   sub,
   Icon,
-  accent,
   dataTour,
 }: {
   href: string;
   title: string;
   sub: string;
   Icon?: typeof Workflow;
-  accent?: string;
   dataTour?: string;
 }) {
   return (
-    <Link href={href} data-tour={dataTour}>
-      <Card className="h-full transition-colors hover:border-accent">
-        {Icon && <Icon className={`mb-2 h-5 w-5 ${accent ?? 'text-zinc-500'}`} aria-hidden />}
-        <div className="font-medium">{title}</div>
-        <div className="text-sm text-zinc-500">{sub}</div>
-      </Card>
+    <Link href={href} data-tour={dataTour} className="no-underline">
+      <div className="h-full border border-hair bg-paper p-4 transition-colors hover:border-accent hover:bg-paper-2">
+        {Icon && <Icon className="mb-3 h-5 w-5 text-accent" aria-hidden />}
+        <div className="text-[14px] font-medium text-ink">{title}</div>
+        <div className="mt-[2px] text-[12.5px] text-muted">{sub}</div>
+      </div>
     </Link>
   );
 }
