@@ -62,6 +62,7 @@ Documentation for contributors and operators of [Mergecrew](https://github.com/m
 12. [Rollback model](03-infrastructure/12-rollback.md)
 13. [Spend forecast](03-infrastructure/13-spend-forecast.md)
 14. [Anomaly digest](03-infrastructure/14-anomaly-digest.md)
+14a. [Pause / resume runs](03-infrastructure/33-pause-resume.md)
 
 **Quality & telemetry**
 
