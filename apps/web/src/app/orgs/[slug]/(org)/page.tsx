@@ -1,10 +1,21 @@
 import Link from 'next/link';
+import { revalidatePath } from 'next/cache';
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { Card, StatusDot, LinkButton, Chip } from '@/components/ui';
 import { FirstRunEmptyState } from '@/components/first-run-empty-state';
 import { OrgSetupCard } from '@/components/org-setup-card';
+import { PauseRunsControl } from '@/components/pause-runs-control';
 import { relativeTime, runStatusToDot } from '@/lib/format';
+
+type OrgDetail = {
+  id: string;
+  slug: string;
+  name: string;
+  runsPausedAt?: string | null;
+  runsPauseReason?: string | null;
+  runsPausedByUserId?: string | null;
+};
 
 type Project = {
   id: string;
@@ -44,7 +55,8 @@ export default async function OrgHomePage({
   const { slug } = await params;
   const session = await requireSession();
 
-  const [projectsRes, inboxRes, activityRes, spendCapRes, evalsRes, onboardingRes] = await Promise.all([
+  const [orgRes, projectsRes, inboxRes, activityRes, spendCapRes, evalsRes, onboardingRes] = await Promise.all([
+    safe(() => api<OrgDetail>(`/v1/orgs/${slug}`, { session })),
     safe(() => api<{ items: Project[] }>(`/v1/orgs/${slug}/projects`, { session })),
     safe(() => api<{ items: ApprovalRequest[] }>(`/v1/orgs/${slug}/inbox`, { session })),
     safe(() => api<{ items: TimelineEvent[] }>(`/v1/orgs/${slug}/activity?limit=10`, { session })),
@@ -103,12 +115,57 @@ export default async function OrgHomePage({
   }
 
   const projectIdToSlug = new Map(projects.map((p) => [p.id, p.slug] as const));
+  const orgPaused = Boolean(orgRes?.runsPausedAt);
+
+  const pauseOrgRunsAction = async (reason: string | null) => {
+    'use server';
+    const s = await requireSession();
+    try {
+      await api(`/v1/orgs/${slug}/pause`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+        session: s,
+      });
+      revalidatePath(`/orgs/${slug}`);
+      return { ok: true } as const;
+    } catch (e: unknown) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) } as const;
+    }
+  };
+  const resumeOrgRunsAction = async () => {
+    'use server';
+    const s = await requireSession();
+    try {
+      await api(`/v1/orgs/${slug}/resume`, { method: 'POST', body: '{}', session: s });
+      revalidatePath(`/orgs/${slug}`);
+      return { ok: true } as const;
+    } catch (e: unknown) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) } as const;
+    }
+  };
 
   return (
     <main className="mx-auto max-w-5xl space-y-8 p-6">
-      <header className="flex items-baseline justify-between">
+      {orgPaused && (
+        <div
+          className="rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20"
+          role="status"
+        >
+          <div className="text-sm font-medium text-red-900 dark:text-red-200">
+            Org-wide pause is active
+          </div>
+          <p className="text-xs text-red-800 dark:text-red-300">
+            Paused {relativeTime(orgRes!.runsPausedAt!)}
+            {orgRes!.runsPauseReason ? ` — ${orgRes!.runsPauseReason}` : ''}.
+            No runs will fire on any project until resumed.
+          </p>
+        </div>
+      )}
+
+      <header className="flex items-baseline justify-between gap-3">
         <div className="flex items-baseline gap-3">
           <h1 className="text-2xl font-semibold">Today</h1>
+          {orgPaused && <Chip kind="high">ORG PAUSED</Chip>}
           {evalPassRate != null && (
             <Link
               href={`/orgs/${slug}/evals`}
@@ -126,7 +183,15 @@ export default async function OrgHomePage({
             </Link>
           )}
         </div>
-        <span className="text-sm text-zinc-500">{new Date().toDateString()}</span>
+        <div className="flex items-center gap-3">
+          <PauseRunsControl
+            paused={orgPaused}
+            pauseAction={pauseOrgRunsAction}
+            resumeAction={resumeOrgRunsAction}
+            scopeLabel="all org runs"
+          />
+          <span className="text-sm text-zinc-500">{new Date().toDateString()}</span>
+        </div>
       </header>
 
       {onboardingRes && !onboardingRes.complete && (

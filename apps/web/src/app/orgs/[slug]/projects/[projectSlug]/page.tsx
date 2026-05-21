@@ -9,7 +9,7 @@ import { PromoteDigest, type DigestChangeset } from '@/components/promote-digest
 import type { PromoteRunSnapshot } from './settings/settings-actions';
 import { relativeTime, runStatusToDot } from '@/lib/format';
 import { revalidatePath } from 'next/cache';
-import { PauseRunsControl } from './pause-runs-control';
+import { PauseRunsControl } from '@/components/pause-runs-control';
 
 type Project = {
   id: string;
@@ -67,7 +67,7 @@ export default async function ProjectOverview({
   const { slug, projectSlug } = await params;
   const session = await requireSession();
 
-  const [project, runsRes, changesetsRes, approvalsRes, schedule, orgOnboardingRes, digestRes] =
+  const [project, runsRes, changesetsRes, approvalsRes, schedule, orgOnboardingRes, digestRes, orgRes] =
     await Promise.all([
       apiOr404<Project>(`/v1/orgs/${slug}/projects/${projectSlug}`, { session }),
       safe(() =>
@@ -108,6 +108,14 @@ export default async function ProjectOverview({
           strategy: { kind: string } | null;
         }>(`/v1/orgs/${slug}/projects/${projectSlug}/promote-digest`, { session }),
       ),
+      // Org-pause state (#625). Surfaces the propagating banner on this
+      // page when ops have hit the org-wide kill switch elsewhere.
+      safe(() =>
+        api<{ runsPausedAt?: string | null; runsPauseReason?: string | null }>(
+          `/v1/orgs/${slug}`,
+          { session },
+        ),
+      ),
     ]);
 
   const runs = runsRes?.items ?? [];
@@ -121,7 +129,8 @@ export default async function ProjectOverview({
   const hasDevTarget = (project.deployTargets ?? []).some((d) => d.kind === 'dev');
   const hasCompletedRun = runs.some((r) => r.status === 'done');
   const runsPaused = Boolean(project.runsPausedAt);
-  const isPaused = !hasRepo || !hasDevTarget || runsPaused;
+  const orgPaused = Boolean(orgRes?.runsPausedAt);
+  const isPaused = !hasRepo || !hasDevTarget || runsPaused || orgPaused;
   const isDemo = Boolean(project.demo);
   const orgWizardComplete = orgOnboardingRes?.complete ?? false;
 
@@ -205,7 +214,30 @@ export default async function ProjectOverview({
       )}
 
 
-      {runsPaused && (
+      {orgPaused && (
+        <div
+          className="rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20"
+          role="status"
+        >
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-sm font-medium text-red-900 dark:text-red-200">
+                Org-wide pause is active
+              </div>
+              <p className="text-xs text-red-800 dark:text-red-300">
+                Paused {relativeTime(orgRes!.runsPausedAt!)}
+                {orgRes!.runsPauseReason ? ` — ${orgRes!.runsPauseReason}` : ''}.
+                Org pause overrides per-project resume; lift it from the org dashboard.
+              </p>
+            </div>
+            <LinkButton href={`/orgs/${slug}`} variant="secondary">
+              Open org dashboard
+            </LinkButton>
+          </div>
+        </div>
+      )}
+
+      {runsPaused && !orgPaused && (
         <div
           className="rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20"
           role="status"
@@ -251,7 +283,7 @@ export default async function ProjectOverview({
           <LinkButton href={`/orgs/${slug}/projects/${projectSlug}/digest`}>
             Today's digest
           </LinkButton>
-          {!isDemo && (
+          {!isDemo && !orgPaused && (
             <PauseRunsControl
               paused={runsPaused}
               pauseAction={pauseRunsActionBound}
@@ -264,7 +296,9 @@ export default async function ProjectOverview({
               projectSlug={projectSlug}
               disabled={isPaused}
               disabledReason={
-                runsPaused
+                orgPaused
+                  ? `Org-wide pause active${orgRes?.runsPauseReason ? `: ${orgRes.runsPauseReason}` : ''}`
+                  : runsPaused
                   ? `Runs paused${project.runsPauseReason ? `: ${project.runsPauseReason}` : ''}`
                   : !hasRepo
                   ? 'Connect a GitHub repo to enable runs'

@@ -4,21 +4,22 @@ import { useState, useTransition } from 'react';
 import { Button } from '@/components/ui';
 
 /**
- * Operator kill switch (#625) — project-scope control.
- *
- * Renders Stop when active, Resume when paused. Stop opens an inline
- * reason panel; Resume is a one-click confirm. Both call server
- * actions passed as props so submission stays in the server-component
- * tree's auth/cookie context.
+ * Operator kill switch (#625). Same UX at project and org scope —
+ * `scopeLabel` swaps the verb-object in the button copy ("Stop runs"
+ * vs "Stop all org runs"). Submission goes through server actions
+ * passed as props so the call site retains auth/cookie context and
+ * can run `revalidatePath` on its own URL.
  */
 export function PauseRunsControl({
   paused,
   pauseAction,
   resumeAction,
+  scopeLabel = 'runs',
 }: {
   paused: boolean;
   pauseAction: (reason: string | null) => Promise<{ ok: boolean; error?: string }>;
   resumeAction: () => Promise<{ ok: boolean; error?: string }>;
+  scopeLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
@@ -37,7 +38,7 @@ export function PauseRunsControl({
           })
         }
       >
-        {pending ? 'Resuming…' : 'Resume runs'}
+        {pending ? 'Resuming…' : `Resume ${scopeLabel}`}
       </Button>
     );
   }
@@ -45,7 +46,7 @@ export function PauseRunsControl({
   if (!open) {
     return (
       <Button variant="destructive" onClick={() => setOpen(true)}>
-        Stop runs
+        Stop {scopeLabel}
       </Button>
     );
   }
@@ -53,7 +54,7 @@ export function PauseRunsControl({
   return (
     <div className="flex w-72 flex-col gap-2 rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
       <label className="text-xs font-medium text-red-900 dark:text-red-200">
-        Why are you stopping runs? (optional)
+        Why are you stopping {scopeLabel}? (optional)
       </label>
       <textarea
         className="w-full rounded border bg-white px-2 py-1 text-sm dark:bg-zinc-900 dark:border-zinc-700"
@@ -93,7 +94,7 @@ export function PauseRunsControl({
             })
           }
         >
-          {pending ? 'Stopping…' : 'Stop runs'}
+          {pending ? 'Stopping…' : `Stop ${scopeLabel}`}
         </Button>
       </div>
     </div>
