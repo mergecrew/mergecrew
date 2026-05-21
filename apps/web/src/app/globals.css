@@ -3,23 +3,56 @@
 @tailwind utilities;
 
 :root {
-  --bg: 250 250 249;
-  --fg: 24 24 27;
-  --muted: 113 113 122;
-  --border: 228 228 231;
-  --card: 255 255 255;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: 24 24 27;
-    --fg: 244 244 245;
-    --muted: 161 161 170;
-    --border: 39 39 42;
-    --card: 39 39 42;
-  }
+  /* Neutrals */
+  --bg:           #ECEEF1;
+  --bg-2:         #E2E6EB;
+  --paper:        #F7F8FA;
+  --paper-2:      #FCFCFD;
+  --ink:          #0B1320;
+  --ink-2:        #2C3344;
+  --ink-3:        #4A5263;
+  --muted:        #6B7280;
+  --muted-2:      #95A1B0;
+  --hair:         #C8CFD9;
+  --hair-2:       #DDE2EA;
+  --hair-strong:  #A8B1BE;
+
+  /* Coral palette — locked */
+  --accent:        #0E5BC9;
+  --accent-deep:   #0846A0;
+  --accent-soft:   #D9E5F8;
+  --accent-tint:   #F0F5FC;
+  --energy:        #FF4D54;
+  --energy-deep:   #D62F35;
+  --energy-soft:   #FFE0E2;
+  --positive:      #10B981;
+  --positive-deep: #047857;
+  --positive-soft: #D1F0E1;
+  --warn:          #FFC83D;
+
+  /* Legacy aliases — kept so any unmigrated `rgb(var(--card))` callers
+     still resolve while the redesign rolls out. They map to the
+     closest new neutrals and should be deleted once every page has
+     been ported to the new palette. */
+  --card:   247 248 250;
+  --border: 200 207 217;
+  --fg:     11 19 32;
 }
 
 html, body {
-  background: rgb(var(--bg));
-  color: rgb(var(--fg));
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-geist), system-ui, -apple-system, sans-serif;
+  font-feature-settings: 'ss01', 'cv11';
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection { background: var(--accent); color: var(--paper); }
+
+/* Hero underline keyframes used by the landing page. The animation
+   utility is wired in tailwind.config.ts. */
+@keyframes ul-in {
+  to { transform: scaleX(1); }
 }
