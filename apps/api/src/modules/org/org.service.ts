@@ -370,6 +370,85 @@ export class OrgService {
     );
   }
 
+  /**
+   * Operator kill switch (#625) — org scope. Sets `runsPausedAt` on the
+   * organization row; the cron tick, RunService.runNow, and
+   * orchestrator.handleRunDue all check this in addition to the
+   * per-project field, with org-scope winning. In-flight runs continue;
+   * cancel them on the run-detail page if needed. No per-project
+   * eventlog emit — would be N writes for a single operator action —
+   * the audit log entry is the source of truth.
+   */
+  async pauseRuns(reason: string | null) {
+    const t = this.tenant.require();
+    const trimmed = reason?.trim() || null;
+    if (trimmed && trimmed.length > 500) {
+      throw new ValidationError('reason must be ≤ 500 chars');
+    }
+    const now = new Date();
+    const updated = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.organization.update({
+        where: { id: t.organizationId },
+        data: {
+          runsPausedAt: now,
+          runsPauseReason: trimmed,
+          runsPausedByUserId: t.userId,
+        },
+      }),
+    );
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.auditLogEntry.create({
+        data: {
+          organizationId: t.organizationId,
+          actorUserId: t.userId,
+          action: 'org.runs.paused',
+          target: { organizationId: t.organizationId },
+          metadata: { reason: trimmed },
+        },
+      }),
+    );
+    return {
+      runsPausedAt: updated.runsPausedAt,
+      runsPauseReason: updated.runsPauseReason,
+      runsPausedByUserId: updated.runsPausedByUserId,
+    };
+  }
+
+  async resumeRuns() {
+    const t = this.tenant.require();
+    const current = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.organization.findUnique({
+        where: { id: t.organizationId },
+        select: { runsPausedAt: true, runsPauseReason: true },
+      }),
+    );
+    if (!current?.runsPausedAt) {
+      return { runsPausedAt: null, runsPauseReason: null, runsPausedByUserId: null };
+    }
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.organization.update({
+        where: { id: t.organizationId },
+        data: {
+          runsPausedAt: null,
+          runsPauseReason: null,
+          runsPausedByUserId: null,
+        },
+      }),
+    );
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.auditLogEntry.create({
+        data: {
+          organizationId: t.organizationId,
+          actorUserId: t.userId,
+          action: 'org.runs.resumed',
+          target: { organizationId: t.organizationId },
+          metadata: { previousReason: current.runsPauseReason ?? null },
+        },
+      }),
+    );
+    return { runsPausedAt: null, runsPauseReason: null, runsPausedByUserId: null };
+  }
+
   async listMembers() {
     const t = this.tenant.require();
     const rows = await this.prisma.withTenant(t.organizationId, (tx) =>

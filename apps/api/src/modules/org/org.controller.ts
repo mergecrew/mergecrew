@@ -134,6 +134,23 @@ export class OrgController {
   }
 
   @UseGuards(RoleGuard)
+  @RequireRole('operator')
+  @Post('orgs/:slug/pause')
+  async pauseRuns(
+    @Param('slug') _slug: string,
+    @Body() body: { reason?: string | null } = {},
+  ) {
+    return this.orgs.pauseRuns(body?.reason ?? null);
+  }
+
+  @UseGuards(RoleGuard)
+  @RequireRole('operator')
+  @Post('orgs/:slug/resume')
+  async resumeRuns(@Param('slug') _slug: string) {
+    return this.orgs.resumeRuns();
+  }
+
+  @UseGuards(RoleGuard)
   @Get('orgs/:slug/telemetry')
   async telemetrySettings(@Param('slug') _slug: string) {
     return this.orgs.getTelemetrySettings();
