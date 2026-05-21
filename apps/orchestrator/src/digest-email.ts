@@ -94,6 +94,18 @@ export async function dispatchEmailDigest(args: {
     return [];
   });
 
+  // Suppress empty digests (#635). "No active changesets today" with no
+  // anomalies is no signal — silence is better than training recipients
+  // to ignore the digest. lastDigestAt was bumped at enqueue, so the
+  // next eod still computes "due" correctly.
+  if (changesets.length === 0 && anomalies.length === 0) {
+    logger.info(
+      { projectId, eod: eod.toISOString() },
+      'digest.email: no changesets and no anomalies; skipping send',
+    );
+    return;
+  }
+
   const { subject, html } = buildDigestEmail({
     orgSlug: project.organization.slug,
     orgName: project.organization.name,
