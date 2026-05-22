@@ -1,6 +1,14 @@
 export * from './client.js';
 export { effectiveBaseBranch } from './connected-repo.js';
 export {
+  computeMetricsRollups,
+  truncToHour,
+  truncToDay,
+  type MetricsRollupGranularity,
+  type ComputeMetricsRollupsOptions,
+  type ComputeMetricsRollupsResult,
+} from './metrics-rollups.js';
+export {
   seedDemoProject,
   DEMO_PROJECT_SLUG,
   DEMO_PROJECT_NAME,
@@ -36,5 +44,6 @@ export type {
   TimelineEvent,
   MemoryDocument,
   AuditLogEntry,
+  MetricsRollup,
   ProjectSecret,
 } from '@prisma/client';

@@ -10,6 +10,7 @@ import { auditRetentionTick } from './audit-retention-tick.js';
 import { stuckRunWatchdog } from './stuck-run-watchdog.js';
 import { evalTick } from './eval-tick.js';
 import { installPingTick } from './install-ping-tick.js';
+import { metricsRollupTick } from './metrics-rollup-tick.js';
 import { startProbeServer } from './probe-server.js';
 
 const logger = pino({
@@ -194,6 +195,9 @@ setInterval(() => {
   installPingTick({ logger }).catch((err) =>
     logger.error({ err: String(err?.message ?? err) }, 'install-ping-tick failed'),
   );
+  metricsRollupTick({ logger }).catch((err) =>
+    logger.error({ err: String(err?.message ?? err) }, 'metrics-rollup-tick failed'),
+  );
   maybeRunRetention();
 }, TICK_MS);
 // First tick at startup
@@ -209,5 +213,8 @@ evalTick({ logger }).catch((err) =>
 );
 installPingTick({ logger }).catch((err) =>
   logger.error({ err: String(err?.message ?? err) }, 'initial install-ping-tick failed'),
+);
+metricsRollupTick({ logger }).catch((err) =>
+  logger.error({ err: String(err?.message ?? err) }, 'initial metrics-rollup-tick failed'),
 );
 maybeRunRetention();

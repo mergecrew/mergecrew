@@ -777,6 +777,37 @@ model RunPause {
   @@map("run_pauses")
 }
 
+/// Pre-aggregated telemetry buckets (V2.af / #742). Two granularities —
+/// `hour` and `day` — keyed on (org, project?, granularity, bucket). The
+/// project_id-null branch holds org-wide rollups; the project-scoped
+/// branch holds per-project rollups for the same window. UPSERTed by the
+/// worker-cron `metricsRollupTick`; read by the org/project metrics
+/// pages, the SLO evaluator, and the project health badges.
+model MetricsRollup {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  projectId      String?  @map("project_id") @db.Uuid
+  /// 'hour' or 'day'. Enforced in SQL by a CHECK constraint.
+  granularity    String
+  /// UTC instant at the start of the bucket (truncated to the hour or day).
+  bucket         DateTime @db.Timestamptz(6)
+  runsStarted    Int      @default(0) @map("runs_started")
+  runsCompleted  Int      @default(0) @map("runs_completed")
+  runsFailed     Int      @default(0) @map("runs_failed")
+  stepsRun       Int      @default(0) @map("steps_run")
+  stepsPassed    Int      @default(0) @map("steps_passed")
+  p50StepMs      Int      @default(0) @map("p50_step_ms")
+  p95StepMs      Int      @default(0) @map("p95_step_ms")
+  llmTokensIn    BigInt   @default(0) @map("llm_tokens_in")
+  llmTokensOut  BigInt   @default(0) @map("llm_tokens_out")
+  costUsdCents   BigInt   @default(0) @map("cost_usd_cents")
+  computedAt     DateTime @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  @@index([organizationId, granularity, bucket(sort: Desc)])
+  @@index([projectId, granularity, bucket(sort: Desc)])
+  @@map("metrics_rollups")
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Eval harness (V2.ab, #299)
 // ─────────────────────────────────────────────────────────────────────────────
