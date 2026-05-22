@@ -8,10 +8,7 @@ import {
   defaultConfigFor,
   type AdapterId,
 } from '@/components/deploy-target-forms';
-import {
-  upsertDeployTargetAction,
-  deleteDeployTargetAction,
-} from './settings-actions';
+import { upsertDeployTargetAction, deleteDeployTargetAction } from './settings-actions';
 
 type Kind = 'dev' | 'staging' | 'prod';
 
@@ -146,12 +143,12 @@ function KindRow({
   };
 
   return (
-    <div className="rounded border p-3 dark:border-zinc-800">
+    <div className="rounded border p-3 ">
       <div className="flex items-baseline justify-between">
         <div>
           <span className="font-mono text-sm font-semibold uppercase">{kind}</span>
           {existing && !editing && (
-            <span className="ml-3 text-xs text-zinc-500">{existing.adapterId}</span>
+            <span className="ml-3 text-xs text-muted">{existing.adapterId}</span>
           )}
         </div>
         <div className="flex gap-2">
@@ -171,18 +168,20 @@ function KindRow({
       {editing && (
         <div className="mt-3 space-y-3">
           {isWizard && baseBranch && (
-            <div className="rounded bg-zinc-50 p-2 text-xs dark:bg-zinc-900">
-              <span className="text-zinc-500">Mergecrew opens PRs against</span>{' '}
+            <div className="rounded bg-bg p-2 text-xs ">
+              <span className="text-muted">Mergecrew opens PRs against</span>{' '}
               <span className="font-mono">{baseBranch}</span>
-              <span className="text-zinc-500">. After merge, your CI/CD deploys to the URL below.</span>
+              <span className="text-muted">
+                . After merge, your CI/CD deploys to the URL below.
+              </span>
             </div>
           )}
 
           {!isWizard && (
             <label className="block text-sm">
-              <span className="text-zinc-600 dark:text-zinc-400">Adapter</span>
+              <span className="text-ink-2">Adapter</span>
               <select
-                className="mt-1 w-full rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700"
+                className="mt-2 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] "
                 value={adapterId}
                 onChange={(e) => {
                   const next = e.target.value as AdapterId;
@@ -202,13 +201,10 @@ function KindRow({
           <DeployTargetFormFor adapterId={adapterId} config={config} onChange={setConfig} />
 
           {isWizard && (
-            <p className="text-xs text-zinc-500">
-              Already running a custom deploy pipeline (Vercel, Netlify, Render, Fly, AWS,
-              direct GitHub Actions)? You can switch adapter later in{' '}
-              <a
-                className="underline"
-                href={`/orgs/${slug}/projects/${projectSlug}/settings`}
-              >
+            <p className="text-xs text-muted">
+              Already running a custom deploy pipeline (Vercel, Netlify, Render, Fly, AWS, direct
+              GitHub Actions)? You can switch adapter later in{' '}
+              <a className="underline" href={`/orgs/${slug}/projects/${projectSlug}/settings`}>
                 project settings
               </a>
               . See the{' '}
@@ -236,7 +232,7 @@ function KindRow({
           </div>
 
           {error && (
-            <div className="rounded bg-rose-50 p-2 text-xs text-rose-800 dark:bg-rose-900/20 dark:text-rose-300">
+            <div className="border border-energy bg-energy-soft p-3 text-[12.5px] text-energy-deep">
               {error}
             </div>
           )}

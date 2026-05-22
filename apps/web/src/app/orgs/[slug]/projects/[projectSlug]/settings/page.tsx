@@ -11,10 +11,7 @@ import { ErrorTargetForm } from './error-target-form';
 import { ScheduleForm } from './schedule-form';
 import { InceptionForm } from './inception-form';
 import { DeployTargetForm, type DeployTargetRow } from './deploy-target-form';
-import {
-  PromotionStrategyForm,
-  type PromotionStrategy,
-} from './promotion-strategy-form';
+import { PromotionStrategyForm, type PromotionStrategy } from './promotion-strategy-form';
 import { SmokeTestForm } from './smoke-test-form';
 import { DryRunForm } from './dry-run-form';
 import { BlastRadiusForm } from './blast-radius-form';
@@ -222,7 +219,12 @@ export default async function ProjectSettings({
       />
 
       <SettingsLayout nav={NAV}>
-        <Section id="general" anchor="01 · GENERAL" title="General" desc="Identity of the project. The description is shown to agents during runs and to humans on the project overview.">
+        <Section
+          id="general"
+          anchor="01 · GENERAL"
+          title="General"
+          desc="Identity of the project. The description is shown to agents during runs and to humans on the project overview."
+        >
           <GeneralForm
             slug={slug}
             projectSlug={projectSlug}
@@ -232,7 +234,12 @@ export default async function ProjectSettings({
           />
         </Section>
 
-        <Section id="repository" anchor="02 · REPOSITORY" title="Repository" desc="The Git repository the agents work against.">
+        <Section
+          id="repository"
+          anchor="02 · REPOSITORY"
+          title="Repository"
+          desc="The Git repository the agents work against."
+        >
           <RepoForm
             slug={slug}
             projectSlug={projectSlug}
@@ -242,15 +249,30 @@ export default async function ProjectSettings({
           />
         </Section>
 
-        <Section id="tracker" anchor="03 · ISSUE TRACKER" title="Issue tracker" desc="Lets discovery agents read issues and Bug Triage create new ones. The token is encrypted at rest as the project secret TRACKER_TOKEN.">
+        <Section
+          id="tracker"
+          anchor="03 · ISSUE TRACKER"
+          title="Issue tracker"
+          desc="Lets discovery agents read issues and Bug Triage create new ones. The token is encrypted at rest as the project secret TRACKER_TOKEN."
+        >
           <TrackerForm slug={slug} projectSlug={projectSlug} initial={tracker ?? null} />
         </Section>
 
-        <Section id="error-tracker" anchor="04 · ERROR TRACKER" title="Error tracker" desc="Lets the Observation agent read recent crash and exception data. The token is encrypted at rest as the project secret ERROR_TRACKER_TOKEN.">
+        <Section
+          id="error-tracker"
+          anchor="04 · ERROR TRACKER"
+          title="Error tracker"
+          desc="Lets the Observation agent read recent crash and exception data. The token is encrypted at rest as the project secret ERROR_TRACKER_TOKEN."
+        >
           <ErrorTargetForm slug={slug} projectSlug={projectSlug} initial={errorTarget ?? null} />
         </Section>
 
-        <Section id="schedule" anchor="05 · SCHEDULE" title="Schedule" desc="When the project's daily run fires. Cron is evaluated in the configured timezone by the worker-cron tick.">
+        <Section
+          id="schedule"
+          anchor="05 · SCHEDULE"
+          title="Schedule"
+          desc="When the project's daily run fires. Cron is evaluated in the configured timezone by the worker-cron tick."
+        >
           <ScheduleForm
             initial={schedule}
             canEdit={canEdit}
@@ -271,24 +293,38 @@ export default async function ProjectSettings({
           />
         </Section>
 
-        <Section id="deploy-targets" anchor="06 · DEPLOY TARGETS" title="Deploy targets" desc="Where the runner promotes changesets. Each row picks an adapter (GitHub Actions, Vercel, …). The dev target drives the post-PR auto-deploy on each daily run; the prod target is the promotion destination.">
+        <Section
+          id="deploy-targets"
+          anchor="06 · DEPLOY TARGETS"
+          title="Deploy targets"
+          desc="Where the runner promotes changesets. Each row picks an adapter (GitHub Actions, Vercel, …). The dev target drives the post-PR auto-deploy on each daily run; the prod target is the promotion destination."
+        >
           <DeployTargetForm slug={slug} projectSlug={projectSlug} initial={targets.items} />
         </Section>
 
-        <Section id="promotion" anchor="07 · PROMOTION" title="Promotion strategy" desc="How the human-approved subset of dev changesets graduates to prod. mergecrew cherry-picks approved changes onto a release ref; this picker controls what triggers your CI's prod deploy from that ref.">
+        <Section
+          id="promotion"
+          anchor="07 · PROMOTION"
+          title="Promotion strategy"
+          desc="How the human-approved subset of dev changesets graduates to prod. mergecrew cherry-picks approved changes onto a release ref; this picker controls what triggers your CI's prod deploy from that ref."
+        >
           <PromotionStrategyForm
             slug={slug}
             projectSlug={projectSlug}
             orgSlug={slug}
             initial={promotionStrategy}
             defaultReleaseBranch={
-              project.connectedRepo?.basePrBranch?.trim() ||
-              project.connectedRepo?.defaultBranch
+              project.connectedRepo?.basePrBranch?.trim() || project.connectedRepo?.defaultBranch
             }
           />
         </Section>
 
-        <Section id="graph" anchor="08 · AGENT GRAPH" title="Agent graph" desc="How runs dispatch agents. fast = single-agent V1 behavior; careful = planner → coder → reviewer with loop-back; custom = your own YAML.">
+        <Section
+          id="graph"
+          anchor="08 · AGENT GRAPH"
+          title="Agent graph"
+          desc="How runs dispatch agents. fast = single-agent V1 behavior; careful = planner → coder → reviewer with loop-back; custom = your own YAML."
+        >
           <GraphProfileForm
             slug={slug}
             projectSlug={projectSlug}
@@ -298,7 +334,12 @@ export default async function ProjectSettings({
           />
         </Section>
 
-        <Section id="egress" anchor="09 · EGRESS" title="Egress allowlist" desc="Per-project hostname allowlist. Enforced on every HTTP-bound skill, and (when the supervisor runs a docker / kubernetes / fargate / e2b sandbox driver) on the per-run network namespace + DNS resolver. Blocked attempts surface on each run's Network section.">
+        <Section
+          id="egress"
+          anchor="09 · EGRESS"
+          title="Egress allowlist"
+          desc="Per-project hostname allowlist. Enforced on every HTTP-bound skill, and (when the supervisor runs a docker / kubernetes / fargate / e2b sandbox driver) on the per-run network namespace + DNS resolver. Blocked attempts surface on each run's Network section."
+        >
           <EgressAllowlistForm
             slug={slug}
             projectSlug={projectSlug}
@@ -307,11 +348,21 @@ export default async function ProjectSettings({
           />
         </Section>
 
-        <Section id="runner" anchor="10 · RUNNER" title="Runner sandbox" desc="Where the build runs: which image, what resources, what persists between runs. Read from your lifecycle YAML (mergecrew.yaml); edit on the Lifecycle page.">
+        <Section
+          id="runner"
+          anchor="10 · RUNNER"
+          title="Runner sandbox"
+          desc="Where the build runs: which image, what resources, what persists between runs. Read from your lifecycle YAML (mergecrew.yaml); edit on the Lifecycle page."
+        >
           <RunnerSummary orgSlug={slug} projectSlug={projectSlug} runner={runnerCfg} />
         </Section>
 
-        <Section id="dry-run" anchor="11 · DRY RUN" title="Dry run" desc="When on, the runner produces diffs + changeset rows but skips git push, PR creation, and deploys — useful as a tripwire while wiring new tooling.">
+        <Section
+          id="dry-run"
+          anchor="11 · DRY RUN"
+          title="Dry run"
+          desc="When on, the runner produces diffs + changeset rows but skips git push, PR creation, and deploys — useful as a tripwire while wiring new tooling."
+        >
           <DryRunForm
             slug={slug}
             projectSlug={projectSlug}
@@ -320,7 +371,12 @@ export default async function ProjectSettings({
           />
         </Section>
 
-        <Section id="blast-radius" anchor="12 · BLAST RADIUS" title="Blast radius" desc="Hard caps on files / lines per changeset, plus a deny-list of paths the agents cannot touch.">
+        <Section
+          id="blast-radius"
+          anchor="12 · BLAST RADIUS"
+          title="Blast radius"
+          desc="Hard caps on files / lines per changeset, plus a deny-list of paths the agents cannot touch."
+        >
           <BlastRadiusForm
             slug={slug}
             projectSlug={projectSlug}
@@ -331,7 +387,12 @@ export default async function ProjectSettings({
           />
         </Section>
 
-        <Section id="risk-score" anchor="13 · RISK SCORE" title="Risk score" desc="A blended risk number per changeset. Above the threshold, the changeset is blocked from auto-merge. Sensitive paths skew the score upward.">
+        <Section
+          id="risk-score"
+          anchor="13 · RISK SCORE"
+          title="Risk score"
+          desc="A blended risk number per changeset. Above the threshold, the changeset is blocked from auto-merge. Sensitive paths skew the score upward."
+        >
           <RiskScoreForm
             slug={slug}
             projectSlug={projectSlug}
@@ -341,7 +402,12 @@ export default async function ProjectSettings({
           />
         </Section>
 
-        <Section id="auto-promote" anchor="14 · AUTO-PROMOTE" title="Auto-promote rules" desc="Allowlist patterns that let qualifying changesets skip the manual approval gate (e.g. docs-only diffs, dep patch bumps).">
+        <Section
+          id="auto-promote"
+          anchor="14 · AUTO-PROMOTE"
+          title="Auto-promote rules"
+          desc="Allowlist patterns that let qualifying changesets skip the manual approval gate (e.g. docs-only diffs, dep patch bumps)."
+        >
           <a
             href={`/orgs/${slug}/projects/${projectSlug}/settings/auto-promote`}
             className="inline-block text-[13.5px] text-accent underline-offset-[3px] hover:underline"
@@ -350,7 +416,12 @@ export default async function ProjectSettings({
           </a>
         </Section>
 
-        <Section id="rollbacks" anchor="15 · ROLLBACKS" title="Recent rollbacks" desc="Last three merged changesets undone via the one-click rollback button. Each row links to the changeset and its revert PR.">
+        <Section
+          id="rollbacks"
+          anchor="15 · ROLLBACKS"
+          title="Recent rollbacks"
+          desc="Last three merged changesets undone via the one-click rollback button. Each row links to the changeset and its revert PR."
+        >
           <RecentRollbacks
             slug={slug}
             projectSlug={projectSlug}
@@ -358,7 +429,12 @@ export default async function ProjectSettings({
           />
         </Section>
 
-        <Section id="inception" anchor="16 · INCEPTION" title="Project inception" desc="Detect the stack, scripts, and deploy workflows by scanning a fresh clone of the connected repo. Use the draft mergecrew.yaml as the starting point for the first daily run.">
+        <Section
+          id="inception"
+          anchor="16 · INCEPTION"
+          title="Project inception"
+          desc="Detect the stack, scripts, and deploy workflows by scanning a fresh clone of the connected repo. Use the draft mergecrew.yaml as the starting point for the first daily run."
+        >
           <InceptionForm
             slug={slug}
             projectSlug={projectSlug}
@@ -366,7 +442,12 @@ export default async function ProjectSettings({
           />
         </Section>
 
-        <Section id="smoke" anchor="17 · SMOKE TEST" title="Onboarding smoke test" desc="Confirms the round-trip: opens a no-op PR, dispatches the dev deploy, waits for completion, returns the URL. Run this once after configuring the repo + dev deploy target.">
+        <Section
+          id="smoke"
+          anchor="17 · SMOKE TEST"
+          title="Onboarding smoke test"
+          desc="Confirms the round-trip: opens a no-op PR, dispatches the dev deploy, waits for completion, returns the URL. Run this once after configuring the repo + dev deploy target."
+        >
           <SmokeTestForm
             slug={slug}
             projectSlug={projectSlug}

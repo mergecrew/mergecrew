@@ -64,38 +64,36 @@ export function RiskScoreForm({
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-muted">
         After a changeset opens its PR, the runner scores it as{' '}
-        <code>filesChanged + linesChanged × 0.1 + sensitiveHits × 10</code>. Anything strictly
-        above the threshold lands in the inbox as <code>risk_score_high</code> and is held back
-        from auto-promote.
+        <code>filesChanged + linesChanged × 0.1 + sensitiveHits × 10</code>. Anything strictly above
+        the threshold lands in the inbox as <code>risk_score_high</code> and is held back from
+        auto-promote.
       </p>
 
       <label className="block text-sm">
-        <span className="block text-zinc-600 dark:text-zinc-400">Threshold</span>
+        <span className="block text-ink-2">Threshold</span>
         <input
           type="number"
           min="0"
           step="1"
-          className="mt-1 w-full rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700"
+          className="mt-2 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] "
           value={threshold}
           onChange={(e) => setThreshold(e.target.value)}
           disabled={!canEdit || pending}
         />
-        <span className="mt-1 block text-xs text-zinc-500">
+        <span className="mt-1 block text-xs text-muted">
           Default 50: e.g. 50 files OR 500 LOC OR 5 sensitive-path hits each trip the gate alone.
         </span>
       </label>
 
       <div>
-        <div className="text-sm text-zinc-600 dark:text-zinc-400">
+        <div className="text-sm text-ink-2">
           Sensitive path globs{' '}
-          <span className="text-xs text-zinc-400">
-            — each match adds 10 to the score
-          </span>
+          <span className="text-xs text-muted-2">— each match adds 10 to the score</span>
         </div>
         {paths.length === 0 ? (
-          <p className="mt-1 text-xs text-zinc-500">
+          <p className="mt-1 text-xs text-muted">
             No sensitive paths — every file counts equally toward the score.
           </p>
         ) : (
@@ -103,13 +101,13 @@ export function RiskScoreForm({
             {paths.map((p, i) => (
               <li
                 key={p + i}
-                className="flex items-center gap-1 rounded border border-zinc-300 bg-zinc-50 px-2 py-0.5 font-mono text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                className="flex items-center gap-1 rounded border border-zinc-300 bg-bg px-2 py-0.5 font-mono text-xs "
               >
                 <span>{p}</span>
                 {canEdit && (
                   <button
                     type="button"
-                    className="rounded px-1 text-zinc-500 hover:bg-rose-100 hover:text-rose-700 dark:hover:bg-rose-900/30 dark:hover:text-rose-300"
+                    className="rounded px-1 text-muted hover:bg-rose-100 hover:text-rose-700 dark:hover:bg-rose-900/30 dark:hover:text-rose-300"
                     onClick={() => removeGlob(i)}
                     aria-label={`Remove ${p}`}
                     disabled={pending}
@@ -124,7 +122,7 @@ export function RiskScoreForm({
         {canEdit && (
           <div className="mt-2 flex gap-2">
             <input
-              className="flex-1 rounded border px-2 py-1 font-mono text-xs dark:bg-zinc-900 dark:border-zinc-700"
+              className="flex-1 border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] font-mono text-xs "
               value={pickerValue}
               onChange={(e) => setPickerValue(e.target.value)}
               placeholder="e.g. **/auth/**"
@@ -144,7 +142,7 @@ export function RiskScoreForm({
       </div>
 
       {error && (
-        <p className="rounded bg-rose-50 p-2 text-xs text-rose-800 dark:bg-rose-900/20 dark:text-rose-300">
+        <p className="border border-energy bg-energy-soft p-3 text-[12.5px] text-energy-deep">
           {error}
         </p>
       )}
@@ -155,17 +153,17 @@ export function RiskScoreForm({
             <Button variant="primary" onClick={onSave} disabled={!dirty || pending}>
               Save
             </Button>
-            {savedAt && <span className="text-xs text-zinc-500">Saved at {savedAt}.</span>}
+            {savedAt && <span className="text-xs text-muted">Saved at {savedAt}.</span>}
           </>
         ) : (
-          <p className="text-xs text-zinc-500">Only operators can change this.</p>
+          <p className="text-xs text-muted">Only operators can change this.</p>
         )}
         <span className="ml-auto" />
         <a
           href="https://github.com/mergecrew/mergecrew/blob/main/docs/03-infrastructure/11-risk-score-gate.md"
           target="_blank"
           rel="noreferrer"
-          className="text-xs text-zinc-500 underline decoration-dotted hover:text-zinc-700 dark:hover:text-zinc-300"
+          className="text-xs text-muted text-accent underline-offset-[3px] hover:underline hover:text-zinc-700 dark:hover:text-muted-2"
         >
           Tuning guide →
         </a>

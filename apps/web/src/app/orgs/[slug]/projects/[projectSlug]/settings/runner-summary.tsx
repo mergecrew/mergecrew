@@ -92,14 +92,17 @@ export function RunnerSummary({
   if (!runner) {
     return (
       <div className="space-y-3">
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="text-sm text-ink-2">
           This project has no <code className="font-mono text-xs">runner.*</code> config in
           mergecrew.yaml — the sandbox uses the supervisor defaults (default polyglot image, no
           allowlist, no setup script, no caches).
         </p>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          To customize, edit <Link className="underline decoration-dotted" href={lifecycleHref}>your
-          lifecycle YAML</Link>. Common patterns below.
+        <p className="text-sm text-ink-2">
+          To customize, edit{' '}
+          <Link className="text-accent underline-offset-[3px] hover:underline" href={lifecycleHref}>
+            your lifecycle YAML
+          </Link>
+          . Common patterns below.
         </p>
         <Examples />
       </div>
@@ -110,7 +113,12 @@ export function RunnerSummary({
       <table className="w-full text-sm">
         <tbody>
           <Row label="Image" value={runner.image ?? '(supervisor default — runner-polyglot)'} />
-          <Row label="CPU" value={runner.resources?.cpu != null ? String(runner.resources.cpu) : 'unset (host default)'} />
+          <Row
+            label="CPU"
+            value={
+              runner.resources?.cpu != null ? String(runner.resources.cpu) : 'unset (host default)'
+            }
+          />
           <Row
             label="Memory"
             value={
@@ -122,16 +130,22 @@ export function RunnerSummary({
           <Row label="Wall clock" value={fmtDurationMs(runner.resources?.timeoutMs)} />
           <Row label="Setup commands" value={fmtList(runner.setup?.commands, '(none)')} />
           <Row label="Cache paths" value={fmtList(runner.cache?.paths, '(none)')} />
-          <Row label="Egress allowlist" value={fmtList(runner.egress?.allow, '(none — sandbox blocks all)')} />
+          <Row
+            label="Egress allowlist"
+            value={fmtList(runner.egress?.allow, '(none — sandbox blocks all)')}
+          />
         </tbody>
       </table>
-      <p className="text-xs text-zinc-500">
-        Edit these values from <Link className="underline decoration-dotted" href={lifecycleHref}>your
-        lifecycle YAML</Link>. The supervisor's sandbox driver mode (process / docker / kubernetes
-        / fargate / e2b) is configured via the <code className="font-mono">RUNNER_SANDBOX</code>{' '}
-        env on the runner deployment — see{' '}
+      <p className="text-xs text-muted">
+        Edit these values from{' '}
+        <Link className="text-accent underline-offset-[3px] hover:underline" href={lifecycleHref}>
+          your lifecycle YAML
+        </Link>
+        . The supervisor's sandbox driver mode (process / docker / kubernetes / fargate / e2b) is
+        configured via the <code className="font-mono">RUNNER_SANDBOX</code> env on the runner
+        deployment — see{' '}
         <a
-          className="underline decoration-dotted"
+          className="text-accent underline-offset-[3px] hover:underline"
           href="https://github.com/mergecrew/mergecrew/blob/main/docs/03-infrastructure/16-self-host-runbook.md"
           target="_blank"
           rel="noreferrer"
@@ -147,8 +161,8 @@ export function RunnerSummary({
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <tr className="border-t border-zinc-100 align-baseline dark:border-zinc-800">
-      <td className="py-2 pr-4 text-xs uppercase tracking-wide text-zinc-500">{label}</td>
+    <tr className="border-t border-zinc-100 align-baseline ">
+      <td className="py-2 pr-4 text-xs uppercase tracking-wide text-muted">{label}</td>
       <td className="py-2 font-mono text-zinc-800 dark:text-zinc-200">{value}</td>
     </tr>
   );
@@ -157,18 +171,15 @@ function Row({ label, value }: { label: string; value: string }) {
 function Examples() {
   return (
     <details>
-      <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
+      <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted hover:text-zinc-700 dark:hover:text-muted-2">
         Common runner.* config patterns ({EXAMPLES.length})
       </summary>
       <div className="mt-3 grid gap-3 md:grid-cols-2">
         {EXAMPLES.map((ex) => (
-          <div
-            key={ex.title}
-            className="rounded border border-zinc-200 p-3 dark:border-zinc-800"
-          >
+          <div key={ex.title} className="rounded border border-zinc-200 p-3 ">
             <div className="text-sm font-medium">{ex.title}</div>
-            <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">{ex.description}</p>
-            <pre className="mt-2 overflow-x-auto rounded bg-zinc-50 p-2 text-[11px] leading-snug text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+            <p className="mt-1 text-xs text-ink-2">{ex.description}</p>
+            <pre className="mt-2 overflow-x-auto rounded bg-bg p-2 text-[11px] leading-snug text-zinc-700  dark:text-muted-2">
               {ex.yaml}
             </pre>
           </div>

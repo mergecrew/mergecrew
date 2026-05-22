@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { Button } from '@/components/ui';
+import { Button, Input } from '@/components/ui';
 import { updateProjectAction } from './settings-actions';
 
 export function GeneralForm({
@@ -41,53 +41,54 @@ export function GeneralForm({
   };
 
   return (
-    <div className="space-y-3">
-      <label className="block text-sm">
-        <span className="block text-zinc-600 dark:text-zinc-400">Name</span>
-        <input
-          className="mt-1 w-full rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
+    <div className="space-y-4">
+      <label className="block">
+        <span className="block font-mono text-[11px] uppercase tracking-[0.08em] text-muted">
+          Name
+        </span>
+        <Input className="mt-2" value={name} onChange={(e) => setName(e.target.value)} />
       </label>
-      <label className="block text-sm">
-        <span className="block text-zinc-600 dark:text-zinc-400">
+      <label className="block">
+        <span className="block font-mono text-[11px] uppercase tracking-[0.08em] text-muted">
           Description{' '}
-          <span className="text-xs text-zinc-400">— shown to agents and humans alike</span>
+          <span className="text-[11px] normal-case tracking-normal text-muted-2">
+            — shown to agents and humans alike
+          </span>
         </span>
         <textarea
-          className="mt-1 w-full rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700"
+          className="mt-2 w-full border border-hair bg-paper-2 px-3 py-2 text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)]"
           rows={3}
           placeholder="What this project is, who it's for, and the technical context that any new contributor (or agent) should know."
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
       </label>
-      <label className="block text-sm">
-        <span className="block text-zinc-600 dark:text-zinc-400">Slug</span>
-        <input
-          className="mt-1 w-full cursor-not-allowed rounded border bg-zinc-50 px-2 py-1 font-mono text-zinc-500 dark:bg-zinc-900 dark:border-zinc-700"
+      <label className="block">
+        <span className="block font-mono text-[11px] uppercase tracking-[0.08em] text-muted">
+          Slug
+        </span>
+        <Input
+          className="mt-2 cursor-not-allowed bg-bg text-muted"
+          mono
           value={projectSlug}
           readOnly
         />
       </label>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={onSave} disabled={pending || !dirty} variant="primary">
+        <Button onClick={onSave} disabled={pending || !dirty} variant="accent" size="sm">
           Save changes
         </Button>
-        {savedAt && (
-          <span className="text-xs text-zinc-500">Saved at {savedAt}.</span>
-        )}
+        {savedAt && <span className="font-mono text-[11.5px] text-muted">Saved at {savedAt}.</span>}
         <span className="ml-auto" />
-        <Button onClick={onArchive} disabled={pending} variant="secondary">
+        <Button onClick={onArchive} disabled={pending} variant="ghost" size="sm">
           {archived ? 'Unarchive project' : 'Archive project'}
         </Button>
       </div>
       {archived && (
-        <p className="rounded bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
-          This project is archived — it won't be picked up by the daily scheduler. You can still
-          view its history.
+        <p className="m-0 border border-warn bg-warn/20 p-3 text-[12.5px] text-ink">
+          This project is archived — it won&apos;t be picked up by the daily scheduler. You can
+          still view its history.
         </p>
       )}
     </div>

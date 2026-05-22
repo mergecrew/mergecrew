@@ -9,11 +9,11 @@
  * resolver so the sandbox can't reach hosts outside the list.
  *
  * Semantics (matching packages/skills/src/egress-policy.ts):
- *   - \`null\` (UI: "unrestricted") = back-compat default, no check.
- *   - \`[]\` = block all outbound HTTP.
- *   - \`['*']\` = explicit allow-all (still blocks loopback / RFC1918).
- *   - otherwise: each entry matches by exact host or \`*.suffix\` strict
- *     subdomain.
+ * - \`null\` (UI: "unrestricted") = back-compat default, no check.
+ * - \`[]\` = block all outbound HTTP.
+ * - \`['*']\` = explicit allow-all (still blocks loopback / RFC1918).
+ * - otherwise: each entry matches by exact host or \`*.suffix\` strict
+ * subdomain.
  */
 
 import { useState, useTransition } from 'react';
@@ -97,7 +97,7 @@ export function EgressAllowlistForm({
         />
         <span>
           <span className="font-medium">Restrict outbound network to an allowlist</span>
-          <span className="block text-zinc-600 dark:text-zinc-400">
+          <span className="block text-ink-2">
             When off, skills + sandboxes reach any public host (back-compat default). When on, only
             the hosts you list below are reachable; everything else is blocked at the skill layer
             and (for docker / k8s / fargate / e2b drivers) at the per-run network namespace.
@@ -106,12 +106,12 @@ export function EgressAllowlistForm({
       </label>
 
       {restricted && (
-        <div className="space-y-2 rounded border border-zinc-200 p-3 dark:border-zinc-800">
-          <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500">
+        <div className="space-y-2 rounded border border-zinc-200 p-3 ">
+          <label className="block text-xs font-semibold uppercase tracking-wide text-muted">
             Allowed hosts (one per line)
           </label>
           <textarea
-            className="w-full rounded border border-zinc-300 bg-white p-2 font-mono text-xs text-zinc-800 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200"
+            className="w-full rounded border border-zinc-300 bg-white p-2 font-mono text-xs text-zinc-800 dark:bg-zinc-950 dark:text-zinc-200"
             rows={Math.max(5, Math.min(15, (textValue.split('\n').length || 0) + 1))}
             value={textValue}
             onChange={(e) => setTextValue(e.target.value)}
@@ -119,10 +119,10 @@ export function EgressAllowlistForm({
             placeholder={'api.github.com\n*.npmjs.org\n*.pypi.org'}
           />
           <div className="flex flex-wrap items-baseline justify-between gap-2 text-xs">
-            <p className="text-zinc-500">
-              Exact match (<code>api.github.com</code>) or wildcard suffix (
-              <code>*.pypi.org</code>, matches strict subdomains only). <code>*</code> is explicit
-              allow-all. Loopback + RFC1918 are always blocked.
+            <p className="text-muted">
+              Exact match (<code>api.github.com</code>) or wildcard suffix (<code>*.pypi.org</code>,
+              matches strict subdomains only). <code>*</code> is explicit allow-all. Loopback +
+              RFC1918 are always blocked.
             </p>
             <button
               type="button"
@@ -133,8 +133,8 @@ export function EgressAllowlistForm({
               Save list
             </button>
           </div>
-          <div className="border-t border-zinc-100 pt-2 text-xs dark:border-zinc-800">
-            <div className="mb-1 text-zinc-500">Common patterns — click to add:</div>
+          <div className="border-t border-zinc-100 pt-2 text-xs ">
+            <div className="mb-1 text-muted">Common patterns — click to add:</div>
             <div className="flex flex-wrap gap-1">
               {COMMON_PATTERNS.map((p) => (
                 <button
@@ -142,7 +142,7 @@ export function EgressAllowlistForm({
                   type="button"
                   onClick={() => addPattern(p)}
                   disabled={pending || !canEdit}
-                  className="rounded border border-zinc-300 bg-white px-1.5 py-0.5 font-mono text-[11px] text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  className="rounded border border-zinc-300 bg-white px-1.5 py-0.5 font-mono text-[11px] text-zinc-700 hover:bg-bg disabled:opacity-40 dark:text-muted-2 dark:hover:bg-zinc-800"
                 >
                   + {p}
                 </button>
@@ -150,7 +150,7 @@ export function EgressAllowlistForm({
             </div>
           </div>
           {draft?.length === 0 && (
-            <p className="rounded bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+            <p className="border border-warn bg-warn/20 p-3 text-[12.5px] text-ink">
               The allowlist is empty — <strong>all outbound HTTP is blocked</strong>. Add at least
               one pattern to allow skills + sandboxes to reach the network.
             </p>
