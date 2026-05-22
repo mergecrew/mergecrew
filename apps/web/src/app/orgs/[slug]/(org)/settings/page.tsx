@@ -19,6 +19,7 @@ import { LlmProfilesCard } from '@/components/llm-profiles-card';
 import { MfaRequiredCallout } from '@/components/mfa-required-callout';
 import { OrgGeneralForm } from './org-general-form';
 import { MembersSection } from './members-section';
+import { SlackWebhookForm } from './slack-webhook-form';
 
 interface BudgetInfo {
   dailyBudgetUsd: number | null;
@@ -110,6 +111,7 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
     telemetryRecent,
     evals,
     auditLog,
+    slack,
   ] = await Promise.all([
     api<any>(`/v1/orgs/${slug}`, { session }),
     api<{ items: any[] }>(`/v1/orgs/${slug}/members`, { session }),
@@ -141,6 +143,10 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
         actor: { id: string; email: string; name: string | null } | null;
       }>;
     }>(`/v1/orgs/${slug}/audit-log?limit=50`, { session }).catch(() => ({ items: [] })),
+    api<{ configured: boolean; createdAt: string | null }>(
+      `/v1/orgs/${slug}/notifications/slack`,
+      { session },
+    ).catch(() => ({ configured: false, createdAt: null })),
   ]);
   const monthlyPct =
     spendCap.monthlySpendCapUsd && spendCap.monthlySpendCapUsd > 0
@@ -177,6 +183,7 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
       items: [
         { id: 'evals', label: 'Nightly evals' },
         { id: 'webhooks', label: 'Outbound webhooks' },
+        { id: 'slack', label: 'Slack notifications' },
         { id: 'api-keys', label: 'API keys' },
         { id: 'audit-log', label: 'Audit log' },
       ],
@@ -727,8 +734,17 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
         </Section>
 
         <Section
-          id="api-keys"
+          id="slack"
           anchor="OPS · 009"
+          title="Slack notifications"
+          desc="Post digests and SLO breach alerts to a Slack channel via Incoming Webhook. Self-host friendly: no OAuth dance, no third-party app install."
+        >
+          <SlackWebhookForm slug={slug} initial={slack} canEdit={canEdit} />
+        </Section>
+
+        <Section
+          id="api-keys"
+          anchor="OPS · 010"
           title="API keys"
           desc={
             <>
@@ -752,7 +768,7 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
 
         <Section
           id="audit-log"
-          anchor="OPS · 010"
+          anchor="OPS · 011"
           title="Audit log"
           desc={
             <>
@@ -812,7 +828,7 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
 
         <Section
           id="telemetry"
-          anchor="PRIVACY · 011"
+          anchor="PRIVACY · 012"
           title="Anonymous usage telemetry"
           desc={
             <>
@@ -895,7 +911,7 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
 
         <Section
           id="danger"
-          anchor="ORG · 011"
+          anchor="ORG · 013"
           title="Danger zone"
           desc="Org-wide destructive actions. Requires owner role; the API doesn't ship self-serve transfer or delete yet — open an issue to coordinate."
         >
