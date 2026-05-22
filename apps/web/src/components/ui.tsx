@@ -530,3 +530,74 @@ export function Stat({
     </div>
   );
 }
+
+/* SLO health badge (V2.af / #746). Compact green/amber/red dot +
+   optional label derived from worst SLO state across the project.
+   `unconfigured` is its own state so the UI doesn't imply "healthy"
+   for projects that haven't defined any SLOs. */
+export type HealthBadgeState =
+  | 'OK'
+  | 'AT_RISK'
+  | 'BREACHING'
+  | 'INSUFFICIENT_DATA'
+  | 'UNCONFIGURED';
+
+export function HealthBadge({
+  state,
+  label,
+  tooltip,
+  size = 'sm',
+}: {
+  state: HealthBadgeState;
+  /** When undefined, defaults to the lower-cased state. */
+  label?: string;
+  /** Comma-joined SLO names that drove the state — shown on hover. */
+  tooltip?: string;
+  size?: 'sm' | 'xs';
+}) {
+  const dot =
+    state === 'OK'
+      ? 'bg-positive'
+      : state === 'AT_RISK'
+        ? 'bg-warn'
+        : state === 'BREACHING'
+          ? 'bg-energy'
+          : 'bg-muted';
+  const text =
+    state === 'OK'
+      ? 'text-positive-deep'
+      : state === 'AT_RISK'
+        ? 'text-warn-deep'
+        : state === 'BREACHING'
+          ? 'text-energy-deep'
+          : 'text-muted';
+  const resolved = label ?? defaultLabel(state);
+  return (
+    <span
+      title={tooltip}
+      className={clsx(
+        'inline-flex items-center gap-[6px] font-mono uppercase tracking-[0.06em]',
+        size === 'xs' ? 'text-[10px]' : 'text-[10.5px]',
+        text,
+      )}
+    >
+      <span className={clsx('inline-block rounded-full', dot, size === 'xs' ? 'h-[5px] w-[5px]' : 'h-[6px] w-[6px]')} />
+      <span>{resolved}</span>
+    </span>
+  );
+}
+
+function defaultLabel(state: HealthBadgeState): string {
+  switch (state) {
+    case 'OK':
+      return 'healthy';
+    case 'AT_RISK':
+      return 'at risk';
+    case 'BREACHING':
+      return 'breaching';
+    case 'INSUFFICIENT_DATA':
+      return 'no data';
+    case 'UNCONFIGURED':
+      return 'no SLOs';
+  }
+}

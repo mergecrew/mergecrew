@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { clsx } from 'clsx';
+import { HealthBadge } from '../ui';
 
 type Item = { label: string; href: string; count?: string; livePending?: boolean };
 type Group = { label: string; items: Item[] };
@@ -181,12 +182,18 @@ export function ProjectSidebar({
   projectName,
   status = 'running',
   awaitingApproval,
+  health,
 }: {
   orgSlug: string;
   projectSlug: string;
   projectName?: string;
   status?: 'running' | 'paused' | 'failed';
   awaitingApproval?: boolean;
+  health?: {
+    worstState: 'OK' | 'AT_RISK' | 'BREACHING' | 'INSUFFICIENT_DATA' | 'UNCONFIGURED';
+    breachingSloNames: string[];
+    atRiskSloNames: string[];
+  } | null;
 }) {
   const base = `/orgs/${orgSlug}/projects/${projectSlug}`;
   const groups: Group[] = [
@@ -234,6 +241,26 @@ export function ProjectSidebar({
           />
           <span>{status}</span>
         </div>
+        {health && (
+          <div className="mt-[8px]">
+            <Link
+              href={`/orgs/${orgSlug}/projects/${projectSlug}/settings#slos`}
+              className="no-underline"
+            >
+              <HealthBadge
+                state={health.worstState}
+                tooltip={
+                  health.breachingSloNames.length > 0
+                    ? `Breaching: ${health.breachingSloNames.join(', ')}`
+                    : health.atRiskSloNames.length > 0
+                      ? `At risk: ${health.atRiskSloNames.join(', ')}`
+                      : undefined
+                }
+                size="xs"
+              />
+            </Link>
+          </div>
+        )}
       </div>
       {groups.map((g) => (
         <GroupRender key={g.label} group={g} allHrefs={allHrefs} />

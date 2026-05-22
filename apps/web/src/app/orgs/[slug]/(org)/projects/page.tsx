@@ -1,9 +1,24 @@
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
-import { LinkButton, PageHead, Chip, StatBadge } from '@/components/ui';
+import {
+  HealthBadge,
+  LinkButton,
+  PageHead,
+  Chip,
+  StatBadge,
+  type HealthBadgeState,
+} from '@/components/ui';
 import { FirstRunEmptyState } from '@/components/first-run-empty-state';
 import { relativeTime } from '@/lib/format';
+
+interface ProjectHealth {
+  projectId: string;
+  projectSlug: string;
+  worstState: HealthBadgeState;
+  breachingSloNames: string[];
+  atRiskSloNames: string[];
+}
 
 type Project = {
   id: string;
@@ -28,8 +43,14 @@ export default async function ProjectsPage({
 }) {
   const { slug } = await params;
   const session = await requireSession();
-  const projects = await api<{ items: Project[] }>(`/v1/orgs/${slug}/projects`, { session });
+  const [projects, health] = await Promise.all([
+    api<{ items: Project[] }>(`/v1/orgs/${slug}/projects`, { session }),
+    api<{ items: ProjectHealth[] }>(`/v1/orgs/${slug}/projects-health`, {
+      session,
+    }).catch(() => ({ items: [] }) as { items: ProjectHealth[] }),
+  ]);
   const items = projects.items ?? [];
+  const healthBySlug = new Map(health.items.map((h) => [h.projectSlug, h]));
 
   return (
     <main className="mx-auto max-w-[1280px] px-4 py-5 sm:px-9 sm:py-7">
@@ -61,6 +82,15 @@ export default async function ProjectsPage({
               : p.runsPausedAt
                 ? 'paused'
                 : 'active';
+            const h = healthBySlug.get(p.slug);
+            const breachers = h?.breachingSloNames ?? [];
+            const atRisks = h?.atRiskSloNames ?? [];
+            const healthTooltip =
+              breachers.length > 0
+                ? `Breaching: ${breachers.join(', ')}`
+                : atRisks.length > 0
+                  ? `At risk: ${atRisks.join(', ')}`
+                  : undefined;
             return (
               <li key={p.id}>
                 <Link
@@ -78,17 +108,26 @@ export default async function ProjectsPage({
                         </div>
                         <div className="mt-[2px] font-mono text-[11.5px] text-muted">/{p.slug}</div>
                       </div>
-                      <StatBadge
-                        kind={
-                          state === 'active'
-                            ? 'healthy'
-                            : state === 'paused'
-                              ? 'warn'
-                              : 'disabled'
-                        }
-                      >
-                        {state}
-                      </StatBadge>
+                      <div className="flex flex-col items-end gap-1">
+                        <StatBadge
+                          kind={
+                            state === 'active'
+                              ? 'healthy'
+                              : state === 'paused'
+                                ? 'warn'
+                                : 'disabled'
+                          }
+                        >
+                          {state}
+                        </StatBadge>
+                        {h && (
+                          <HealthBadge
+                            state={h.worstState}
+                            tooltip={healthTooltip}
+                            size="xs"
+                          />
+                        )}
+                      </div>
                     </div>
                     {p.description && (
                       <p className="m-0 line-clamp-2 text-[13px] leading-[1.55] text-ink-2">

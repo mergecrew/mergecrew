@@ -1691,6 +1691,34 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/projects-health": {
+      "get": {
+        "operationId": "HealthController_orgProjectsHealth",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/health": {
+      "get": {
+        "operationId": "HealthController_projectHealth",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Health"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/llm/providers": {
       "get": {
         "operationId": "LlmController_listProviders",

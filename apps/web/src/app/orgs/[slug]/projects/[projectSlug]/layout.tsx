@@ -15,6 +15,12 @@ type Project = {
 
 type OrgSummary = { name: string; slug: string };
 
+type ProjectHealth = {
+  worstState: 'OK' | 'AT_RISK' | 'BREACHING' | 'INSUFFICIENT_DATA' | 'UNCONFIGURED';
+  breachingSloNames: string[];
+  atRiskSloNames: string[];
+};
+
 export default async function ProjectLayout({
   children,
   params,
@@ -28,10 +34,14 @@ export default async function ProjectLayout({
 
   let project: Project | null = null;
   let org: OrgSummary | null = null;
+  let health: ProjectHealth | null = null;
   try {
-    [project, org] = await Promise.all([
+    [project, org, health] = await Promise.all([
       api<Project>(`/v1/orgs/${slug}/projects/${projectSlug}`, { session }),
       api<OrgSummary>(`/v1/orgs/${slug}`, { session }).catch(() => null) as Promise<OrgSummary | null>,
+      api<ProjectHealth>(`/v1/orgs/${slug}/projects/${projectSlug}/health`, { session }).catch(
+        () => null,
+      ) as Promise<ProjectHealth | null>,
     ]);
   } catch {
     /* fall through; pages will surface the error */
@@ -56,6 +66,7 @@ export default async function ProjectLayout({
           projectName={project?.name}
           status={project?.status ?? 'running'}
           awaitingApproval={project?.awaitingApproval}
+          health={health}
         />
       }
     >
