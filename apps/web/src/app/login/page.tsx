@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { signIn } from '@/auth';
 import { isDevAutoLogin, SIGNED_OUT_COOKIE } from '@/lib/session';
 import { Wordmark, Label, Arrow } from '@/components/ui';
+import { Mast } from '@/components/landing/mast';
 import { requestMagicLink } from './actions';
 
 export const dynamic = 'force-dynamic';
@@ -26,22 +27,6 @@ async function sendMagicLinkAction(formData: FormData) {
   const r = await requestMagicLink(formData);
   if (r.ok) redirect(`/login?sent=${encodeURIComponent(r.email)}`);
   redirect(`/login?error=${encodeURIComponent('request_failed')}`);
-}
-
-function Mast() {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-t border-ink bg-ink px-[36px] py-[10px] font-mono text-[11px] uppercase tracking-[0.1em] text-paper md:px-[80px]">
-      <div className="flex flex-wrap items-center gap-x-[28px] gap-y-1">
-        <span>Issue No. 142</span>
-        <span>Thursday, 21 May 2026</span>
-        <span>Apache 2.0</span>
-      </div>
-      <div className="flex items-center gap-2 text-accent-soft">
-        <span className="h-[6px] w-[6px] rounded-full bg-energy animate-pulse-energy" />
-        shipping its own PRs since v0.1
-      </div>
-    </div>
-  );
 }
 
 const FEATS = [
