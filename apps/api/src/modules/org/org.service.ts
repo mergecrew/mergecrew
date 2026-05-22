@@ -555,13 +555,32 @@ export class OrgService {
 
   async listAuditLog(opts: { limit?: number }) {
     const t = this.tenant.require();
-    return this.prisma.withTenant(t.organizationId, (tx) =>
+    const entries = await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.auditLogEntry.findMany({
         where: { organizationId: t.organizationId },
         orderBy: { occurredAt: 'desc' },
         take: opts.limit ?? 100,
       }),
     );
+    // Resolve actor emails in a second query. AuditLogEntry doesn't
+    // carry a User relation in the schema (actorUserId is a plain
+    // uuid), so the response is enriched here.
+    const actorIds = Array.from(
+      new Set(entries.map((e) => e.actorUserId).filter((id): id is string => !!id)),
+    );
+    const users = actorIds.length
+      ? await this.prisma.withSystem((tx) =>
+          tx.user.findMany({
+            where: { id: { in: actorIds } },
+            select: { id: true, email: true, name: true },
+          }),
+        )
+      : [];
+    const byId = new Map(users.map((u) => [u.id, u] as const));
+    return entries.map((e) => ({
+      ...e,
+      actor: e.actorUserId ? (byId.get(e.actorUserId) ?? null) : null,
+    }));
   }
 
   /**
