@@ -119,30 +119,31 @@ export function LifecycleEditor({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2 border-b pb-2 dark:border-zinc-800">
+      <div className="flex flex-wrap items-center gap-2 border-b border-hair pb-2">
         {(['graph', 'agents', 'workflows', 'skills', 'gates', 'source'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={
-              'rounded px-3 py-1 text-sm capitalize transition ' +
+              'px-3 py-[6px] text-[13px] font-medium capitalize transition-colors border ' +
               (tab === t
-                ? 'bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900'
-                : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800')
+                ? 'border-ink bg-ink text-paper'
+                : 'border-transparent text-ink-2 hover:bg-paper-2')
             }
           >
             {t}
           </button>
         ))}
-        <span className="ml-auto text-xs text-zinc-500">v{parsed.version ?? 1}</span>
+        <span className="ml-auto font-mono text-[11.5px] text-muted">v{parsed.version ?? 1}</span>
         {readOnly && (
-          <span className="rounded bg-zinc-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+          <span className="bg-bg border border-hair px-[8px] py-[2px] font-mono text-[10.5px] uppercase tracking-[0.06em] text-muted">
             read-only
           </span>
         )}
         {showApplyTemplate && scope.kind === 'project' && !readOnly && (
           <Button
-            variant="secondary"
+            variant="ghost"
+            size="sm"
             disabled={pending}
             onClick={() =>
               wrap(() => applyOrgTemplateAction(scope, 'default'), 'Org default template applied as a new lifecycle version.')
@@ -154,12 +155,12 @@ export function LifecycleEditor({
       </div>
 
       {error && (
-        <div className="rounded bg-rose-50 p-2 text-xs text-rose-800 dark:bg-rose-900/20 dark:text-rose-300">
+        <div className="border border-energy bg-energy-soft p-3 text-[12.5px] text-energy-deep">
           {error}
         </div>
       )}
       {info && (
-        <div className="rounded bg-green-50 p-2 text-xs text-green-800 dark:bg-green-900/20 dark:text-green-300">
+        <div className="border border-positive bg-positive-soft p-3 text-[12.5px] text-positive-deep">
           {info}
         </div>
       )}

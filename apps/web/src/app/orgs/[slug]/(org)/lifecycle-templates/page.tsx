@@ -71,7 +71,7 @@ export default async function OrgLifecycleTemplatePage({
         }
       />
 
-      <Card>
+      <Card className="p-5">
         <LifecycleEditor
           scope={scope}
           parsed={{ ...tpl.parsed, version: 1 }}

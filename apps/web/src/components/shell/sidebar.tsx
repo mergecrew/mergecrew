@@ -7,13 +7,39 @@ import { clsx } from 'clsx';
 type Item = { label: string; href: string; count?: string; livePending?: boolean };
 type Group = { label: string; items: Item[] };
 
-function NavItem({ label, href, count, livePending }: Item) {
+// Active item = longest href that the current path matches. Falling
+// back to plain `startsWith(href + '/')` would mark *every* parent
+// link active for nested routes (Today + Runs both highlight when the
+// user is on /runs/abc123), which is the bug fixed by #706.
+function isActive(pathname: string | null, href: string, allHrefs: string[]): boolean {
+  if (!pathname) return false;
+  if (pathname === href) return true;
+  if (href === '/' || !pathname.startsWith(href + '/')) return false;
+  for (const other of allHrefs) {
+    if (other === href) continue;
+    if (
+      other.length > href.length &&
+      other.startsWith(href) &&
+      (pathname === other || pathname.startsWith(other + '/'))
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function NavItem({
+  item,
+  allHrefs,
+}: {
+  item: Item;
+  allHrefs: string[];
+}) {
   const pathname = usePathname();
-  const active =
-    pathname === href || (href !== '/' && pathname?.startsWith(href + '/'));
+  const active = isActive(pathname, item.href, allHrefs);
   return (
     <Link
-      href={href}
+      href={item.href}
       className={clsx(
         'flex items-center gap-[10px] rounded-md border px-[10px] py-[8px] text-[13.5px] font-medium no-underline',
         'transition-colors duration-100',
@@ -29,36 +55,40 @@ function NavItem({ label, href, count, livePending }: Item) {
         )}
       />
       <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-        {label}
+        {item.label}
       </span>
-      {count && (
+      {item.count && (
         <span
           className={clsx(
             'ml-auto rounded-[8px] px-[6px] py-[1px] font-mono text-[10.5px]',
             active ? 'bg-accent text-paper' : 'bg-bg text-muted',
           )}
         >
-          {count}
+          {item.count}
         </span>
       )}
-      {livePending && (
+      {item.livePending && (
         <span className="ml-auto h-[6px] w-[6px] rounded-full bg-energy animate-pulse-energy" />
       )}
     </Link>
   );
 }
 
-function GroupRender({ group }: { group: Group }) {
+function GroupRender({ group, allHrefs }: { group: Group; allHrefs: string[] }) {
   return (
     <div>
       <div className="px-[10px] pt-[14px] pb-[6px] font-mono text-[10px] uppercase tracking-[0.1em] text-muted">
         {group.label}
       </div>
       {group.items.map((it) => (
-        <NavItem key={it.href} {...it} />
+        <NavItem key={it.href} item={it} allHrefs={allHrefs} />
       ))}
     </div>
   );
+}
+
+function allHrefsOf(groups: Group[]): string[] {
+  return groups.flatMap((g) => g.items.map((i) => i.href));
 }
 
 export function OrgSidebar({
@@ -108,6 +138,7 @@ export function OrgSidebar({
       items: [{ label: 'Org settings', href: `${base}/settings` }],
     },
   ];
+  const allHrefs = allHrefsOf(groups);
   return (
     <aside className="flex h-full w-[260px] flex-col gap-2 overflow-y-auto border-r border-hair bg-paper p-[22px_14px]">
       <div className="mb-[6px] border-b border-hair-2 pb-[14px]">
@@ -127,7 +158,7 @@ export function OrgSidebar({
         )}
       </div>
       {groups.map((g) => (
-        <GroupRender key={g.label} group={g} />
+        <GroupRender key={g.label} group={g} allHrefs={allHrefs} />
       ))}
       {mtdSpend && (
         <div className="mt-auto border-t border-hair-2 pt-[12px] px-[10px]">
@@ -180,6 +211,7 @@ export function ProjectSidebar({
       items: [{ label: 'Project settings', href: `${base}/settings` }],
     },
   ];
+  const allHrefs = allHrefsOf(groups);
   return (
     <aside className="flex h-full w-[260px] flex-col gap-2 overflow-y-auto border-r border-hair bg-paper p-[22px_14px]">
       <div className="mb-[6px] border-b border-hair-2 pb-[14px]">
@@ -202,7 +234,7 @@ export function ProjectSidebar({
         </div>
       </div>
       {groups.map((g) => (
-        <GroupRender key={g.label} group={g} />
+        <GroupRender key={g.label} group={g} allHrefs={allHrefs} />
       ))}
     </aside>
   );
