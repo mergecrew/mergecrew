@@ -122,6 +122,7 @@ export function OrgSidebar({
     {
       label: 'Operations',
       items: [
+        { label: 'Metrics', href: `${base}/metrics` },
         { label: 'Costs', href: `${base}/costs` },
         { label: 'Evals', href: `${base}/evals` },
       ],
