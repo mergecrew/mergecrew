@@ -54,11 +54,11 @@ function TimelineRows({ events }: { events: Ev[] }) {
         const link = runbookLinkFor(e);
         return (
           <li key={e.id} className="flex gap-3 text-sm">
-            <span className="text-zinc-400 w-20 shrink-0 font-mono">
+            <span className="text-muted-2 w-20 shrink-0 font-mono">
               {new Date(e.occurredAt).toLocaleTimeString()}
             </span>
-            <span className="font-mono text-xs text-zinc-500 w-44 shrink-0">{e.type}</span>
-            <span className="text-zinc-800 dark:text-zinc-200">
+            <span className="font-mono text-xs text-muted w-44 shrink-0">{e.type}</span>
+            <span className="text-ink">
               {briefFor(e)}
               {link && (
                 <>

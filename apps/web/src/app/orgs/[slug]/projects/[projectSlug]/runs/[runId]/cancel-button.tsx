@@ -45,7 +45,7 @@ export function ForceCancelButton({
       <Button variant="secondary" disabled={pending} onClick={onClick}>
         Force-fail
       </Button>
-      {error && <span className="text-[11px] text-rose-600">{error}</span>}
+      {error && <span className="text-[11px] text-energy-deep">{error}</span>}
     </div>
   );
 }
