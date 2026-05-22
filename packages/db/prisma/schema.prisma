@@ -281,6 +281,7 @@ model Project {
   timelineEvents    TimelineEvent[]
   deploys           Deploy[]
   graphLayouts      LifecycleGraphLayout[]
+  slos              ProjectSlo[]
 
   @@unique([organizationId, slug])
   @@map("projects")
@@ -806,6 +807,37 @@ model MetricsRollup {
   @@index([organizationId, granularity, bucket(sort: Desc)])
   @@index([projectId, granularity, bucket(sort: Desc)])
   @@map("metrics_rollups")
+}
+
+/// Per-project SLO target (V2.af / #745). The evaluator
+/// (`worker-cron/slo-evaluator-tick`) reads recent MetricsRollup rows
+/// for each enabled SLO, computes the current state (OK / AT_RISK /
+/// BREACHING / INSUFFICIENT_DATA), and emits a TimelineEvent of type
+/// `slo.transitioned` when the state changes. Current state is derived
+/// from the timeline on read — not stored here — so the UI has a
+/// single source of truth.
+model ProjectSlo {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  projectId      String   @map("project_id") @db.Uuid
+  name           String
+  /// One of: 'stepPassRate' | 'runFailureRate' | 'p95StepMs' | 'dailyCostUsd'.
+  /// Enforced in SQL by a CHECK constraint.
+  metric         String
+  /// 'gte' (actual must be ≥ threshold) or 'lte' (actual must be ≤ threshold).
+  comparator     String
+  /// Compared against the metric in the metric's natural unit
+  /// (percent for rates, ms for latency, USD for cost).
+  threshold      Decimal  @db.Decimal(12, 4)
+  windowHours    Int      @map("window_hours")
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, enabled])
+  @@map("project_slos")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

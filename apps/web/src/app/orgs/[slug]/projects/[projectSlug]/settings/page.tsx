@@ -20,6 +20,8 @@ import { RecentRollbacks } from './recent-rollbacks';
 import { GraphProfileForm } from './graph-profile-form';
 import { RunnerSummary } from './runner-summary';
 import { EgressAllowlistForm } from './egress-allowlist-form';
+import { SlosForm } from './slos-form';
+import type { SloListResponse } from './slos-actions';
 
 const NAV = [
   {
@@ -63,6 +65,10 @@ const NAV = [
       { id: 'inception', label: 'Project inception' },
       { id: 'smoke', label: 'Onboarding smoke test' },
     ],
+  },
+  {
+    label: 'Operations',
+    items: [{ id: 'slos', label: 'SLOs' }],
   },
   {
     label: 'Audit',
@@ -165,6 +171,11 @@ export default async function ProjectSettings({
         { session },
       ).catch(() => ({ items: [] }))
     : { items: [] };
+
+  const slos = await api<SloListResponse>(
+    `/v1/orgs/${slug}/projects/${projectSlug}/slos`,
+    { session },
+  ).catch(() => ({ items: [] }) as SloListResponse);
 
   const lifecycleResp = await api<{ parsed?: { runner?: Record<string, unknown> } } | null>(
     `/v1/orgs/${slug}/projects/${projectSlug}/lifecycle`,
@@ -488,8 +499,22 @@ export default async function ProjectSettings({
         </Section>
 
         <Section
+          id="slos"
+          anchor="18 · OPERATIONS"
+          title="SLOs"
+          desc="Service-level objectives evaluated every 5 minutes against the metrics rollups. Breaches and recoveries appear on the project activity stream and are routed to your alert channels."
+        >
+          <SlosForm
+            slug={slug}
+            projectSlug={projectSlug}
+            initial={slos}
+            canEdit={canEdit}
+          />
+        </Section>
+
+        <Section
           id="audit-log"
-          anchor="18 · AUDIT"
+          anchor="19 · AUDIT"
           title="Audit log"
           desc={
             isAdmin ? (

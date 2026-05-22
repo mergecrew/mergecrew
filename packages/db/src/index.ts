@@ -9,6 +9,14 @@ export {
   type ComputeMetricsRollupsResult,
 } from './metrics-rollups.js';
 export {
+  evaluateSlo,
+  type SloMetric,
+  type SloComparator,
+  type SloState,
+  type SloDefinition,
+  type SloEvaluationResult,
+} from './slo-evaluator.js';
+export {
   seedDemoProject,
   DEMO_PROJECT_SLUG,
   DEMO_PROJECT_NAME,
@@ -46,4 +54,5 @@ export type {
   AuditLogEntry,
   MetricsRollup,
   ProjectSecret,
+  ProjectSlo,
 } from '@prisma/client';
