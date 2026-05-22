@@ -267,6 +267,10 @@ export function Mark({ size = 32 }: { size?: number }) {
   );
 }
 
+// Bump in lockstep with apps/web/package.json. Render-only; the
+// orchestrator + API services have their own version strings.
+const WEB_VERSION = '0.1.0';
+
 export function Wordmark({ withTag = true, href = '/' }: { withTag?: boolean; href?: string }) {
   return (
     <Link href={href} className="group inline-flex items-center gap-[14px] no-underline text-ink">
@@ -274,7 +278,7 @@ export function Wordmark({ withTag = true, href = '/' }: { withTag?: boolean; hr
       <span className="text-[19px] font-semibold tracking-[-0.025em]">Mergecrew</span>
       {withTag && (
         <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted">
-          v0.4 · alpha
+          v{WEB_VERSION} · alpha
         </span>
       )}
     </Link>
