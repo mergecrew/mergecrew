@@ -26,19 +26,17 @@ export function OnboardingChecklist(props: OnboardingChecklistProps) {
   if (remaining === 0) return null;
 
   return (
-    <Card className="border-amber-300 bg-amber-50/60 dark:border-amber-700/40 dark:bg-amber-950/30">
+    <Card className="border-warn bg-warn/20">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
-          <h2 className="font-medium text-amber-900 dark:text-amber-100">
-            Finish setting up this project
-          </h2>
-          <p className="mt-0.5 text-sm text-amber-800/80 dark:text-amber-200/70">
-            {items.length - remaining} of {items.length} steps complete · runs stay disabled
-            until everything is checked.
+          <h2 className="font-medium text-ink">Finish setting up this project</h2>
+          <p className="mt-0.5 text-sm text-ink/80">
+            {items.length - remaining} of {items.length} steps complete · runs stay disabled until
+            everything is checked.
           </p>
         </div>
         {props.lastSkippedAt && (
-          <p className="text-xs text-amber-800/70 dark:text-amber-200/60">
+          <p className="text-xs text-ink/70">
             Scheduler last skipped this project {relativeTime(props.lastSkippedAt)}.
           </p>
         )}
@@ -51,20 +49,20 @@ export function OnboardingChecklist(props: OnboardingChecklistProps) {
               aria-hidden
               className={
                 item.done
-                  ? 'mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-bold text-white'
-                  : 'mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-amber-500/60'
+                  ? 'mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-positive text-[10px] font-bold text-white'
+                  : 'mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-warn'
               }
             >
               {item.done ? '✓' : ''}
             </span>
             <div className="min-w-0 flex-1">
-              <div className={item.done ? 'text-amber-900/70 line-through dark:text-amber-100/60' : 'font-medium text-amber-900 dark:text-amber-100'}>
+              <div className={item.done ? 'text-ink/70 line-through' : 'font-medium text-ink'}>
                 {item.title}
               </div>
               {!item.done && item.href && (
                 <Link
                   href={item.href}
-                  className="text-xs text-amber-900 underline decoration-dotted hover:opacity-80 dark:text-amber-200"
+                  className="text-xs text-ink underline decoration-dotted hover:opacity-80"
                 >
                   {item.cta}
                 </Link>

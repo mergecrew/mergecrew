@@ -13,14 +13,12 @@ import { LinkButton } from '@/components/ui';
  */
 export function MfaRequiredCallout() {
   return (
-    <div className="rounded border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-800 dark:bg-amber-900/20">
-      <div className="font-medium text-amber-900 dark:text-amber-200">
-        Two-factor authentication recommended
-      </div>
-      <p className="mt-1 text-amber-800 dark:text-amber-300">
-        Admin and owner accounts can create API keys, manage members, and
-        access audit logs. Enabling MFA hardens those accounts against
-        password-only compromise. Optional, but recommended.
+    <div className="border border-warn bg-warn/20 p-4 text-sm">
+      <div className="font-medium text-ink">Two-factor authentication recommended</div>
+      <p className="mt-1 text-ink">
+        Admin and owner accounts can create API keys, manage members, and access audit logs.
+        Enabling MFA hardens those accounts against password-only compromise. Optional, but
+        recommended.
       </p>
       <div className="mt-3">
         <LinkButton href="/account/security" variant="primary">

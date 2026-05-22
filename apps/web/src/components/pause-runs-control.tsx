@@ -52,12 +52,12 @@ export function PauseRunsControl({
   }
 
   return (
-    <div className="flex w-72 flex-col gap-2 rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
+    <div className="flex w-72 flex-col gap-2 border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
       <label className="text-xs font-medium text-red-900 dark:text-red-200">
         Why are you stopping {scopeLabel}? (optional)
       </label>
       <textarea
-        className="w-full rounded border bg-white px-2 py-1 text-sm dark:bg-zinc-900 dark:border-zinc-700"
+        className="w-full rounded border bg-white px-2 py-1 text-sm "
         rows={2}
         maxLength={500}
         placeholder="e.g. flaky agent, budget freeze, vendor outage"
