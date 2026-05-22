@@ -1719,6 +1719,58 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/notifications/slack": {
+      "get": {
+        "operationId": "SlackNotificationsController_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "SlackNotifications"
+        ]
+      },
+      "put": {
+        "operationId": "SlackNotificationsController_set",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "SlackNotifications"
+        ]
+      },
+      "delete": {
+        "operationId": "SlackNotificationsController_clear",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "SlackNotifications"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/notifications/slack/test": {
+      "post": {
+        "operationId": "SlackNotificationsController_test",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "SlackNotifications"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/llm/providers": {
       "get": {
         "operationId": "LlmController_listProviders",

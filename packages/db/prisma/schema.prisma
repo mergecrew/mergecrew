@@ -104,6 +104,13 @@ model Organization {
   runsPausedAt             DateTime? @map("runs_paused_at") @db.Timestamptz(6)
   runsPauseReason          String?   @map("runs_pause_reason")
   runsPausedByUserId       String?   @map("runs_paused_by_user_id") @db.Uuid
+  /// Slack Incoming Webhook URL (#747). Envelope-encrypted via
+  /// CryptoService — same chokepoint that protects MFA secrets, LLM
+  /// API keys, and project secrets. The settings UI never returns the
+  /// plaintext URL; `slackWebhookCreatedAt` is the only outward signal
+  /// of "configured".
+  slackWebhookCiphertext   Bytes?    @map("slack_webhook_ciphertext")
+  slackWebhookCreatedAt    DateTime? @map("slack_webhook_created_at") @db.Timestamptz(6)
   createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt                DateTime? @map("deleted_at") @db.Timestamptz(6)
