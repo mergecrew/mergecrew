@@ -754,7 +754,18 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
           id="audit-log"
           anchor="OPS · 010"
           title="Audit log"
-          desc="Immutable record of admin actions in this org — invites, role changes, project pause / resume, telemetry opt-in. Latest 50 shown."
+          desc={
+            <>
+              Immutable record of admin actions in this org — invites, role changes, project
+              pause / resume, telemetry opt-in. Latest 50 shown.{' '}
+              <a
+                href={`/api/v1/orgs/${slug}/audit-log?format=csv`}
+                className="text-accent underline-offset-[3px] hover:underline"
+              >
+                Export CSV →
+              </a>
+            </>
+          }
         >
           <Card>
             {auditLog.items.length === 0 ? (

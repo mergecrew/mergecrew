@@ -492,9 +492,27 @@ export default async function ProjectSettings({
           anchor="18 · AUDIT"
           title="Audit log"
           desc={
-            isAdmin
-              ? 'Immutable record of admin actions touching this project. Org-wide events live under Org settings → Audit log.'
-              : 'Audit log access is admin-only on this org. Ask an admin to surface specific events.'
+            isAdmin ? (
+              <>
+                Immutable record of admin actions touching this project. Org-wide events live
+                under{' '}
+                <a
+                  href={`/orgs/${slug}/settings#audit-log`}
+                  className="text-accent underline-offset-[3px] hover:underline"
+                >
+                  Org settings → Audit log
+                </a>
+                .{' '}
+                <a
+                  href={`/api/v1/orgs/${slug}/audit-log?format=csv&projectId=${encodeURIComponent(project.id)}`}
+                  className="text-accent underline-offset-[3px] hover:underline"
+                >
+                  Export CSV →
+                </a>
+              </>
+            ) : (
+              'Audit log access is admin-only on this org. Ask an admin to surface specific events.'
+            )
           }
         >
           <Card>
