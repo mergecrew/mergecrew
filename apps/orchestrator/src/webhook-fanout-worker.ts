@@ -3,6 +3,7 @@ import type { FanoutPayload } from '@mergecrew/eventlog';
 import type { Queue } from 'bullmq';
 import type { Logger } from 'pino';
 import type { OutboundJob } from './outbound-webhook-worker.js';
+import { dispatchAlertForEvent } from './alert-dispatch.js';
 
 const MAX_PAYLOAD_BYTES = 64 * 1024;
 
@@ -36,6 +37,22 @@ export async function handleFanout(
     logger.warn({ eventId: job.eventId }, 'fanout: timeline event vanished');
     return;
   }
+
+  // V2.af alert routing (#749). Best-effort dispatch to Slack /
+  // email-user based on the org's configured channels. Independent of
+  // the outbound webhook fan-out below — operators may want webhooks
+  // off while still receiving Slack pages.
+  await dispatchAlertForEvent({
+    organizationId: job.organizationId,
+    eventType: job.eventType,
+    payload: (result.event.payload ?? null) as Record<string, unknown> | null,
+    logger,
+  }).catch((err) =>
+    logger.warn(
+      { err: (err as Error)?.message ?? String(err), eventId: job.eventId },
+      'alert.dispatch_failed',
+    ),
+  );
 
   const matches = result.webhooks.filter((w) => {
     const events = (w.events as string[]) ?? [];

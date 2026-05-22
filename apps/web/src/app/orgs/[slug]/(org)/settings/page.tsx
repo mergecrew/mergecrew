@@ -20,6 +20,8 @@ import { MfaRequiredCallout } from '@/components/mfa-required-callout';
 import { OrgGeneralForm } from './org-general-form';
 import { MembersSection } from './members-section';
 import { SlackWebhookForm } from './slack-webhook-form';
+import { AlertRoutesForm } from './alert-routes-form';
+import type { AlertRoutesResponse } from './alert-routes-actions';
 
 interface BudgetInfo {
   dailyBudgetUsd: number | null;
@@ -112,6 +114,7 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
     evals,
     auditLog,
     slack,
+    alertRoutes,
   ] = await Promise.all([
     api<any>(`/v1/orgs/${slug}`, { session }),
     api<{ items: any[] }>(`/v1/orgs/${slug}/members`, { session }),
@@ -147,6 +150,9 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
       `/v1/orgs/${slug}/notifications/slack`,
       { session },
     ).catch(() => ({ configured: false, createdAt: null })),
+    api<AlertRoutesResponse>(`/v1/orgs/${slug}/notifications/routes`, { session }).catch(
+      () => ({ items: [] }) as AlertRoutesResponse,
+    ),
   ]);
   const monthlyPct =
     spendCap.monthlySpendCapUsd && spendCap.monthlySpendCapUsd > 0
@@ -184,6 +190,7 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
         { id: 'evals', label: 'Nightly evals' },
         { id: 'webhooks', label: 'Outbound webhooks' },
         { id: 'slack', label: 'Slack notifications' },
+        { id: 'alert-routes', label: 'Alert routing' },
         { id: 'api-keys', label: 'API keys' },
         { id: 'audit-log', label: 'Audit log' },
       ],
@@ -743,8 +750,22 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
         </Section>
 
         <Section
-          id="api-keys"
+          id="alert-routes"
           anchor="OPS · 010"
+          title="Alert routing"
+          desc="Which channel fires for which event. Toggle any cell to write an explicit route; rows still on the seeded default are marked. Changes take effect on the next event — no restart."
+        >
+          <AlertRoutesForm
+            slug={slug}
+            initial={alertRoutes}
+            canEdit={canEdit}
+            slackConfigured={slack.configured}
+          />
+        </Section>
+
+        <Section
+          id="api-keys"
+          anchor="OPS · 011"
           title="API keys"
           desc={
             <>
@@ -768,7 +789,7 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
 
         <Section
           id="audit-log"
-          anchor="OPS · 011"
+          anchor="OPS · 012"
           title="Audit log"
           desc={
             <>
@@ -828,7 +849,7 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
 
         <Section
           id="telemetry"
-          anchor="PRIVACY · 012"
+          anchor="PRIVACY · 013"
           title="Anonymous usage telemetry"
           desc={
             <>
@@ -911,7 +932,7 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
 
         <Section
           id="danger"
-          anchor="ORG · 013"
+          anchor="ORG · 014"
           title="Danger zone"
           desc="Org-wide destructive actions. Requires owner role; the API doesn't ship self-serve transfer or delete yet — open an issue to coordinate."
         >
