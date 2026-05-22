@@ -485,3 +485,40 @@ export function Tile({
     </div>
   );
 }
+
+/* Lightweight stat cell — label on top, value below. Sized smaller
+   than <Tile> so a stack of them fits inside a Card. Tone tints the
+   value (positive ⇒ shipped/healthy, energy ⇒ overspend/warning). */
+export function Stat({
+  label,
+  value,
+  tone,
+  mono = true,
+}: {
+  label: string;
+  value: ReactNode;
+  tone?: 'energy' | 'positive';
+  /** Default true — numeric stats look right in Geist Mono. Set false for prose values. */
+  mono?: boolean;
+}) {
+  return (
+    <div>
+      <div className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted">
+        {label}
+      </div>
+      <div
+        className={clsx(
+          'mt-1 text-[16px] tabular-nums',
+          mono && 'font-mono',
+          tone === 'energy'
+            ? 'text-energy-deep'
+            : tone === 'positive'
+              ? 'text-positive-deep'
+              : 'text-ink',
+        )}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}

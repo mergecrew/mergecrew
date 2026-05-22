@@ -3,7 +3,16 @@ import { redirect } from 'next/navigation';
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { hasRole } from '@/lib/role';
-import { Card, Button, LinkButton, PageHead, Label, StatBadge, RolePill } from '@/components/ui';
+import {
+  Card,
+  Button,
+  LinkButton,
+  PageHead,
+  Label,
+  StatBadge,
+  RolePill,
+  Stat,
+} from '@/components/ui';
 import { SettingsLayout, Section } from '@/components/shell/settings-layout';
 import { LlmProvidersCard } from '@/components/llm-providers-card';
 import { LlmProfilesCard } from '@/components/llm-profiles-card';
@@ -823,30 +832,3 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
   );
 }
 
-function Stat({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: 'energy' | 'positive';
-}) {
-  return (
-    <div>
-      <div className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted">{label}</div>
-      <div
-        className={
-          'mt-1 font-mono text-[16px] tabular-nums ' +
-          (tone === 'energy'
-            ? 'text-energy-deep'
-            : tone === 'positive'
-              ? 'text-positive-deep'
-              : 'text-ink')
-        }
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
