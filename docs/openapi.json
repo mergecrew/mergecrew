@@ -1611,6 +1611,34 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/metrics": {
+      "get": {
+        "operationId": "MetricsController_orgMetrics",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Metrics"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/metrics": {
+      "get": {
+        "operationId": "MetricsController_projectMetrics",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Metrics"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/llm/providers": {
       "get": {
         "operationId": "LlmController_listProviders",
