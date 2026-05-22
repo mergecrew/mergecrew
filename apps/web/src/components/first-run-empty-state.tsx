@@ -11,9 +11,9 @@ export function FirstRunEmptyState({ orgSlug }: { orgSlug: string }) {
     <Card className="space-y-5">
       <div>
         <h2 className="text-lg font-semibold">No projects yet — try these first</h2>
-        <p className="mt-1 text-sm text-zinc-500">
-          A Mergecrew project points at one GitHub repo on a daily cadence. New here?
-          Walk through the sample app before pointing it at code you care about.
+        <p className="mt-1 text-sm text-muted">
+          A Mergecrew project points at one GitHub repo on a daily cadence. New here? Walk through
+          the sample app before pointing it at code you care about.
         </p>
       </div>
 
@@ -60,10 +60,10 @@ function CTA({
   primary?: boolean;
 }) {
   return (
-    <li className="flex flex-col items-start gap-2 rounded-md border p-3 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between">
+    <li className="flex flex-col items-start gap-2 border p-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
         <div className="font-medium">{title}</div>
-        <p className="mt-0.5 text-sm text-zinc-500">{description}</p>
+        <p className="mt-0.5 text-sm text-muted">{description}</p>
       </div>
       {external ? (
         <Link
@@ -73,7 +73,7 @@ function CTA({
           className={
             primary
               ? 'inline-flex shrink-0 items-center justify-center rounded-md bg-accent px-3 py-1.5 text-sm text-accent-fg hover:opacity-90'
-              : 'inline-flex shrink-0 items-center justify-center rounded-md border bg-transparent px-3 py-1.5 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800'
+              : 'inline-flex shrink-0 items-center justify-center border bg-transparent px-3 py-1.5 text-sm hover:bg-bg-2'
           }
         >
           {buttonLabel}

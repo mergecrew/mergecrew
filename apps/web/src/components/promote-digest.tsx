@@ -42,9 +42,9 @@ export interface PromoteDigestProps {
 /**
  * Daily promote ritual (#472). Renders the human-approved subset
  * picker and the "Build release" CTA. Three per-row actions:
- *   - Approve (default; included in this cycle)
- *   - Defer   (stays on dev; reappears next cycle)
- *   - Drop    (revert PR opened on basePrBranch; hidden permanently)
+ * - Approve (default; included in this cycle)
+ * - Defer (stays on dev; reappears next cycle)
+ * - Drop (revert PR opened on basePrBranch; hidden permanently)
  *
  * Approve/Defer state persists in URL search params so refresh or
  * shareable links don't lose the operator's selections.
@@ -74,7 +74,12 @@ export function PromoteDigest({
   // a few to defer is the common edit).
   const deferred = useMemo(() => {
     const raw = searchParams?.get('defer') ?? '';
-    return new Set(raw.split(',').map((s) => s.trim()).filter(Boolean));
+    return new Set(
+      raw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
   }, [searchParams]);
 
   const setDeferred = (next: Set<string>) => {
@@ -135,9 +140,9 @@ export function PromoteDigest({
       <Card data-testid="promote-digest-empty">
         <div className="space-y-1">
           <div className="font-medium">Nothing to promote</div>
-          <p className="text-sm text-zinc-600 dark:text-zinc-300">
-            Agents haven&apos;t merged anything new since the last promote. Mergecrew
-            runs daily — come back tomorrow.
+          <p className="text-sm text-ink-2">
+            Agents haven&apos;t merged anything new since the last promote. Mergecrew runs daily —
+            come back tomorrow.
           </p>
         </div>
       </Card>
@@ -151,12 +156,12 @@ export function PromoteDigest({
           <h2 className="text-base font-semibold">
             {isSingleEnv ? 'Ready to review' : 'Ready to promote'}
           </h2>
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-muted">
             {isSingleEnv ? (
               <>
-                Approved changesets are marked reviewed and leave the digest — no
-                git operations, since this is a single-environment project.
-                Deferred changes reappear next cycle. Drop opens a revert PR on{' '}
+                Approved changesets are marked reviewed and leave the digest — no git operations,
+                since this is a single-environment project. Deferred changes reappear next cycle.
+                Drop opens a revert PR on{' '}
                 <span className="font-mono">{basePrBranch ?? 'your base branch'}</span>.
               </>
             ) : (
@@ -168,9 +173,9 @@ export function PromoteDigest({
             )}
           </p>
         </div>
-        <div className="text-xs text-zinc-500">
-          <span className="font-medium text-emerald-700 dark:text-emerald-400">{counts.approved}</span>{' '}
-          approved · {counts.deferred} deferred
+        <div className="text-xs text-muted">
+          <span className="font-medium text-positive-deep">{counts.approved}</span> approved ·{' '}
+          {counts.deferred} deferred
         </div>
       </div>
 
@@ -185,12 +190,12 @@ export function PromoteDigest({
       )}
 
       {runFlash?.status === 'completed' && (
-        <Card className="border-emerald-200 bg-emerald-50/50 dark:border-emerald-700/40 dark:bg-emerald-950/30">
+        <Card className="border-positive bg-positive-soft">
           <div className="text-sm">
             {isSingleEnv ? (
               <>
-                <span className="font-medium">Marked reviewed.</span> Approved
-                changesets have left the digest.
+                <span className="font-medium">Marked reviewed.</span> Approved changesets have left
+                the digest.
               </>
             ) : (
               <>
@@ -204,17 +209,17 @@ export function PromoteDigest({
       )}
 
       {runFlash?.status === 'failed' && (
-        <Card className="border-rose-200 bg-rose-50/50 dark:border-rose-700/40 dark:bg-rose-950/30">
+        <Card className="border-energy bg-energy-soft">
           <div className="text-sm">
             <span className="font-medium">Release failed:</span>{' '}
-            <span className="text-rose-700 dark:text-rose-300">{runFlash.failureReason}</span>
+            <span className="text-energy-deep">{runFlash.failureReason}</span>
           </div>
         </Card>
       )}
 
       {actionError && (
-        <Card className="border-rose-200 bg-rose-50/50 dark:border-rose-700/40 dark:bg-rose-950/30">
-          <div className="text-sm text-rose-700 dark:text-rose-300">{actionError}</div>
+        <Card className="border-energy bg-energy-soft">
+          <div className="text-sm text-energy-deep">{actionError}</div>
         </Card>
       )}
 
@@ -232,7 +237,7 @@ export function PromoteDigest({
       </ul>
 
       <div className="flex items-center justify-end gap-3">
-        <span className="text-xs text-zinc-500">
+        <span className="text-xs text-muted">
           {counts.approved} of {changesets.length} approved
         </span>
         <Button
@@ -282,14 +287,9 @@ function DigestRow({
 
   if (dropResult) {
     return (
-      <li className="rounded border border-zinc-200 bg-zinc-50/50 p-3 text-sm text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/30 dark:text-zinc-400">
+      <li className="border border-hair bg-paper-2 p-3 text-sm text-ink-2">
         Dropped <span className="font-medium">{cs.title}</span> —{' '}
-        <a
-          className="underline"
-          href={dropResult.url}
-          target="_blank"
-          rel="noreferrer"
-        >
+        <a className="underline" href={dropResult.url} target="_blank" rel="noreferrer">
           revert PR opened
         </a>
         . The page will refresh on next load.
@@ -298,19 +298,19 @@ function DigestRow({
   }
 
   return (
-    <li className="rounded border p-3 dark:border-zinc-800">
+    <li className="rounded border p-3 ">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             {cs.riskChip && (
-              <Chip kind={(cs.riskChip as 'low' | 'medium' | 'high') ?? 'neutral'}>{cs.riskChip}</Chip>
+              <Chip kind={(cs.riskChip as 'low' | 'medium' | 'high') ?? 'neutral'}>
+                {cs.riskChip}
+              </Chip>
             )}
             <span className="font-medium">{cs.title}</span>
           </div>
-          {cs.whyParagraph && (
-            <p className="text-sm text-zinc-600 dark:text-zinc-300">{cs.whyParagraph}</p>
-          )}
-          <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-500">
+          {cs.whyParagraph && <p className="text-sm text-ink-2">{cs.whyParagraph}</p>}
+          <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
             {cs.prUrl && cs.prNumber != null && (
               <a className="underline" href={cs.prUrl} target="_blank" rel="noreferrer">
                 PR #{cs.prNumber}
@@ -324,9 +324,7 @@ function DigestRow({
               detail
             </a>
           </div>
-          {dropError && (
-            <div className="text-xs text-rose-700 dark:text-rose-300">{dropError}</div>
-          )}
+          {dropError && <div className="text-xs text-energy-deep">{dropError}</div>}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-2">
           <div className="flex items-center gap-3 text-sm">
@@ -351,7 +349,7 @@ function DigestRow({
           </div>
           <button
             type="button"
-            className="text-xs text-rose-700 underline hover:text-rose-900 disabled:opacity-60 dark:text-rose-400 dark:hover:text-rose-200"
+            className="text-xs text-energy-deep underline hover:text-energy disabled:opacity-60"
             onClick={onDrop}
             disabled={dropping}
           >
@@ -378,10 +376,10 @@ function ConflictPanel({
 }) {
   const conflictedCs = changesets.find((c) => c.id === run.conflict?.changesetId);
   return (
-    <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-700/40 dark:bg-amber-950/30">
+    <Card className="border-warn bg-warn/20">
       <div className="space-y-2">
         <div className="font-medium">Last release attempt stopped on a cherry-pick conflict.</div>
-        <p className="text-sm text-zinc-700 dark:text-zinc-200">
+        <p className="text-sm text-ink-2">
           Conflicted changeset:{' '}
           <span className="font-medium">{conflictedCs?.title ?? run.conflict?.changesetId}</span>
           {run.releaseRef && (
@@ -392,25 +390,19 @@ function ConflictPanel({
           )}
         </p>
         {run.conflict?.files && run.conflict.files.length > 0 && (
-          <ul className="text-xs font-mono text-zinc-600 dark:text-zinc-300">
+          <ul className="text-xs font-mono text-ink-2">
             {run.conflict.files.slice(0, 10).map((f) => (
               <li key={f}>· {f}</li>
             ))}
-            {run.conflict.files.length > 10 && (
-              <li>… {run.conflict.files.length - 10} more</li>
-            )}
+            {run.conflict.files.length > 10 && <li>… {run.conflict.files.length - 10} more</li>}
           </ul>
         )}
-        <p className="text-xs text-zinc-600 dark:text-zinc-400">
+        <p className="text-xs text-ink-2">
           Resolve the conflict in your editor (clone the branch, fix the files, push). Then re-run
           to rebuild from a fresh release branch.
         </p>
         <div>
-          <Button
-            variant="primary"
-            disabled={pending || approvedCount === 0}
-            onClick={onRerun}
-          >
+          <Button variant="primary" disabled={pending || approvedCount === 0} onClick={onRerun}>
             {pending ? 'Rebuilding…' : 'Re-run with current selection'}
           </Button>
         </div>
