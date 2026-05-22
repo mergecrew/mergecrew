@@ -417,12 +417,12 @@ export function LifecycleGraph({
           mergecrew.yaml changed on the default branch since you opened this view. Refresh and try again.
         </div>
       )}
-      <div className="overflow-auto rounded border bg-zinc-50 p-2 dark:bg-zinc-900 dark:border-zinc-800">
+      <div className="overflow-auto border border-hair bg-bg-2 p-2">
         <svg
           width={viewW}
           height={viewH}
           viewBox={`0 0 ${viewW} ${viewH}`}
-          className="text-zinc-700 dark:text-zinc-200"
+          className="text-ink-2"
           role="img"
           aria-label="Lifecycle DAG"
         >

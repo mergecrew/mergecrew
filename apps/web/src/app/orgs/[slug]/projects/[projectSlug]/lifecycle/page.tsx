@@ -66,6 +66,18 @@ export default async function LifecyclePage({
       />
 
       <div className="space-y-4">
+        {isDemo && (
+          <Card className="border-energy bg-energy-soft p-4">
+            <div className="text-[13.5px] font-medium text-energy-deep">
+              Read-only — demo project
+            </div>
+            <p className="m-0 mt-1 text-[12.5px] text-energy-deep/80">
+              The seeded demo project is locked for editing. Set up your own project to author its
+              lifecycle — agents, workflows, custom skills, and human gates.
+            </p>
+          </Card>
+        )}
+
         {canEdit && stockTemplates.items.length > 0 && (
           <Card className="p-5">
             <div className="mb-3 flex items-baseline justify-between gap-3">
@@ -99,7 +111,7 @@ export default async function LifecyclePage({
           </Card>
         )}
 
-        <Card>
+        <Card className="p-5">
           <div id="lifecycle-yaml-editor">
             <LifecycleEditor
               scope={scope}
