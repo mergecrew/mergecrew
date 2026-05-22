@@ -174,7 +174,7 @@ export default async function ProjectSettings({
 
   if (project.demo) {
     return (
-      <main className="mx-auto max-w-[1080px] px-9 py-7">
+      <main className="mx-auto max-w-[1080px] px-4 py-5 sm:px-9 sm:py-7">
         <PageHead
           crumb={[
             { label: slug, href: `/orgs/${slug}` },
@@ -200,7 +200,7 @@ export default async function ProjectSettings({
   }
 
   return (
-    <main className="mx-auto max-w-[1280px] px-9 py-7">
+    <main className="mx-auto max-w-[1280px] px-4 py-5 sm:px-9 sm:py-7">
       <PageHead
         crumb={[
           { label: slug, href: `/orgs/${slug}` },

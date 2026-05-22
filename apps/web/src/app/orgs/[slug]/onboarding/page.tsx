@@ -241,7 +241,7 @@ export default async function OnboardingPage({
   return (
     <div className="min-h-screen bg-bg text-ink">
       <TopBar orgSlug={slug} userMenu={<UserMenu currentOrgSlug={slug} />} />
-      <main className="mx-auto max-w-[860px] px-9 py-9">
+      <main className="mx-auto max-w-[860px] px-4 py-5 sm:px-9 sm:py-9">
         <PageHead
           crumb={[
             { label: slug, href: `/orgs/${slug}` },

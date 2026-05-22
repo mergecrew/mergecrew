@@ -128,7 +128,7 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
   const showMfaNudge = canEdit && !mfaStatus.enrolled;
 
   return (
-    <main className="mx-auto max-w-[1080px] px-9 py-7">
+    <main className="mx-auto max-w-[1080px] px-4 py-5 sm:px-9 sm:py-7">
       <PageHead
         crumb={[
           { label: org.slug, href: `/orgs/${org.slug}` },

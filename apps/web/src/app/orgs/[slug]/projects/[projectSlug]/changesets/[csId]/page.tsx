@@ -71,7 +71,7 @@ export default async function ChangesetDetail({
   const canRollback = isAdmin && cs.status === 'promoted' && cs.prNumber && !cs.revertPrNumber;
 
   return (
-    <main className="mx-auto max-w-[1280px] px-9 py-7">
+    <main className="mx-auto max-w-[1280px] px-4 py-5 sm:px-9 sm:py-7">
       <PageHead
         crumb={[
           { label: slug, href: `/orgs/${slug}` },

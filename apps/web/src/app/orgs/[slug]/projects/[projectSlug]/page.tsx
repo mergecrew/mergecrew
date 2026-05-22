@@ -173,7 +173,7 @@ export default async function ProjectOverview({
   ).length;
 
   return (
-    <main className="mx-auto max-w-[1280px] px-9 py-7">
+    <main className="mx-auto max-w-[1280px] px-4 py-5 sm:px-9 sm:py-7">
       {isDemo && <DemoProjectTour orgSlug={slug} />}
       <PageHead
         crumb={[

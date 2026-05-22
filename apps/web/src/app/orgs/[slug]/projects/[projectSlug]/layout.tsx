@@ -3,6 +3,7 @@ import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { TopBar } from '@/components/shell/topbar';
 import { ProjectSidebar } from '@/components/shell/sidebar';
+import { AppShell } from '@/components/shell/app-shell';
 import { UserMenu } from '@/components/user-menu';
 
 type Project = {
@@ -37,8 +38,8 @@ export default async function ProjectLayout({
   }
 
   return (
-    <div className="grid h-screen grid-rows-[56px_1fr] grid-cols-[260px_1fr] bg-bg">
-      <div className="col-span-2">
+    <AppShell
+      topbar={
         <TopBar
           orgSlug={slug}
           orgName={org?.name}
@@ -47,15 +48,18 @@ export default async function ProjectLayout({
           demoMode={demoMode}
           userMenu={<UserMenu currentOrgSlug={slug} />}
         />
-      </div>
-      <ProjectSidebar
-        orgSlug={slug}
-        projectSlug={projectSlug}
-        projectName={project?.name}
-        status={project?.status ?? 'running'}
-        awaitingApproval={project?.awaitingApproval}
-      />
-      <main className="overflow-y-auto">{children}</main>
-    </div>
+      }
+      sidebar={
+        <ProjectSidebar
+          orgSlug={slug}
+          projectSlug={projectSlug}
+          projectName={project?.name}
+          status={project?.status ?? 'running'}
+          awaitingApproval={project?.awaitingApproval}
+        />
+      }
+    >
+      {children}
+    </AppShell>
   );
 }

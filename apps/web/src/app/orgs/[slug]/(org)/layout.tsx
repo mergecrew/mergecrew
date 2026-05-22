@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { TopBar } from '@/components/shell/topbar';
 import { OrgSidebar } from '@/components/shell/sidebar';
+import { AppShell } from '@/components/shell/app-shell';
 import { UserMenu } from '@/components/user-menu';
 import { api } from '@/lib/api';
 import { getSession } from '@/lib/session';
@@ -40,23 +41,26 @@ export default async function OrgChromeLayout({
     n == null ? undefined : `$${n.toFixed(n >= 100 ? 0 : 2)}`;
 
   return (
-    <div className="grid h-screen grid-rows-[56px_1fr] grid-cols-[260px_1fr] bg-bg">
-      <div className="col-span-2">
+    <AppShell
+      topbar={
         <TopBar
           orgSlug={slug}
           orgName={org?.name}
           demoMode={demoMode}
           userMenu={<UserMenu currentOrgSlug={slug} />}
         />
-      </div>
-      <OrgSidebar
-        orgSlug={slug}
-        orgName={org?.name}
-        projectCount={org?.projectCount}
-        mtdSpend={formatUsd(org?.mtdSpendUsd)}
-        monthlyCap={formatUsd(org?.monthlyCapUsd)}
-      />
-      <main className="overflow-y-auto">{children}</main>
-    </div>
+      }
+      sidebar={
+        <OrgSidebar
+          orgSlug={slug}
+          orgName={org?.name}
+          projectCount={org?.projectCount}
+          mtdSpend={formatUsd(org?.mtdSpendUsd)}
+          monthlyCap={formatUsd(org?.monthlyCapUsd)}
+        />
+      }
+    >
+      {children}
+    </AppShell>
   );
 }
