@@ -35,34 +35,44 @@ export function SettingsLayout({ nav, children }: { nav: NavGroup[]; children: R
   }, [nav]);
 
   return (
-    <div className="grid grid-cols-1 items-start gap-9 md:grid-cols-[220px_1fr]">
-      <nav className="sticky top-6 self-start py-1">
-        {nav.map((group) => (
-          <div key={group.label}>
-            <div className="px-3 pt-4 pb-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted">
-              {group.label}
+    <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-[220px_1fr] md:gap-9">
+      {/* Mobile: horizontally scrollable chip strip pinned to the top
+          of the content. Desktop: vertical sticky rail. The mobile
+          variant intentionally doesn't stick — sticking on phones
+          covers the actual content (#722). */}
+      <nav className="-mx-4 self-start overflow-x-auto md:sticky md:top-6 md:mx-0 md:overflow-visible md:py-1">
+        <div className="flex gap-2 px-4 py-2 md:flex-col md:gap-0 md:px-0 md:py-0">
+          {nav.map((group) => (
+            <div key={group.label} className="flex shrink-0 items-center gap-2 md:block md:shrink">
+              <div className="hidden px-3 pt-4 pb-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted md:block">
+                {group.label}
+              </div>
+              {group.items.map((it) => (
+                <a
+                  key={it.id}
+                  href={`#${it.id}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    const el = document.getElementById(it.id);
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                  className={clsx(
+                    'no-underline transition-colors whitespace-nowrap',
+                    // Mobile: pill chips
+                    'border px-3 py-[6px] text-[12px]',
+                    // Desktop: left-rail items with accent indicator
+                    'md:block md:whitespace-normal md:border-0 md:border-l-2 md:px-3 md:py-[7px] md:text-[13.5px]',
+                    active === it.id
+                      ? 'border-accent bg-accent-tint text-accent-deep md:font-medium'
+                      : 'border-hair text-ink-2 hover:bg-paper md:border-transparent md:hover:text-ink',
+                  )}
+                >
+                  {it.label}
+                </a>
+              ))}
             </div>
-            {group.items.map((it) => (
-              <a
-                key={it.id}
-                href={`#${it.id}`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  const el = document.getElementById(it.id);
-                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }}
-                className={clsx(
-                  'block px-3 py-[7px] border-l-2 text-[13.5px] no-underline transition-colors',
-                  active === it.id
-                    ? 'border-accent bg-accent-tint text-accent-deep font-medium'
-                    : 'border-transparent text-ink-2 hover:bg-paper hover:text-ink',
-                )}
-              >
-                {it.label}
-              </a>
-            ))}
-          </div>
-        ))}
+          ))}
+        </div>
       </nav>
       <div className="flex max-w-[940px] flex-col gap-14">{children}</div>
     </div>
