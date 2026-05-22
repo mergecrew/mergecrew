@@ -18,10 +18,7 @@ import { DensityToggle } from '@/components/density-toggle';
 import { densityClasses, getDensity } from '@/lib/preferences';
 import { LiveTimeline, ReplayTimeline } from './live-timeline';
 import { ForceCancelButton } from './cancel-button';
-import {
-  DiscoveryDirectionsPicker,
-  type DiscoveryDirection,
-} from './discovery-directions-picker';
+import { DiscoveryDirectionsPicker, type DiscoveryDirection } from './discovery-directions-picker';
 
 interface ToolCall {
   id: string;
@@ -164,10 +161,11 @@ export default async function RunPage({
       body: JSON.stringify({ body }),
       session: s,
     }).catch(() => undefined);
-    const r = await api<{ runId: string }>(
-      `/v1/orgs/${slug}/projects/${projectSlug}/runs`,
-      { method: 'POST', body: JSON.stringify({}), session: s },
-    ).catch(() => null);
+    const r = await api<{ runId: string }>(`/v1/orgs/${slug}/projects/${projectSlug}/runs`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+      session: s,
+    }).catch(() => null);
     if (r?.runId) {
       redirect(`/orgs/${slug}/projects/${projectSlug}/runs/${r.runId}`);
     }
@@ -188,10 +186,7 @@ export default async function RunPage({
           <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 ${dc.text}`}>
             <StatusPill status={detail.run.status} />
             <span className="text-muted">
-              started{' '}
-              {detail.run.startedAt
-                ? new Date(detail.run.startedAt).toLocaleString()
-                : '—'}
+              started {detail.run.startedAt ? new Date(detail.run.startedAt).toLocaleString() : '—'}
             </span>
             {detail.run.finishedAt && (
               <span className="text-muted">
@@ -248,9 +243,9 @@ export default async function RunPage({
         )}
 
         <p className="text-[13px] text-ink-2">
-          Each stage runs one or more agents. Click a stage to see its agents&apos;
-          inputs, outputs, model turns, and tool calls. Stages run in the order the roster
-          graph specifies — Discovery → PM → Implementation → QA → DeployDev → Observation.
+          Each stage runs one or more agents. Click a stage to see its agents&apos; inputs, outputs,
+          model turns, and tool calls. Stages run in the order the roster graph specifies —
+          Discovery → PM → Implementation → QA → DeployDev → Observation.
         </p>
 
         <div className="space-y-3">
@@ -337,7 +332,7 @@ function AgentPanel({ detail }: { detail: RunDetail }) {
 
   return (
     <section>
-      <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-zinc-500">
+      <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-muted">
         Agents ({byKind.size})
       </h2>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
@@ -353,31 +348,25 @@ function AgentPanel({ detail }: { detail: RunDetail }) {
                 </div>
                 {r.stepCount > 1 && (
                   <span
-                    className="rounded-full bg-zinc-200 px-2 py-0.5 font-mono text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                    className="bg-bg-2 border border-hair px-[8px] py-[2px] font-mono text-[11px] text-ink-2 "
                     title="Number of times this agent ran in this run — multiple rounds appear here when the reviewer requests changes (#334)"
                   >
                     {r.stepCount}×
                   </span>
                 )}
               </div>
-              <div className="mt-2 grid grid-cols-2 gap-y-1 text-xs text-zinc-500">
+              <div className="mt-2 grid grid-cols-2 gap-y-1 text-xs text-muted">
                 <div>tokens</div>
-                <div className="font-mono tabular-nums text-zinc-700 dark:text-zinc-300">
+                <div className="font-mono tabular-nums text-ink-2">
                   {r.inputTokens.toLocaleString()} in / {r.outputTokens.toLocaleString()} out
                 </div>
                 <div>cost</div>
-                <div className="font-mono tabular-nums text-zinc-700 dark:text-zinc-300">
-                  ${r.usd.toFixed(4)}
-                </div>
+                <div className="font-mono tabular-nums text-ink-2">${r.usd.toFixed(4)}</div>
                 <div>model turns</div>
-                <div className="font-mono tabular-nums text-zinc-700 dark:text-zinc-300">
-                  {r.turnCount}
-                </div>
+                <div className="font-mono tabular-nums text-ink-2">{r.turnCount}</div>
                 <div>wall (model)</div>
-                <div className="font-mono tabular-nums text-zinc-700 dark:text-zinc-300">
-                  {r.latencyMs >= 1000
-                    ? `${(r.latencyMs / 1000).toFixed(1)}s`
-                    : `${r.latencyMs}ms`}
+                <div className="font-mono tabular-nums text-ink-2">
+                  {r.latencyMs >= 1000 ? `${(r.latencyMs / 1000).toFixed(1)}s` : `${r.latencyMs}ms`}
                 </div>
               </div>
             </Card>
@@ -413,17 +402,17 @@ function NetworkPanel({
   return (
     <section>
       <div className="mb-2 flex items-baseline justify-between">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
           Network ({summary.items.length} {summary.items.length === 1 ? 'host' : 'hosts'})
         </h2>
-        <div className="flex items-baseline gap-2 text-xs text-zinc-500">
+        <div className="flex items-baseline gap-2 text-xs text-muted">
           <span>
             {summary.totals.attempts} attempt{summary.totals.attempts === 1 ? '' : 's'} ·{' '}
             <span className="text-green-700 dark:text-green-300">
               {summary.totals.allowed} allowed
             </span>{' '}
             ·{' '}
-            <span className={summary.totals.blocked > 0 ? 'text-rose-700 dark:text-rose-300' : ''}>
+            <span className={summary.totals.blocked > 0 ? 'text-energy-deep' : ''}>
               {summary.totals.blocked} blocked
             </span>
           </span>
@@ -432,7 +421,7 @@ function NetworkPanel({
               className={`rounded px-1.5 py-0.5 font-mono text-[10px] uppercase ${
                 auditOnly
                   ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
-                  : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+                  : 'bg-bg text-zinc-700 '
               }`}
               title={
                 auditOnly
@@ -447,12 +436,9 @@ function NetworkPanel({
       </div>
       {allAllowed ? (
         <Card>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          <p className="text-sm text-ink-2">
             All outbound was allowlisted ✅ ·{' '}
-            <Link
-              href={allowlistHref}
-              className="underline decoration-dotted hover:text-zinc-900 dark:hover:text-zinc-200"
-            >
+            <Link href={allowlistHref} className="underline decoration-dotted hover:text-ink">
               project allowlist
             </Link>
           </p>
@@ -461,7 +447,7 @@ function NetworkPanel({
         <Card>
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-left text-[10px] uppercase tracking-wide text-zinc-500">
+              <tr className="text-left text-[10px] uppercase tracking-wide text-muted">
                 <th className="pb-2 pr-2 font-medium">Host</th>
                 <th className="pb-2 pr-2 font-medium">Attempts</th>
                 <th className="pb-2 pr-2 font-medium">Blocked</th>
@@ -471,43 +457,27 @@ function NetworkPanel({
             </thead>
             <tbody>
               {summary.items.map((h) => (
-                <tr
-                  key={h.host}
-                  className="border-t border-zinc-100 align-baseline dark:border-zinc-800"
-                >
-                  <td className="py-1.5 pr-2 font-mono text-zinc-800 dark:text-zinc-200">
-                    {h.host}
-                  </td>
-                  <td className="py-1.5 pr-2 font-mono tabular-nums text-zinc-700 dark:text-zinc-300">
-                    {h.attempts}
-                  </td>
+                <tr key={h.host} className="border-t border-hair-2 align-baseline ">
+                  <td className="py-1.5 pr-2 font-mono text-ink">{h.host}</td>
+                  <td className="py-1.5 pr-2 font-mono tabular-nums text-ink-2">{h.attempts}</td>
                   <td
                     className={`py-1.5 pr-2 font-mono tabular-nums ${
-                      h.blocked > 0
-                        ? 'text-rose-700 dark:text-rose-300'
-                        : 'text-zinc-500'
+                      h.blocked > 0 ? 'text-energy-deep' : 'text-muted'
                     }`}
                   >
                     {h.blocked}
                   </td>
-                  <td className="py-1.5 pr-2 text-zinc-600 dark:text-zinc-400">
-                    {h.origins.length > 0
-                      ? h.origins.join(', ')
-                      : h.sources.join(', ')}
+                  <td className="py-1.5 pr-2 text-ink-2">
+                    {h.origins.length > 0 ? h.origins.join(', ') : h.sources.join(', ')}
                   </td>
-                  <td className="py-1.5 text-zinc-600 dark:text-zinc-400">
-                    {h.reasons.join(', ')}
-                  </td>
+                  <td className="py-1.5 text-ink-2">{h.reasons.join(', ')}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p className="mt-3 text-xs text-zinc-500">
+          <p className="mt-3 text-xs text-muted">
             Add a host to the project allowlist to unblock it ·{' '}
-            <Link
-              href={allowlistHref}
-              className="underline decoration-dotted hover:text-zinc-900 dark:hover:text-zinc-200"
-            >
+            <Link href={allowlistHref} className="underline decoration-dotted hover:text-ink">
               project settings
             </Link>
           </p>
@@ -543,15 +513,24 @@ function WorkflowCard({ workflow }: { workflow: Workflow }) {
             )}
             <div>
               <div className="text-sm font-medium">{label}</div>
-              <div className="text-xs text-zinc-500">
+              <div className="text-xs text-muted">
                 <span className="font-mono">{workflow.workflowId}</span>
                 {agentKinds.length > 0 && (
-                  <> · {agentKinds.length === 1 ? agentKinds[0] : `${agentKinds.length} agents (${agentKinds.join(', ')})`}</>
+                  <>
+                    {' '}
+                    ·{' '}
+                    {agentKinds.length === 1
+                      ? agentKinds[0]
+                      : `${agentKinds.length} agents (${agentKinds.join(', ')})`}
+                  </>
                 )}
                 {' · '}
                 {workflow.agentSteps.length} step{workflow.agentSteps.length === 1 ? '' : 's'}
                 {(stageInTok > 0 || stageOutTok > 0) && (
-                  <> · {stageInTok.toLocaleString()} in / {stageOutTok.toLocaleString()} out tokens</>
+                  <>
+                    {' '}
+                    · {stageInTok.toLocaleString()} in / {stageOutTok.toLocaleString()} out tokens
+                  </>
                 )}
                 {stageUsd > 0 && <> · ${stageUsd.toFixed(4)}</>}
               </div>
@@ -559,10 +538,10 @@ function WorkflowCard({ workflow }: { workflow: Workflow }) {
           </div>
           <div className="flex items-baseline gap-3 text-xs">
             <StatusPill status={stageStatus} />
-            {dur && <span className="font-mono text-zinc-500">{dur}</span>}
+            {dur && <span className="font-mono text-muted">{dur}</span>}
           </div>
         </summary>
-        <div className="mt-3 space-y-3 border-t pt-3 dark:border-zinc-800">
+        <div className="mt-3 space-y-3 border-t pt-3 ">
           {workflow.agentSteps.map((s) => (
             <AgentStepCard key={s.id} step={s} />
           ))}
@@ -577,28 +556,29 @@ function AgentStepCard({ step }: { step: AgentStep }) {
   const activity = interleaveActivity(step.modelTurns, step.toolCalls);
   const ic = agentIcon(step.agentKind);
   return (
-    <div className="rounded border border-zinc-200 p-3 dark:border-zinc-800">
+    <div className="border border-hair p-3 ">
       <details open>
         <summary className="flex cursor-pointer list-none items-baseline justify-between">
           <div className="flex items-start gap-2">
             <ic.Icon className={`mt-0.5 h-4 w-4 shrink-0 ${ic.accent}`} aria-hidden />
             <div>
               <div className="font-medium">{step.agentKind}</div>
-              <div className="text-xs text-zinc-500">
-                {step.modelTurns.length} model turn(s) · {step.toolCalls.length} tool call(s)
-                · {step.totalInputTokens.toLocaleString()} in / {step.totalOutputTokens.toLocaleString()} out tokens
+              <div className="text-xs text-muted">
+                {step.modelTurns.length} model turn(s) · {step.toolCalls.length} tool call(s) ·{' '}
+                {step.totalInputTokens.toLocaleString()} in /{' '}
+                {step.totalOutputTokens.toLocaleString()} out tokens
                 {step.totalUsdEstimate > 0 && ` · $${step.totalUsdEstimate.toFixed(6)}`}
               </div>
             </div>
           </div>
           <div className="flex items-baseline gap-3 text-xs">
             <StatusPill status={step.status} />
-            {dur && <span className="font-mono text-zinc-500">{dur}</span>}
+            {dur && <span className="font-mono text-muted">{dur}</span>}
           </div>
         </summary>
         <div className="mt-3 space-y-3">
           {step.failureReason && (
-            <div className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-900/20 dark:text-rose-300">
+            <div className="border border-energy bg-energy-soft px-3 py-2 text-[13px] text-energy-deep">
               <strong>Failed:</strong> {step.failureReason}
             </div>
           )}
@@ -609,9 +589,9 @@ function AgentStepCard({ step }: { step: AgentStep }) {
 
           <Section title="Output" defaultOpen>
             {step.output === null || step.output === undefined ? (
-              <p className="text-sm italic text-zinc-500">No output produced.</p>
+              <p className="text-sm italic text-muted">No output produced.</p>
             ) : typeof step.output === 'string' ? (
-              <pre className="whitespace-pre-wrap rounded bg-zinc-50 p-3 text-sm text-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
+              <pre className="whitespace-pre-wrap border border-hair-2 bg-bg-2 p-3 text-[13px] text-ink">
                 {step.output}
               </pre>
             ) : (
@@ -621,7 +601,7 @@ function AgentStepCard({ step }: { step: AgentStep }) {
 
           <Section title={`Activity (${activity.length})`} defaultOpen>
             {activity.length === 0 ? (
-              <p className="text-sm italic text-zinc-500">No activity recorded.</p>
+              <p className="text-sm italic text-muted">No activity recorded.</p>
             ) : (
               <ol className="space-y-2">
                 {activity.map((item, i) => (
@@ -644,18 +624,18 @@ function AgentStepCard({ step }: { step: AgentStep }) {
 
 function ModelTurnRow({ turn }: { turn: ModelTurn }) {
   return (
-    <div className="flex items-baseline gap-3 rounded border border-dashed border-zinc-200 px-3 py-1.5 text-xs dark:border-zinc-800">
-      <span className="w-16 shrink-0 font-mono text-zinc-400">
+    <div className="flex items-baseline gap-3 rounded border border-dashed border-hair px-3 py-1.5 text-xs ">
+      <span className="w-16 shrink-0 font-mono text-muted-2">
         {new Date(turn.occurredAt).toLocaleTimeString()}
       </span>
-      <span className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[10px] uppercase text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+      <span className="bg-bg border border-hair px-[6px] py-[2px] font-mono text-[10px] uppercase text-muted">
         model
       </span>
-      <span className="font-mono text-zinc-800 dark:text-zinc-200">{turn.modelId}</span>
-      <span className="text-zinc-500">
+      <span className="font-mono text-ink">{turn.modelId}</span>
+      <span className="text-muted">
         {turn.inputTokens.toLocaleString()} in / {turn.outputTokens.toLocaleString()} out
-        {turn.cacheReadTokens > 0 && ` · ${turn.cacheReadTokens.toLocaleString()} cache`}
-        {' '}· {turn.latencyMs}ms
+        {turn.cacheReadTokens > 0 && ` · ${turn.cacheReadTokens.toLocaleString()} cache`} ·{' '}
+        {turn.latencyMs}ms
         {turn.usdEstimate > 0 && ` · $${turn.usdEstimate.toFixed(6)}`}
       </span>
     </div>
@@ -668,35 +648,37 @@ function ToolCallRow({ call }: { call: ToolCall }) {
       className={`rounded border px-3 py-2 text-xs ${
         call.isError
           ? 'border-rose-300 bg-rose-50 dark:border-rose-900 dark:bg-rose-900/20'
-          : 'border-zinc-200 dark:border-zinc-800'
+          : 'border-hair'
       }`}
     >
       <details>
         <summary className="flex cursor-pointer list-none items-baseline gap-3">
-          <span className="w-16 shrink-0 font-mono text-zinc-400">
+          <span className="w-16 shrink-0 font-mono text-muted-2">
             {new Date(call.startedAt).toLocaleTimeString()}
           </span>
-          <span className={`rounded px-1.5 py-0.5 font-mono text-[10px] uppercase ${
-            call.isError
-              ? 'bg-rose-200 text-rose-800 dark:bg-rose-800/50 dark:text-rose-200'
-              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
-          }`}>
+          <span
+            className={`rounded px-1.5 py-0.5 font-mono text-[10px] uppercase ${
+              call.isError
+                ? 'bg-rose-200 text-rose-800 dark:bg-rose-800/50 dark:text-rose-200'
+                : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+            }`}
+          >
             tool
           </span>
-          <span className="font-mono text-zinc-800 dark:text-zinc-200">{call.skillName}</span>
+          <span className="font-mono text-ink">{call.skillName}</span>
           <SideEffectChip cls={call.sideEffectClass} />
-          <span className="ml-auto text-zinc-500">
+          <span className="ml-auto text-muted">
             {fmtDuration(call.startedAt, call.finishedAt)}
             {call.isError ? ' · errored' : ''}
           </span>
         </summary>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
           <div>
-            <div className="text-[10px] uppercase tracking-wide text-zinc-500">Input</div>
+            <div className="text-[10px] uppercase tracking-wide text-muted">Input</div>
             <JsonBlock value={call.input} />
           </div>
           <div>
-            <div className="text-[10px] uppercase tracking-wide text-zinc-500">Output</div>
+            <div className="text-[10px] uppercase tracking-wide text-muted">Output</div>
             <JsonBlock value={call.output} />
           </div>
         </div>
@@ -716,7 +698,7 @@ function Section({
 }) {
   return (
     <details {...(defaultOpen ? { open: true } : {})}>
-      <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
+      <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted hover:text-ink">
         {title}
       </summary>
       <div className="mt-2">{children}</div>
@@ -733,7 +715,7 @@ function JsonBlock({ value }: { value: unknown }) {
   }
   if (body.length > 5000) body = body.slice(0, 5000) + '\n… (truncated)';
   return (
-    <pre className="overflow-x-auto rounded bg-zinc-50 p-2 text-[11px] leading-snug text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+    <pre className="overflow-x-auto border border-hair-2 bg-bg-2 p-2 text-[11px] leading-snug text-ink-2 ">
       {body}
     </pre>
   );
@@ -751,7 +733,9 @@ function StatusPill({ status }: { status: string }) {
             ? 'bg-bg-2 text-ink-2 border border-hair'
             : 'bg-bg text-ink-2 border border-hair';
   return (
-    <span className={`px-[8px] py-[2px] font-mono text-[10.5px] uppercase tracking-[0.06em] ${tone}`}>
+    <span
+      className={`px-[8px] py-[2px] font-mono text-[10.5px] uppercase tracking-[0.06em] ${tone}`}
+    >
       {status}
     </span>
   );
@@ -767,10 +751,10 @@ function SideEffectChip({ cls }: { cls: string }) {
 
 function interleaveActivity(turns: ModelTurn[], tools: ToolCall[]) {
   const items: Array<
-    | { kind: 'turn'; at: number; turn: ModelTurn }
-    | { kind: 'tool'; at: number; call: ToolCall }
+    { kind: 'turn'; at: number; turn: ModelTurn } | { kind: 'tool'; at: number; call: ToolCall }
   > = [];
-  for (const t of turns) items.push({ kind: 'turn', at: new Date(t.occurredAt).getTime(), turn: t });
+  for (const t of turns)
+    items.push({ kind: 'turn', at: new Date(t.occurredAt).getTime(), turn: t });
   for (const c of tools) items.push({ kind: 'tool', at: new Date(c.startedAt).getTime(), call: c });
   items.sort((a, b) => a.at - b.at);
   return items;
@@ -809,11 +793,11 @@ const STAGE_LABELS: Record<string, string> = {
  */
 const STAGE_ICONS: Record<string, { Icon: LucideIcon; accent: string }> = {
   discovery: { Icon: Compass, accent: 'text-violet-600 dark:text-violet-400' },
-  pm: { Icon: ClipboardList, accent: 'text-sky-600 dark:text-sky-400' },
-  implementation: { Icon: Hammer, accent: 'text-amber-600 dark:text-amber-400' },
-  qa: { Icon: ShieldCheck, accent: 'text-rose-600 dark:text-rose-400' },
-  deploy_dev: { Icon: Rocket, accent: 'text-emerald-600 dark:text-emerald-400' },
-  observation: { Icon: Activity, accent: 'text-zinc-600 dark:text-zinc-400' },
+  pm: { Icon: ClipboardList, accent: 'text-accent' },
+  implementation: { Icon: Hammer, accent: 'text-ink' },
+  qa: { Icon: ShieldCheck, accent: 'text-energy-deep' },
+  deploy_dev: { Icon: Rocket, accent: 'text-positive-deep' },
+  observation: { Icon: Activity, accent: 'text-ink-2' },
 };
 
 /**
@@ -822,13 +806,13 @@ const STAGE_ICONS: Record<string, { Icon: LucideIcon; accent: string }> = {
  * the "verification" mental model.
  */
 const AGENT_ICONS: Record<string, { Icon: LucideIcon; accent: string }> = {
-  Planner: { Icon: ClipboardList, accent: 'text-sky-600 dark:text-sky-400' },
-  Coder: { Icon: Hammer, accent: 'text-amber-600 dark:text-amber-400' },
-  Reviewer: { Icon: ShieldCheck, accent: 'text-rose-600 dark:text-rose-400' },
+  Planner: { Icon: ClipboardList, accent: 'text-accent' },
+  Coder: { Icon: Hammer, accent: 'text-ink' },
+  Reviewer: { Icon: ShieldCheck, accent: 'text-energy-deep' },
 };
 
 function agentIcon(kind: string): { Icon: LucideIcon; accent: string } {
-  return AGENT_ICONS[kind] ?? { Icon: Bot, accent: 'text-zinc-600 dark:text-zinc-400' };
+  return AGENT_ICONS[kind] ?? { Icon: Bot, accent: 'text-ink-2' };
 }
 
 function orderByStage(workflows: Workflow[]): Workflow[] {
@@ -877,9 +861,7 @@ function fmtDuration(start: string | null, end: string | null): string {
 function extractDiscoveryDirections(d: RunDetail): DiscoveryDirection[] {
   for (const w of d.workflows) {
     for (const s of w.agentSteps) {
-      const out = s.output as
-        | { mode?: string; directions?: DiscoveryDirection[] }
-        | null;
+      const out = s.output as { mode?: string; directions?: DiscoveryDirection[] } | null;
       if (out?.mode === 'discovery' && Array.isArray(out.directions)) {
         return out.directions;
       }
@@ -889,7 +871,12 @@ function extractDiscoveryDirections(d: RunDetail): DiscoveryDirection[] {
 }
 
 function computeTotals(d: RunDetail) {
-  let steps = 0, turns = 0, tools = 0, inTok = 0, outTok = 0, usd = 0;
+  let steps = 0,
+    turns = 0,
+    tools = 0,
+    inTok = 0,
+    outTok = 0,
+    usd = 0;
   for (const w of d.workflows) {
     for (const s of w.agentSteps) {
       steps++;
