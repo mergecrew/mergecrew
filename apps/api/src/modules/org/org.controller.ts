@@ -8,9 +8,11 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { OrgService } from './org.service.js';
 import { RoleGuard, RequireRole } from '../../common/role.guard.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
@@ -178,9 +180,21 @@ export class OrgController {
   @RequireRole('admin')
   @Get('orgs/:slug/audit-log')
   async auditLog(
+    @Param('slug') slug: string,
+    @Res({ passthrough: true }) res: Response,
     @Query('limit') limit?: string,
     @Query('projectId') projectId?: string,
+    @Query('format') format?: string,
   ) {
+    if (format === 'csv') {
+      const csv = await this.orgs.exportAuditLogCsv({ projectId: projectId ?? null });
+      const filename = projectId
+        ? `audit-log-${slug}-${projectId}.csv`
+        : `audit-log-${slug}.csv`;
+      res.setHeader('content-type', 'text/csv; charset=utf-8');
+      res.setHeader('content-disposition', `attachment; filename="${filename}"`);
+      return csv;
+    }
     return {
       items: await this.orgs.listAuditLog({
         limit: limit ? Number(limit) : 100,

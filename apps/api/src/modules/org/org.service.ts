@@ -553,6 +553,63 @@ export class OrgService {
     return { ok: true };
   }
 
+  /**
+   * CSV dump variant of listAuditLog. Pulled out instead of branching
+   * the existing method so the in-memory shape stays uniform for the
+   * UI list (which expects the enriched `actor` field) while the
+   * export path can stream straight to text without the actor lookup
+   * cost when the dataset is large.
+   *
+   * Includes up to 10k rows — a hard ceiling that's still well above
+   * what any real org will accumulate in a year, but small enough that
+   * we don't have to think about pagination + streaming yet.
+   */
+  async exportAuditLogCsv(opts: { projectId?: string | null }): Promise<string> {
+    const t = this.tenant.require();
+    const where: { organizationId: string; target?: { path: string[]; equals: string } } = {
+      organizationId: t.organizationId,
+    };
+    if (opts.projectId) {
+      where.target = { path: ['projectId'], equals: opts.projectId };
+    }
+    const entries = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.auditLogEntry.findMany({
+        where,
+        orderBy: { occurredAt: 'desc' },
+        take: 10_000,
+      }),
+    );
+    const actorIds = Array.from(
+      new Set(entries.map((e) => e.actorUserId).filter((id): id is string => !!id)),
+    );
+    const users = actorIds.length
+      ? await this.prisma.withSystem((tx) =>
+          tx.user.findMany({
+            where: { id: { in: actorIds } },
+            select: { id: true, email: true },
+          }),
+        )
+      : [];
+    const byId = new Map(users.map((u) => [u.id, u.email] as const));
+
+    const escape = (v: unknown): string => {
+      // RFC 4180: wrap any field containing ", , \n, or \r in quotes;
+      // escape internal quotes by doubling.
+      const s = v == null ? '' : String(v);
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [
+      'occurred_at,action,actor_email,target_json',
+      ...entries.map((e) => {
+        const occurred = e.occurredAt.toISOString();
+        const actor = e.actorUserId ? (byId.get(e.actorUserId) ?? '') : '';
+        const target = JSON.stringify(e.target ?? {});
+        return [escape(occurred), escape(e.action), escape(actor), escape(target)].join(',');
+      }),
+    ];
+    return lines.join('\n') + '\n';
+  }
+
   async listAuditLog(opts: { limit?: number; projectId?: string | null }) {
     const t = this.tenant.require();
     const where: { organizationId: string; target?: { path: string[]; equals: string } } = {
