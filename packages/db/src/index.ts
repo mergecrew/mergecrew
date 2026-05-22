@@ -17,6 +17,11 @@ export {
   type SloEvaluationResult,
 } from './slo-evaluator.js';
 export {
+  computeOrgProjectsHealth,
+  computeProjectHealth,
+  type ProjectHealthRow,
+} from './projects-health.js';
+export {
   seedDemoProject,
   DEMO_PROJECT_SLUG,
   DEMO_PROJECT_NAME,
