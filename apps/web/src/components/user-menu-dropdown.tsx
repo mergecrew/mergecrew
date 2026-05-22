@@ -2,10 +2,19 @@
 
 import { useState, useRef, useEffect, type ReactNode } from 'react';
 import Link from 'next/link';
-import { ChevronDown, Check, Plus } from 'lucide-react';
+import { Check, Plus } from 'lucide-react';
 import { clsx } from 'clsx';
 
 type Org = { slug: string; name: string };
+
+function initialsOf(label: string): string {
+  return label
+    .split(/[\s@]+/)
+    .map((s) => s[0]?.toUpperCase() ?? '')
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('');
+}
 
 export function UserMenuDropdown({
   label,
@@ -23,6 +32,7 @@ export function UserMenuDropdown({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const initials = initialsOf(label || email || '?');
 
   useEffect(() => {
     if (!open) return;
@@ -47,29 +57,35 @@ export function UserMenuDropdown({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex items-center gap-1.5 rounded px-2 py-1 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        title={label}
+        className={clsx(
+          'flex h-[32px] w-[32px] items-center justify-center rounded-full border-2 border-paper bg-gradient-to-br from-accent to-accent-deep text-[12.5px] font-semibold text-paper shadow-[0_0_0_1px_var(--hair-strong)] transition-shadow',
+          open && 'shadow-[0_0_0_3px_var(--accent-soft)]',
+        )}
       >
-        <span className="hidden max-w-[180px] truncate sm:inline">{label}</span>
-        <ChevronDown size={14} aria-hidden />
+        {initials || '?'}
       </button>
+
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full z-50 mt-1 w-72 overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-zinc-800 dark:bg-zinc-900"
+          className="absolute right-0 top-full z-50 mt-2 w-[280px] overflow-hidden border border-hair bg-paper shadow-pop"
         >
-          <div className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-            <div className="truncate font-medium">{label}</div>
+          <div className="border-b border-hair-2 px-4 py-3">
+            <div className="truncate text-[14px] font-medium tracking-[-0.005em] text-ink">
+              {label}
+            </div>
             {email && email !== label && (
-              <div className="truncate text-xs text-zinc-500">{email}</div>
+              <div className="truncate font-mono text-[11.5px] text-muted">{email}</div>
             )}
           </div>
 
           {orgs.length > 0 && (
-            <div className="border-b border-zinc-200 py-1 dark:border-zinc-800">
-              <div className="px-4 pt-2 pb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                Organization
+            <div className="border-b border-hair-2 py-1">
+              <div className="px-4 pt-2 pb-1 font-mono text-[10px] uppercase tracking-[0.1em] text-muted">
+                Organisation
               </div>
-              <ul>
+              <ul className="m-0 list-none p-0">
                 {orgs.map((o) => {
                   const isCurrent = o.slug === currentOrgSlug;
                   return (
@@ -78,13 +94,13 @@ export function UserMenuDropdown({
                         href={`/orgs/${o.slug}`}
                         onClick={() => setOpen(false)}
                         className={clsx(
-                          'flex items-center justify-between gap-2 px-4 py-1.5 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800',
-                          isCurrent && 'font-medium',
+                          'flex items-center justify-between gap-2 px-4 py-[7px] text-[13px] no-underline text-ink-2 hover:bg-paper-2 hover:text-ink',
+                          isCurrent && 'bg-accent-tint font-medium text-accent-deep',
                         )}
                       >
                         <span className="min-w-0 flex-1 truncate">{o.name}</span>
                         {isCurrent && (
-                          <Check size={14} className="shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                          <Check size={14} className="shrink-0 text-accent" aria-hidden />
                         )}
                       </Link>
                     </li>
@@ -94,39 +110,43 @@ export function UserMenuDropdown({
                   <Link
                     href="/orgs/new"
                     onClick={() => setOpen(false)}
-                    className="flex items-center gap-2 px-4 py-1.5 text-sm text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                    className="flex items-center gap-2 px-4 py-[7px] text-[13px] text-muted no-underline hover:bg-paper-2 hover:text-ink"
                   >
                     <Plus size={14} aria-hidden />
-                    <span>New organization</span>
+                    <span>New organisation</span>
                   </Link>
                 </li>
               </ul>
             </div>
           )}
 
-          {currentOrgSlug && (
-            <div className="border-b border-zinc-200 py-1 dark:border-zinc-800">
+          <div className="border-b border-hair-2 py-1">
+            <Link
+              href="/account"
+              onClick={() => setOpen(false)}
+              className="block px-4 py-[7px] text-[13px] text-ink-2 no-underline hover:bg-paper-2 hover:text-ink"
+            >
+              Account preferences
+            </Link>
+            <Link
+              href="/account#two-factor"
+              onClick={() => setOpen(false)}
+              className="block px-4 py-[7px] text-[13px] text-ink-2 no-underline hover:bg-paper-2 hover:text-ink"
+            >
+              Two-factor + sessions
+            </Link>
+            {currentOrgSlug && (
               <Link
                 href={`/orgs/${currentOrgSlug}/settings`}
                 onClick={() => setOpen(false)}
-                className="block px-4 py-1.5 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                className="block px-4 py-[7px] text-[13px] text-ink-2 no-underline hover:bg-paper-2 hover:text-ink"
               >
-                Organization settings
+                Org settings
               </Link>
-            </div>
-          )}
-
-          <div className="border-b border-zinc-200 py-1 dark:border-zinc-800">
-            <Link
-              href="/account/security"
-              onClick={() => setOpen(false)}
-              className="block px-4 py-1.5 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
-            >
-              Account security
-            </Link>
+            )}
           </div>
 
-          {signOutSlot}
+          <div className="py-1">{signOutSlot}</div>
         </div>
       )}
     </div>

@@ -41,7 +41,7 @@ export async function UserMenu({ currentOrgSlug }: { currentOrgSlug?: string }) 
     >
       <button
         type="submit"
-        className="block w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
+        className="block w-full px-4 py-[7px] text-left text-[13px] text-energy-deep hover:bg-energy-soft"
       >
         Sign out
       </button>
