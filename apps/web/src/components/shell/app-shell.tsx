@@ -70,7 +70,7 @@ export function AppShell({
           className="fixed inset-0 top-[56px] z-30 cursor-default bg-ink/30 md:hidden"
         />
       )}
-      <main className="overflow-y-auto md:col-start-2">{children}</main>
+      <main className="min-w-0 overflow-y-auto md:col-start-2">{children}</main>
     </div>
   );
 }
