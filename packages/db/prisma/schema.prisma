@@ -42,6 +42,10 @@ model User {
   /// consumption the matching row is deleted, not flipped — keeps the table
   /// honest about how many codes remain.
   mfaRecoveryCodes     UserMfaRecoveryCode[]
+  /// Per-user opt-in for daily digest emails (#748). Disabled by
+  /// default. The unsubscribe link in every email flips this back
+  /// to false without requiring the user to sign in.
+  emailDigestEnabled   Boolean               @default(false) @map("email_digest_enabled")
   createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 

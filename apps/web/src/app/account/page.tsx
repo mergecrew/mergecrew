@@ -6,6 +6,7 @@ import { UserMenu } from '@/components/user-menu';
 import { SettingsLayout, Section } from '@/components/shell/settings-layout';
 import { Card, FieldRow, Input, Label, PageHead, RolePill } from '@/components/ui';
 import { MfaPanel } from './security/mfa-panel';
+import { NotificationsForm } from './notifications-form';
 
 interface MfaStatus {
   enrolled: boolean;
@@ -52,11 +53,14 @@ const NAV = [
 export default async function AccountSettingsPage() {
   const session = await requireSession();
 
-  const [mfa, orgsRes] = await Promise.all([
+  const [mfa, orgsRes, notifications] = await Promise.all([
     api<MfaStatus>('/v1/me/mfa', { session }).catch(
       () => ({ enrolled: false, enrolledAt: null, pending: false, recoveryCodesRemaining: 0 }) as MfaStatus,
     ),
     api<{ items: Org[] }>('/v1/orgs', { session }).catch(() => ({ items: [] as Org[] })),
+    api<{ emailDigestEnabled: boolean }>('/v1/me/notifications', { session }).catch(
+      () => ({ emailDigestEnabled: false }),
+    ),
   ]);
 
   let pendingSetup: { qrDataUrl: string; otpauthUrl: string } | null = null;
@@ -193,17 +197,12 @@ export default async function AccountSettingsPage() {
             id="notifications"
             anchor="04 · NOTIFICATIONS"
             title="Notifications"
-            desc="Per-channel toggles for digest dispatch, gate reminders, and pause events."
+            desc="Per-user delivery preferences. Channel availability depends on the install: SMTP / Resend for email; Slack webhook configured at the org level."
           >
             <Card className="p-5">
-              <p className="m-0 text-[13.5px] text-ink-2">
-                Per-user notification preferences are not yet exposed. Project-level digest
-                delivery is configured in{' '}
-                <span className="font-mono text-[12.5px] text-ink">
-                  Project settings → Digest delivery
-                </span>
-                .
-              </p>
+              <NotificationsForm
+                initialEmailDigestEnabled={notifications.emailDigestEnabled}
+              />
             </Card>
           </Section>
 

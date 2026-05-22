@@ -1771,6 +1771,46 @@
         ]
       }
     },
+    "/v1/me/notifications": {
+      "get": {
+        "operationId": "MeNotificationsController_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "MeNotifications"
+        ]
+      },
+      "patch": {
+        "operationId": "MeNotificationsController_update",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "MeNotifications"
+        ]
+      }
+    },
+    "/v1/notifications/unsubscribe": {
+      "post": {
+        "operationId": "UnsubscribeController_unsubscribe",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Unsubscribe"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/llm/providers": {
       "get": {
         "operationId": "LlmController_listProviders",

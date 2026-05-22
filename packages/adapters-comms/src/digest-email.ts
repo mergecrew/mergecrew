@@ -16,6 +16,12 @@ export interface DigestEmailArgs {
   anomalies?: DigestAnomaly[];
   eod: Date;
   webBaseUrl: string;
+  /**
+   * Per-recipient unsubscribe URL (#748). When provided, renders a one-click
+   * unsubscribe link in the footer that flips emailDigestEnabled to false
+   * without requiring the user to sign in.
+   */
+  unsubscribeUrl?: string;
 }
 
 export interface RenderedEmail {
@@ -24,7 +30,7 @@ export interface RenderedEmail {
 }
 
 export function buildDigestEmail(args: DigestEmailArgs): RenderedEmail {
-  const { orgSlug, orgName, project, changesets, anomalies = [], eod, webBaseUrl } = args;
+  const { orgSlug, orgName, project, changesets, anomalies = [], eod, webBaseUrl, unsubscribeUrl } = args;
   const dateStr = eod.toISOString().slice(0, 10);
   const subject = `[${orgName}] ${project.name} digest — ${dateStr}`;
 
@@ -53,6 +59,11 @@ export function buildDigestEmail(args: DigestEmailArgs): RenderedEmail {
         <tr>
           <td style="padding:16px 24px;background:#fafbfc;font-size:12px;color:#6b7280;">
             <a href="${escapeAttr(digestUrl)}" style="color:#2563eb;text-decoration:none;">Open digest in Mergecrew →</a>
+            ${
+              unsubscribeUrl
+                ? `<span style="float:right;"><a href="${escapeAttr(unsubscribeUrl)}" style="color:#6b7280;text-decoration:underline;">Unsubscribe</a></span>`
+                : ''
+            }
           </td>
         </tr>
       </table>
