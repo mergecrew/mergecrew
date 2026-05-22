@@ -11,6 +11,7 @@ import { stuckRunWatchdog } from './stuck-run-watchdog.js';
 import { evalTick } from './eval-tick.js';
 import { installPingTick } from './install-ping-tick.js';
 import { metricsRollupTick } from './metrics-rollup-tick.js';
+import { sloEvaluatorTick } from './slo-evaluator-tick.js';
 import { startProbeServer } from './probe-server.js';
 
 const logger = pino({
@@ -198,6 +199,9 @@ setInterval(() => {
   metricsRollupTick({ logger }).catch((err) =>
     logger.error({ err: String(err?.message ?? err) }, 'metrics-rollup-tick failed'),
   );
+  sloEvaluatorTick({ eventlog, logger }).catch((err) =>
+    logger.error({ err: String(err?.message ?? err) }, 'slo-evaluator-tick failed'),
+  );
   maybeRunRetention();
 }, TICK_MS);
 // First tick at startup
@@ -216,5 +220,8 @@ installPingTick({ logger }).catch((err) =>
 );
 metricsRollupTick({ logger }).catch((err) =>
   logger.error({ err: String(err?.message ?? err) }, 'initial metrics-rollup-tick failed'),
+);
+sloEvaluatorTick({ eventlog, logger }).catch((err) =>
+  logger.error({ err: String(err?.message ?? err) }, 'initial slo-evaluator-tick failed'),
 );
 maybeRunRetention();

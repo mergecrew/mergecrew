@@ -13,6 +13,7 @@ import { ApprovalModule } from './modules/approval/approval.module.js';
 import { TimelineModule } from './modules/timeline/timeline.module.js';
 import { CostModule } from './modules/cost/cost.module.js';
 import { MetricsModule } from './modules/metrics/metrics.module.js';
+import { SloModule } from './modules/slo/slo.module.js';
 import { LlmModule } from './modules/llm/llm.module.js';
 import { IntegrationModule } from './modules/integration/integration.module.js';
 import { WebhookModule } from './modules/webhook/webhook.module.js';
@@ -39,6 +40,7 @@ import { EvalModule } from './modules/eval/eval.module.js';
     TimelineModule,
     CostModule,
     MetricsModule,
+    SloModule,
     LlmModule,
     IntegrationModule,
     WebhookModule,

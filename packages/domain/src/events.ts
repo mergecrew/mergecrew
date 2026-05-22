@@ -125,6 +125,15 @@ export const TimelineEventType = z.enum([
   // emit would fan out to N writes for a single operator action).
   'PROJECT_RUNS_PAUSED',
   'PROJECT_RUNS_RESUMED',
+  // SLO state transitions (#745). The evaluator emits one of these
+  // when a project's SLO crosses a state boundary (OK → AT_RISK,
+  // OK/AT_RISK → BREACHING, BREACHING/AT_RISK → OK). Payload carries
+  // the SLO id, name, metric, comparator, threshold, the previous +
+  // new state, and the current numeric value. The alert dispatcher
+  // (#749) routes these to Slack / email per the org's alert routes.
+  'SLO_BREACHING',
+  'SLO_AT_RISK',
+  'SLO_RECOVERED',
 ]);
 export type TimelineEventType = z.infer<typeof TimelineEventType>;
 

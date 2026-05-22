@@ -1639,6 +1639,58 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/projects/{projectSlug}/slos": {
+      "get": {
+        "operationId": "SloController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Slo"
+        ]
+      },
+      "post": {
+        "operationId": "SloController_create",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Slo"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/projects/{projectSlug}/slos/{sloId}": {
+      "patch": {
+        "operationId": "SloController_update",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Slo"
+        ]
+      },
+      "delete": {
+        "operationId": "SloController_remove",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Slo"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/llm/providers": {
       "get": {
         "operationId": "LlmController_listProviders",
