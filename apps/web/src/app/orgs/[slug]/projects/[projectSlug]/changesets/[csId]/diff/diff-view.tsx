@@ -94,7 +94,7 @@ export function DiffView(props: Props) {
   return (
     <div className="space-y-4">
       {props.files.length === 0 && (
-        <p className="text-sm italic text-zinc-500">No file changes returned for this PR.</p>
+        <p className="text-sm italic text-muted">No file changes returned for this PR.</p>
       )}
       {props.files.map((f) => (
         <FileBlock
@@ -139,25 +139,25 @@ function FileBlock({
   const [openLine, setOpenLine] = useState<number | null>(null);
 
   return (
-    <div className="rounded border border-zinc-200 dark:border-zinc-800">
+    <div className="border border-hair">
       <details open>
         <summary className="flex cursor-pointer list-none items-baseline justify-between px-3 py-2 text-sm">
           <div className="flex items-baseline gap-2">
-            <span className="font-mono text-zinc-800 dark:text-zinc-200">{file.path}</span>
+            <span className="font-mono text-ink">{file.path}</span>
             {file.oldPath && file.oldPath !== file.path && (
-              <span className="text-xs text-zinc-500">← {file.oldPath}</span>
+              <span className="text-xs text-muted">← {file.oldPath}</span>
             )}
             <StatusChip status={file.status} />
           </div>
           <div className="text-xs">
-            <span className="text-emerald-600 dark:text-emerald-400">+{file.additions}</span>{' '}
-            <span className="text-rose-600 dark:text-rose-400">-{file.deletions}</span>
+            <span className="text-positive-deep">+{file.additions}</span>{' '}
+            <span className="text-energy-deep">-{file.deletions}</span>
           </div>
         </summary>
 
-        <div className="border-t border-zinc-200 dark:border-zinc-800">
+        <div className="border-t border-hair">
           {file.hunks.length === 0 ? (
-            <p className="p-3 text-xs italic text-zinc-500">
+            <p className="p-3 text-xs italic text-muted">
               No textual hunks (binary, rename without content change, or empty patch).
             </p>
           ) : (
@@ -208,8 +208,8 @@ function HunkBlock({
   currentUserId: string;
 }) {
   return (
-    <div className="border-t border-zinc-100 first:border-t-0 dark:border-zinc-900">
-      <div className="px-3 py-1 font-mono text-[11px] text-zinc-500">
+    <div className="border-t border-hair-2 first:border-t-0">
+      <div className="px-3 py-1 font-mono text-[11px] text-muted">
         @@ {hunk.header || `${hunk.oldStart} → ${hunk.newStart}`} @@
       </div>
       <div className="font-mono text-xs">
@@ -218,9 +218,9 @@ function HunkBlock({
           const threads = threadsByLine.get(anchorLine) ?? [];
           const tone =
             l.type === 'add'
-              ? 'bg-emerald-50 dark:bg-emerald-950/40'
+              ? 'bg-positive/[0.08]'
               : l.type === 'del'
-                ? 'bg-rose-50 dark:bg-rose-950/40'
+                ? 'bg-energy/[0.08]'
                 : '';
           return (
             <div key={i}>
@@ -229,15 +229,15 @@ function HunkBlock({
                 onClick={() =>
                   setOpenLine(openLine === anchorLine ? null : anchorLine)
                 }
-                className={`flex w-full items-baseline gap-2 px-3 py-0.5 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800 ${tone}`}
+                className={`flex w-full items-baseline gap-2 px-3 py-0.5 text-left hover:bg-paper-2 ${tone}`}
                 title="Click to comment on this line"
               >
-                <span className="w-10 shrink-0 text-right text-zinc-400">{l.oldLine ?? ''}</span>
-                <span className="w-10 shrink-0 text-right text-zinc-400">{l.newLine ?? ''}</span>
-                <span className="w-3 shrink-0 select-none text-zinc-500">
+                <span className="w-10 shrink-0 text-right text-muted-2">{l.oldLine ?? ''}</span>
+                <span className="w-10 shrink-0 text-right text-muted-2">{l.newLine ?? ''}</span>
+                <span className="w-3 shrink-0 select-none text-muted">
                   {l.type === 'add' ? '+' : l.type === 'del' ? '-' : ' '}
                 </span>
-                <span className="whitespace-pre-wrap break-all text-zinc-800 dark:text-zinc-200">
+                <span className="whitespace-pre-wrap break-all text-ink">
                   {l.content || ' '}
                 </span>
               </button>
@@ -264,7 +264,7 @@ function HunkBlock({
               )}
 
               {openLine === anchorLine && anchorLine > 0 && (
-                <div className="border-l-2 border-amber-300 bg-amber-50/60 px-3 py-2 dark:border-amber-800 dark:bg-amber-950/20">
+                <div className="border-l-2 border-warn bg-warn/20 px-3 py-2">
                   <Composer
                     placeholder={`Comment on line ${anchorLine}`}
                     onCancel={() => setOpenLine(null)}
@@ -302,7 +302,7 @@ function ThreadView({
 }) {
   const [showReply, setShowReply] = useState(false);
   return (
-    <div className="space-y-2 rounded bg-white/70 p-2 dark:bg-zinc-900/70">
+    <div className="space-y-2 border border-hair-2 bg-paper-2 p-2">
       <CommentRow
         comment={thread.root}
         onUpdate={onUpdate}
@@ -334,7 +334,7 @@ function ThreadView({
           <button
             type="button"
             onClick={() => setShowReply(true)}
-            className="text-[11px] text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+            className="text-[11px] text-muted hover:text-ink"
           >
             Reply
           </button>
@@ -375,11 +375,11 @@ function CommentRow({
 
   return (
     <div className={indent ? 'pl-6' : ''}>
-      <div className="flex items-baseline gap-2 text-[11px] text-zinc-500">
-        <span className="font-medium text-zinc-700 dark:text-zinc-300">{author}</span>
+      <div className="flex items-baseline gap-2 text-[11px] text-muted">
+        <span className="font-medium text-ink-2">{author}</span>
         <span>{new Date(comment.createdAt).toLocaleString()}</span>
         {comment.resolvedAt && (
-          <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] uppercase text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+          <span className="bg-positive-soft px-[6px] py-[2px] font-mono text-[10px] uppercase tracking-[0.06em] text-positive-deep">
             resolved
           </span>
         )}
@@ -392,9 +392,9 @@ function CommentRow({
           onSubmit={submitEdit}
         />
       ) : (
-        <p className="whitespace-pre-wrap text-xs text-zinc-800 dark:text-zinc-200">{comment.body}</p>
+        <p className="whitespace-pre-wrap text-xs text-ink">{comment.body}</p>
       )}
-      {error && <p className="text-[11px] text-rose-600">{error}</p>}
+      {error && <p className="text-[11px] text-energy-deep">{error}</p>}
       {!editing && (
         <div className="mt-1 flex gap-3 text-[11px]">
           <button
@@ -406,7 +406,7 @@ function CommentRow({
                 if (!r.ok) setError(r.error);
               })
             }
-            className="text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+            className="text-muted hover:text-ink"
           >
             {comment.resolvedAt ? 'Reopen' : 'Resolve'}
           </button>
@@ -418,7 +418,7 @@ function CommentRow({
                   setError(null);
                   setEditing(true);
                 }}
-                className="text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                className="text-muted hover:text-ink"
               >
                 Edit
               </button>
@@ -431,7 +431,7 @@ function CommentRow({
                     if (!r.ok) setError(r.error);
                   })
                 }
-                className="text-rose-600 hover:text-rose-800 dark:text-rose-400"
+                className="text-energy-deep hover:text-energy"
               >
                 Delete
               </button>
@@ -471,7 +471,7 @@ function Composer({
   return (
     <div className="space-y-1">
       <textarea
-        className="w-full rounded border px-2 py-1 text-xs dark:bg-zinc-900 dark:border-zinc-700"
+        className="w-full border border-hair bg-paper-2 px-3 py-2 text-[12.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)]"
         rows={2}
         placeholder={placeholder}
         value={value}
@@ -485,7 +485,7 @@ function Composer({
         <Button variant="secondary" onClick={onCancel} disabled={pending}>
           Cancel
         </Button>
-        {error && <span className="text-[11px] text-rose-600">{error}</span>}
+        {error && <span className="text-[11px] text-energy-deep">{error}</span>}
       </div>
     </div>
   );
