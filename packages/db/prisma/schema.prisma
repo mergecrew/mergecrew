@@ -127,8 +127,31 @@ model Organization {
   lifecycleTemplates OrgLifecycleTemplate[]
   apiKeys            ApiKey[]
   outboundWebhooks   OutboundWebhook[]
+  alertRoutes        AlertRoute[]
 
   @@map("organizations")
+}
+
+/// Per-event-kind delivery routing (V2.af / #749). One row per
+/// (organization, eventKind). The dispatcher reads the matching row
+/// when an event fires and fans out to each listed channel. Empty
+/// `channels` array silences the event entirely. Changes take effect
+/// on the next event — no restart.
+model AlertRoute {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  /// One of: 'digest.daily' | 'run.failed' | 'slo.breaching' | 'slo.recovered'.
+  /// Enforced in SQL by a CHECK constraint.
+  eventKind      String   @map("event_kind")
+  /// Subset of: 'slack' | 'email-user'. Empty array silences the event.
+  channels       String[]
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, eventKind])
+  @@map("alert_routes")
 }
 
 model OrgLifecycleTemplate {

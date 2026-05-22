@@ -1811,6 +1811,34 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/notifications/routes": {
+      "get": {
+        "operationId": "AlertRoutesController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "AlertRoutes"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/notifications/routes/{eventKind}": {
+      "put": {
+        "operationId": "AlertRoutesController_upsert",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "AlertRoutes"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/llm/providers": {
       "get": {
         "operationId": "LlmController_listProviders",

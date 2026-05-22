@@ -22,6 +22,15 @@ export {
   type ProjectHealthRow,
 } from './projects-health.js';
 export {
+  ALERT_EVENT_KINDS,
+  ALERT_CHANNELS,
+  DEFAULT_ROUTES,
+  resolveAlertChannels,
+  listOrgAlertRoutes,
+  type AlertEventKind,
+  type AlertChannel,
+} from './alert-routes.js';
+export {
   seedDemoProject,
   DEMO_PROJECT_SLUG,
   DEMO_PROJECT_NAME,
@@ -56,6 +65,7 @@ export type {
   Schedule,
   TimelineEvent,
   MemoryDocument,
+  AlertRoute,
   AuditLogEntry,
   MetricsRollup,
   ProjectSecret,
