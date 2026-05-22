@@ -553,11 +553,19 @@ export class OrgService {
     return { ok: true };
   }
 
-  async listAuditLog(opts: { limit?: number }) {
+  async listAuditLog(opts: { limit?: number; projectId?: string | null }) {
     const t = this.tenant.require();
+    const where: { organizationId: string; target?: { path: string[]; equals: string } } = {
+      organizationId: t.organizationId,
+    };
+    if (opts.projectId) {
+      // AuditLogEntry.target is a free-form JSON column; Prisma JSON
+      // filter walks the `target -> projectId` path.
+      where.target = { path: ['projectId'], equals: opts.projectId };
+    }
     const entries = await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.auditLogEntry.findMany({
-        where: { organizationId: t.organizationId },
+        where,
         orderBy: { occurredAt: 'desc' },
         take: opts.limit ?? 100,
       }),

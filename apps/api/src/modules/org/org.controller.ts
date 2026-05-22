@@ -177,8 +177,16 @@ export class OrgController {
   @UseGuards(RoleGuard)
   @RequireRole('admin')
   @Get('orgs/:slug/audit-log')
-  async auditLog(@Query('limit') limit?: string) {
-    return { items: await this.orgs.listAuditLog({ limit: limit ? Number(limit) : 100 }) };
+  async auditLog(
+    @Query('limit') limit?: string,
+    @Query('projectId') projectId?: string,
+  ) {
+    return {
+      items: await this.orgs.listAuditLog({
+        limit: limit ? Number(limit) : 100,
+        projectId: projectId ?? null,
+      }),
+    };
   }
 
   @UseGuards(RoleGuard)

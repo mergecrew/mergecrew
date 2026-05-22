@@ -64,6 +64,10 @@ const NAV = [
       { id: 'smoke', label: 'Onboarding smoke test' },
     ],
   },
+  {
+    label: 'Audit',
+    items: [{ id: 'audit-log', label: 'Audit log' }],
+  },
 ];
 
 export default async function ProjectSettings({
@@ -79,6 +83,7 @@ export default async function ProjectSettings({
     sp.from === 'github_install' && sp.installation_id ? sp.installation_id : null;
   const session = await requireSession();
   const project = await apiOr404<{
+    id: string;
     name: string;
     slug: string;
     description: string | null;
@@ -140,6 +145,26 @@ export default async function ProjectSettings({
     () => ({ items: [] }),
   );
   const canEdit = await hasRole(slug, session, 'operator');
+  const isAdmin = await hasRole(slug, session, 'admin');
+
+  // Audit log is admin-gated on the API side; skip the fetch when the
+  // viewer isn't an admin so we don't surface a 403 to operators.
+  const auditLog = isAdmin
+    ? await api<{
+        items: Array<{
+          id: string;
+          action: string;
+          occurredAt: string;
+          target: any;
+          metadata: any;
+          actorUserId: string | null;
+          actor: { id: string; email: string; name: string | null } | null;
+        }>;
+      }>(
+        `/v1/orgs/${slug}/audit-log?limit=50&projectId=${encodeURIComponent(project.id)}`,
+        { session },
+      ).catch(() => ({ items: [] }))
+    : { items: [] };
 
   const lifecycleResp = await api<{ parsed?: { runner?: Record<string, unknown> } } | null>(
     `/v1/orgs/${slug}/projects/${projectSlug}/lifecycle`,
@@ -460,6 +485,61 @@ export default async function ProjectSettings({
                   : undefined
             }
           />
+        </Section>
+
+        <Section
+          id="audit-log"
+          anchor="18 · AUDIT"
+          title="Audit log"
+          desc={
+            isAdmin
+              ? 'Immutable record of admin actions touching this project. Org-wide events live under Org settings → Audit log.'
+              : 'Audit log access is admin-only on this org. Ask an admin to surface specific events.'
+          }
+        >
+          <Card>
+            {!isAdmin ? (
+              <div className="p-5 text-[13px] text-muted">
+                You need the <code className="font-mono text-[12px] text-ink">admin</code> role
+                to view this section.
+              </div>
+            ) : auditLog.items.length === 0 ? (
+              <div className="p-5 text-[13px] text-muted">
+                No project-scoped audit events yet. Any admin action touching this project
+                (pause / resume, member changes, settings) will appear here.
+              </div>
+            ) : (
+              <ul className="m-0 list-none p-0">
+                {auditLog.items.map((e, i) => {
+                  const actorLabel =
+                    e.actor?.name?.trim() || e.actor?.email || e.actorUserId || 'system';
+                  return (
+                    <li
+                      key={e.id}
+                      className={
+                        i < auditLog.items.length - 1 ? 'border-b border-hair-2' : ''
+                      }
+                    >
+                      <div className="grid grid-cols-1 items-baseline gap-2 px-5 py-3 text-[13px] md:grid-cols-[170px_220px_1fr] md:gap-4">
+                        <span
+                          className="font-mono text-[11.5px] text-muted"
+                          title={new Date(e.occurredAt).toLocaleString()}
+                        >
+                          {new Date(e.occurredAt).toLocaleString()}
+                        </span>
+                        <span className="bg-accent-tint px-[8px] py-[2px] font-mono text-[10.5px] uppercase tracking-[0.06em] text-accent-deep">
+                          {e.action}
+                        </span>
+                        <span className="min-w-0 truncate text-ink-2">
+                          <b className="text-ink">{actorLabel}</b>
+                        </span>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Card>
         </Section>
       </SettingsLayout>
     </main>
