@@ -231,7 +231,14 @@ export function Chip({
    Roles
    ───────────────────────────────────────────────────────────── */
 
-type Role = 'owner' | 'admin' | 'reviewer' | 'viewer' | 'pending' | 'member';
+export type Role =
+  | 'owner'
+  | 'admin'
+  | 'operator'
+  | 'reviewer'
+  | 'viewer'
+  | 'pending'
+  | 'member';
 
 export function RolePill({ role }: { role: Role }) {
   return (
@@ -240,6 +247,7 @@ export function RolePill({ role }: { role: Role }) {
         'inline-block px-[8px] py-[3px] font-mono text-[10.5px] uppercase tracking-[0.06em] border',
         role === 'owner' && 'bg-ink border-ink text-paper',
         role === 'admin' && 'bg-accent border-accent text-paper',
+        role === 'operator' && 'bg-accent-soft border-accent text-accent-deep',
         role === 'reviewer' && 'bg-accent-soft border-accent text-accent-deep',
         role === 'viewer' && 'bg-bg border-hair text-ink-2',
         role === 'member' && 'bg-bg border-hair text-ink-2',
