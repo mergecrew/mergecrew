@@ -21,15 +21,11 @@ export function TrackerForm({
   initial: TrackerState | null;
 }) {
   const [adapterId, setAdapterId] = useState(initial?.adapterId ?? 'github-issues');
-  const [repoFullName, setRepoFullName] = useState(
-    String(initial?.config?.repoFullName ?? ''),
-  );
+  const [repoFullName, setRepoFullName] = useState(String(initial?.config?.repoFullName ?? ''));
   const [teamId, setTeamId] = useState(String(initial?.config?.teamId ?? ''));
   const [token, setToken] = useState('');
   const [testResult, setTestResult] = useState<
-    | null
-    | { ok: true; sample?: unknown }
-    | { ok: false; error: string }
+    null | { ok: true; sample?: unknown } | { ok: false; error: string }
   >(null);
   const [pending, startTransition] = useTransition();
 
@@ -67,19 +63,26 @@ export function TrackerForm({
   return (
     <div className="space-y-3">
       {initial && (
-        <div className="rounded bg-zinc-50 p-2 text-xs dark:bg-zinc-900">
+        <div className="rounded bg-bg p-2 text-xs ">
           <div>
-            <span className="text-zinc-500">Currently configured:</span>{' '}
+            <span className="text-muted">Currently configured:</span>{' '}
             <span className="font-mono">{initial.adapterId}</span>
             {initial.config?.repoFullName ? (
               <>
-                {' '}· <span className="font-mono">{String(initial.config.repoFullName)}</span>
+                {' '}
+                · <span className="font-mono">{String(initial.config.repoFullName)}</span>
               </>
             ) : null}
           </div>
-          <div className="text-zinc-500">
+          <div className="text-muted">
             Token:{' '}
-            <span className={initial.hasToken ? 'text-green-700 dark:text-green-300' : 'text-rose-700 dark:text-rose-300'}>
+            <span
+              className={
+                initial.hasToken
+                  ? 'text-green-700 dark:text-green-300'
+                  : 'text-rose-700 dark:text-rose-300'
+              }
+            >
               {initial.hasToken ? 'stored' : 'missing'}
             </span>
           </div>
@@ -88,9 +91,9 @@ export function TrackerForm({
 
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-sm">
-          <span className="block text-zinc-600 dark:text-zinc-400">Adapter</span>
+          <span className="block text-ink-2">Adapter</span>
           <select
-            className="mt-1 w-full rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700"
+            className="mt-2 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] "
             value={adapterId}
             onChange={(e) => setAdapterId(e.target.value)}
           >
@@ -101,11 +104,9 @@ export function TrackerForm({
 
         {isGithub ? (
           <label className="text-sm">
-            <span className="block text-zinc-600 dark:text-zinc-400">
-              Repository (owner/repo)
-            </span>
+            <span className="block text-ink-2">Repository (owner/repo)</span>
             <input
-              className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+              className="mt-2 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] font-mono "
               placeholder="acme/webapp"
               value={repoFullName}
               onChange={(e) => setRepoFullName(e.target.value)}
@@ -113,11 +114,9 @@ export function TrackerForm({
           </label>
         ) : (
           <label className="text-sm">
-            <span className="block text-zinc-600 dark:text-zinc-400">
-              Linear team ID (optional)
-            </span>
+            <span className="block text-ink-2">Linear team ID (optional)</span>
             <input
-              className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+              className="mt-2 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] font-mono "
               placeholder="TEAM_UUID"
               value={teamId}
               onChange={(e) => setTeamId(e.target.value)}
@@ -127,23 +126,23 @@ export function TrackerForm({
       </div>
 
       <label className="block text-sm">
-        <span className="block text-zinc-600 dark:text-zinc-400">
+        <span className="block text-ink-2">
           {isGithub
             ? 'GitHub token (PAT with repo / public_repo scope, or installation token)'
             : 'Linear API key'}
           {initial?.hasToken && (
-            <span className="ml-2 text-xs text-zinc-400">— leave blank to keep existing</span>
+            <span className="ml-2 text-xs text-muted-2">— leave blank to keep existing</span>
           )}
         </span>
         <input
           type="password"
-          className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+          className="mt-2 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] font-mono "
           placeholder={initial?.hasToken ? '••••••••' : 'paste token here'}
           value={token}
           onChange={(e) => setToken(e.target.value)}
         />
         {isGithub && (
-          <span className="mt-1 block text-xs text-zinc-500">
+          <span className="mt-1 block text-xs text-muted">
             Create one at{' '}
             <a
               className="underline"
@@ -185,9 +184,16 @@ export function TrackerForm({
           {testResult.ok ? (
             <>
               <div className="font-semibold">Connection OK.</div>
-              {Array.isArray((testResult as any).sample) && (testResult as any).sample.length > 0 ? (
+              {Array.isArray((testResult as any).sample) &&
+              (testResult as any).sample.length > 0 ? (
                 <ul className="mt-1 space-y-0.5">
-                  {((testResult as any).sample as Array<{ id: string; title: string; status?: string }>).map((it) => (
+                  {(
+                    (testResult as any).sample as Array<{
+                      id: string;
+                      title: string;
+                      status?: string;
+                    }>
+                  ).map((it) => (
                     <li key={it.id} className="font-mono">
                       #{it.id} · {it.title}
                       {it.status ? ` (${it.status})` : ''}

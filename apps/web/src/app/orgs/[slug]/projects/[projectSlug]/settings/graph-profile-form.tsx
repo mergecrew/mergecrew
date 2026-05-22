@@ -57,7 +57,7 @@ export function GraphProfileForm({
             />
             <span>
               <span className="font-medium">{labelFor(p)}</span>
-              <span className="block text-zinc-600 dark:text-zinc-400">{descFor(p)}</span>
+              <span className="block text-ink-2">{descFor(p)}</span>
             </span>
           </label>
         ))}
@@ -65,7 +65,7 @@ export function GraphProfileForm({
 
       {profile === 'custom' && (
         <div className="space-y-2">
-          <label className="block text-xs font-medium text-zinc-500">graph yaml</label>
+          <label className="block text-xs font-medium text-muted">graph yaml</label>
           <textarea
             value={yaml}
             onChange={(e) => setYaml(e.target.value)}
@@ -73,32 +73,32 @@ export function GraphProfileForm({
             disabled={pending || !canEdit}
             spellCheck={false}
             rows={14}
-            className="w-full rounded border border-zinc-300 bg-white p-2 font-mono text-xs dark:border-zinc-700 dark:bg-zinc-900"
+            className="w-full rounded border border-zinc-300 bg-white p-2 font-mono text-xs "
             placeholder={`version: 1
 graph:
-  nodes:
-    planner: { agentRef: planner }
-    coder: { agentRef: coder }
-    reviewer: { agentRef: reviewer }
-  edges:
-    - from: planner
-      to: coder
-    - from: coder
-      to: reviewer
-    - from: reviewer
-      to: coder
-      when: requestChanges
-    - from: reviewer
-      to: __end__
-      when: approve`}
+ nodes:
+ planner: { agentRef: planner }
+ coder: { agentRef: coder }
+ reviewer: { agentRef: reviewer }
+ edges:
+ - from: planner
+ to: coder
+ - from: coder
+ to: reviewer
+ - from: reviewer
+ to: coder
+ when: requestChanges
+ - from: reviewer
+ to: __end__
+ when: approve`}
           />
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-muted">
             Validated on save. See{' '}
             <a
               href="https://github.com/mergecrew/mergecrew/blob/main/docs/03-infrastructure/18-multi-agent.md"
               target="_blank"
               rel="noreferrer"
-              className="underline decoration-dotted hover:text-zinc-700 dark:hover:text-zinc-300"
+              className="text-accent underline-offset-[3px] hover:underline hover:text-zinc-700 dark:hover:text-muted-2"
             >
               the multi-agent cookbook
             </a>{' '}
@@ -108,13 +108,11 @@ graph:
       )}
 
       {error && (
-        <div className="rounded bg-rose-50 p-2 text-xs text-rose-800 dark:bg-rose-900/20 dark:text-rose-300">
+        <div className="border border-energy bg-energy-soft p-3 text-[12.5px] text-energy-deep">
           {error}
         </div>
       )}
-      {!canEdit && (
-        <p className="text-xs text-zinc-500">Only operators can change this.</p>
-      )}
+      {!canEdit && <p className="text-xs text-muted">Only operators can change this.</p>}
     </div>
   );
 }

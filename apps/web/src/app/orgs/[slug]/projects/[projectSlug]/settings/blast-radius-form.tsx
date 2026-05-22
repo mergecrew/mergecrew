@@ -74,32 +74,32 @@ export function BlastRadiusForm({
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-zinc-500">
-        Hard ceilings the runner applies after the agent commits but before <code>git push</code>.
-        A changeset over the cap or matching a deny-glob is marked <code>blocked</code> with the
+      <p className="text-xs text-muted">
+        Hard ceilings the runner applies after the agent commits but before <code>git push</code>. A
+        changeset over the cap or matching a deny-glob is marked <code>blocked</code> with the
         breakdown; nothing reaches the remote.
       </p>
 
       <div className="grid grid-cols-2 gap-3">
         <label className="block text-sm">
-          <span className="block text-zinc-600 dark:text-zinc-400">Max files changed</span>
+          <span className="block text-ink-2">Max files changed</span>
           <input
             type="number"
             min="1"
             step="1"
-            className="mt-1 w-full rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700"
+            className="mt-2 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] "
             value={maxFiles}
             onChange={(e) => setMaxFiles(e.target.value)}
             disabled={!canEdit || pending}
           />
         </label>
         <label className="block text-sm">
-          <span className="block text-zinc-600 dark:text-zinc-400">Max lines changed (+/-)</span>
+          <span className="block text-ink-2">Max lines changed (+/-)</span>
           <input
             type="number"
             min="1"
             step="1"
-            className="mt-1 w-full rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700"
+            className="mt-2 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] "
             value={maxLines}
             onChange={(e) => setMaxLines(e.target.value)}
             disabled={!canEdit || pending}
@@ -108,14 +108,14 @@ export function BlastRadiusForm({
       </div>
 
       <div>
-        <div className="text-sm text-zinc-600 dark:text-zinc-400">
+        <div className="text-sm text-ink-2">
           Denied path globs{' '}
-          <span className="text-xs text-zinc-400">
+          <span className="text-xs text-muted-2">
             — any changeset that touches one of these gets blocked
           </span>
         </div>
         {deniedPaths.length === 0 ? (
-          <p className="mt-1 text-xs text-zinc-500">
+          <p className="mt-1 text-xs text-muted">
             No deny patterns — every path is allowed. (Strongly recommend keeping at least the
             secret-shaped globs.)
           </p>
@@ -124,13 +124,13 @@ export function BlastRadiusForm({
             {deniedPaths.map((p, i) => (
               <li
                 key={p + i}
-                className="flex items-center gap-1 rounded border border-zinc-300 bg-zinc-50 px-2 py-0.5 font-mono text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                className="flex items-center gap-1 rounded border border-zinc-300 bg-bg px-2 py-0.5 font-mono text-xs "
               >
                 <span>{p}</span>
                 {canEdit && (
                   <button
                     type="button"
-                    className="rounded px-1 text-zinc-500 hover:bg-rose-100 hover:text-rose-700 dark:hover:bg-rose-900/30 dark:hover:text-rose-300"
+                    className="rounded px-1 text-muted hover:bg-rose-100 hover:text-rose-700 dark:hover:bg-rose-900/30 dark:hover:text-rose-300"
                     onClick={() => removeGlob(i)}
                     aria-label={`Remove ${p}`}
                     disabled={pending}
@@ -145,7 +145,7 @@ export function BlastRadiusForm({
         {canEdit && (
           <div className="mt-2 flex gap-2">
             <input
-              className="flex-1 rounded border px-2 py-1 font-mono text-xs dark:bg-zinc-900 dark:border-zinc-700"
+              className="flex-1 border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] font-mono text-xs "
               value={pickerValue}
               onChange={(e) => setPickerValue(e.target.value)}
               placeholder="e.g. **/migrations/**"
@@ -165,7 +165,7 @@ export function BlastRadiusForm({
       </div>
 
       {error && (
-        <p className="rounded bg-rose-50 p-2 text-xs text-rose-800 dark:bg-rose-900/20 dark:text-rose-300">
+        <p className="border border-energy bg-energy-soft p-3 text-[12.5px] text-energy-deep">
           {error}
         </p>
       )}
@@ -176,17 +176,17 @@ export function BlastRadiusForm({
             <Button variant="primary" onClick={onSave} disabled={!dirty || pending}>
               Save
             </Button>
-            {savedAt && <span className="text-xs text-zinc-500">Saved at {savedAt}.</span>}
+            {savedAt && <span className="text-xs text-muted">Saved at {savedAt}.</span>}
           </>
         ) : (
-          <p className="text-xs text-zinc-500">Only operators can change this.</p>
+          <p className="text-xs text-muted">Only operators can change this.</p>
         )}
         <span className="ml-auto" />
         <a
           href="https://github.com/mergecrew/mergecrew/blob/main/docs/03-infrastructure/10-blast-radius.md"
           target="_blank"
           rel="noreferrer"
-          className="text-xs text-zinc-500 underline decoration-dotted hover:text-zinc-700 dark:hover:text-zinc-300"
+          className="text-xs text-muted text-accent underline-offset-[3px] hover:underline hover:text-zinc-700 dark:hover:text-muted-2"
         >
           Tuning guide →
         </a>

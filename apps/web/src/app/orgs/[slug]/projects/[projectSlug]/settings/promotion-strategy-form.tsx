@@ -31,7 +31,7 @@ const PRESETS: Array<{
     kind: 'auto_deploy',
     title: 'Release branch + auto-deploy',
     blurb:
-      "When mergecrew pushes to the release branch, your CI deploys to prod automatically. Pick this if a merge to main (or whatever your release branch is) already triggers your prod pipeline.",
+      'When mergecrew pushes to the release branch, your CI deploys to prod automatically. Pick this if a merge to main (or whatever your release branch is) already triggers your prod pipeline.',
     anchor: 'pattern-pa--release-branch--auto-deploy',
   },
   {
@@ -45,14 +45,14 @@ const PRESETS: Array<{
     kind: 'tag_driven',
     title: 'Tag-driven',
     blurb:
-      "mergecrew tags the release branch head; your CI deploys on tag. Pick this if you cut a versioned release artifact (v1.2.3 / 2026-05-17.1) per ship.",
+      'mergecrew tags the release branch head; your CI deploys on tag. Pick this if you cut a versioned release artifact (v1.2.3 / 2026-05-17.1) per ship.',
     anchor: 'pattern-pc--tag-driven',
   },
   {
     kind: 'single_env',
     title: 'Single environment (no separate prod yet)',
     blurb:
-      "When dev IS prod — pre-launch / pre-revenue projects with one environment. mergecrew runs no git on promote; the digest just lets you review what shipped or drop a bad change.",
+      'When dev IS prod — pre-launch / pre-revenue projects with one environment. mergecrew runs no git on promote; the digest just lets you review what shipped or drop a bad change.',
     anchor: 'pattern-pe--single-environment',
   },
   {
@@ -100,9 +100,7 @@ export function PromotionStrategyForm({
   );
   const [envInputKey, setEnvInputKey] = useState(initial?.envInputKey ?? 'environment');
   const [envInputValue, setEnvInputValue] = useState(initial?.envInputValue ?? 'prod');
-  const [tagPattern, setTagPattern] = useState(
-    initial?.tagPattern ?? 'v${YYYY-MM-DD}-${shortSha}',
-  );
+  const [tagPattern, setTagPattern] = useState(initial?.tagPattern ?? 'v${YYYY-MM-DD}-${shortSha}');
   const [prodUrl, setProdUrl] = useState(initial?.prodUrl ?? '');
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -169,7 +167,7 @@ export function PromotionStrategyForm({
             className={`flex cursor-pointer items-start gap-3 rounded border p-3 text-sm ${
               kind === p.kind
                 ? 'border-sky-400 bg-sky-50/60 dark:border-sky-600 dark:bg-sky-950/30'
-                : 'border-zinc-200 dark:border-zinc-700'
+                : 'border-zinc-200 '
             }`}
           >
             <input
@@ -181,7 +179,7 @@ export function PromotionStrategyForm({
             />
             <div className="min-w-0 flex-1">
               <div className="font-medium">{p.title}</div>
-              <p className="text-xs text-zinc-600 dark:text-zinc-400">{p.blurb}</p>
+              <p className="text-xs text-ink-2">{p.blurb}</p>
               <a
                 href={`${COOKBOOK_BASE}#${p.anchor}`}
                 target="_blank"
@@ -278,19 +276,17 @@ export function PromotionStrategyForm({
       )}
 
       {kind === 'single_env' && (
-        <p className="rounded border border-dashed p-3 text-xs text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
-          Nothing to fill out. The daily digest will surface what merged with a
-          single <span className="font-medium">Mark reviewed</span> action — no
-          release branch, no cherry-pick, no prod URL needed. Drop still opens a
-          revert PR on your base branch.
+        <p className="rounded border border-dashed p-3 text-xs text-zinc-600 dark:text-muted-2">
+          Nothing to fill out. The daily digest will surface what merged with a single{' '}
+          <span className="font-medium">Mark reviewed</span> action — no release branch, no
+          cherry-pick, no prod URL needed. Drop still opens a revert PR on your base branch.
         </p>
       )}
 
       {kind === 'deferred' && (
-        <p className="rounded border border-dashed p-3 text-xs text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
-          You can come back here whenever you&apos;re ready. Until then, the
-          daily promote digest will show a chip linking back to settings instead
-          of a Promote button.
+        <p className="rounded border border-dashed p-3 text-xs text-zinc-600 dark:text-muted-2">
+          You can come back here whenever you&apos;re ready. Until then, the daily promote digest
+          will show a chip linking back to settings instead of a Promote button.
         </p>
       )}
 
@@ -299,14 +295,14 @@ export function PromotionStrategyForm({
           {pending ? 'Saving…' : initial ? 'Update strategy' : 'Save strategy'}
         </Button>
         {initial && (
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs text-muted">
             Currently: <span className="font-mono">{initial.kind}</span>
           </span>
         )}
       </div>
 
       {error && (
-        <div className="rounded bg-rose-50 p-2 text-xs text-rose-800 dark:bg-rose-900/20 dark:text-rose-300">
+        <div className="border border-energy bg-energy-soft p-3 text-[12.5px] text-energy-deep">
           {error}
         </div>
       )}
@@ -333,19 +329,19 @@ function Field({
 }) {
   return (
     <label className="text-sm">
-      <span className="block text-zinc-600 dark:text-zinc-400">
+      <span className="block text-ink-2">
         {label}
         {required && <span className="ml-0.5 text-rose-600 dark:text-rose-400">*</span>}
       </span>
       <input
-        className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+        className="mt-2 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] font-mono "
         value={value}
         placeholder={placeholder}
         required={required}
         type={type}
         onChange={(e) => onChange(e.target.value)}
       />
-      {hint && <span className="block text-xs text-zinc-500">{hint}</span>}
+      {hint && <span className="block text-xs text-muted">{hint}</span>}
     </label>
   );
 }

@@ -52,8 +52,9 @@ export function SmokeTestForm({
 
   if (!ready) {
     return (
-      <p className="text-sm text-zinc-500">
-        {blockedReason ?? 'Connect a repo and set a dev deploy target before running the smoke test.'}
+      <p className="text-sm text-muted">
+        {blockedReason ??
+          'Connect a repo and set a dev deploy target before running the smoke test.'}
       </p>
     );
   }
@@ -64,22 +65,20 @@ export function SmokeTestForm({
         <Button onClick={onRun} disabled={pending} variant="primary">
           {pending ? 'Running…' : result ? 'Re-run' : 'Run smoke test'}
         </Button>
-        <p className="mt-2 text-xs text-zinc-500">
-          Opens a draft PR with a marker file, dispatches dev deploy, waits
-          for completion (5-min timeout). Non-destructive — the PR is left
-          open for you to close.
+        <p className="mt-2 text-xs text-muted">
+          Opens a draft PR with a marker file, dispatches dev deploy, waits for completion (5-min
+          timeout). Non-destructive — the PR is left open for you to close.
         </p>
       </div>
 
       {pending && (
-        <p className="text-xs text-zinc-500">
-          This can take a few minutes. The page will update when the deploy
-          finishes.
+        <p className="text-xs text-muted">
+          This can take a few minutes. The page will update when the deploy finishes.
         </p>
       )}
 
       {error && (
-        <div className="rounded bg-rose-50 p-2 text-xs text-rose-800 dark:bg-rose-900/20 dark:text-rose-300">
+        <div className="border border-energy bg-energy-soft p-3 text-[12.5px] text-energy-deep">
           {error}
         </div>
       )}
@@ -111,7 +110,9 @@ function Outcome({ result }: { result: SmokeTestResult }) {
             #{result.prNumber} ({result.branch})
           </a>
         </li>
-        <li>Workflow run id: <code>{result.workflowRunId}</code></li>
+        <li>
+          Workflow run id: <code>{result.workflowRunId}</code>
+        </li>
         <li>
           Dev URL:{' '}
           {result.devUrl ? (
@@ -119,7 +120,7 @@ function Outcome({ result }: { result: SmokeTestResult }) {
               {result.devUrl}
             </a>
           ) : (
-            <span className="text-zinc-500">
+            <span className="text-muted">
               (none resolved — check the deploy target's URL configuration)
             </span>
           )}

@@ -120,44 +120,40 @@ export function RepoForm({
   return (
     <div className="space-y-3">
       {initial && (
-        <div className="rounded bg-zinc-50 p-2 text-xs dark:bg-zinc-900">
-          <span className="text-zinc-500">Currently connected:</span>{' '}
+        <div className="rounded bg-bg p-2 text-xs ">
+          <span className="text-muted">Currently connected:</span>{' '}
           <span className="font-mono">{initial.repoFullName}</span>
-          <span className="text-zinc-500"> · branch </span>
+          <span className="text-muted"> · branch </span>
           <span className="font-mono">{initial.defaultBranch}</span>
         </div>
       )}
 
       {installedInstallationId && hasDropdown && (
         <div className="rounded bg-emerald-50 p-2 text-xs text-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-200">
-          GitHub App installed. Pick the repository this project should connect
-          to from the list below — only repos the App was granted access to
-          during install are shown.
+          GitHub App installed. Pick the repository this project should connect to from the list
+          below — only repos the App was granted access to during install are shown.
         </div>
       )}
       {!installedInstallationId && hasDropdown && (
-        <div className="rounded bg-zinc-50 p-2 text-xs text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-          Picking a different repo from this installation will rewire the
-          project. Repos shown are the ones the saved installation has access
-          to.
+        <div className="rounded bg-bg p-2 text-xs text-zinc-700 dark:text-muted-2">
+          Picking a different repo from this installation will rewire the project. Repos shown are
+          the ones the saved installation has access to.
         </div>
       )}
       {installedInstallationId && !hasDropdown && (
         <div className="rounded bg-amber-50 p-2 text-xs text-amber-900 dark:bg-amber-900/20 dark:text-amber-200">
-          GitHub App installed, but the server couldn&apos;t list its
-          accessible repos (likely because <code>GITHUB_APP_ID</code> /{' '}
-          <code>GITHUB_APP_PRIVATE_KEY</code> aren&apos;t configured). Type the
-          repository name manually and click Connect.
+          GitHub App installed, but the server couldn&apos;t list its accessible repos (likely
+          because <code>GITHUB_APP_ID</code> / <code>GITHUB_APP_PRIVATE_KEY</code> aren&apos;t
+          configured). Type the repository name manually and click Connect.
         </div>
       )}
 
       {!initial && !installedInstallationId && (
-        <div className="rounded border border-dashed p-3 text-sm dark:border-zinc-800">
-          <p className="text-zinc-600 dark:text-zinc-400">
-            No repository connected. The fastest path is to install the
-            Mergecrew GitHub App on the repo you want this project to work
-            against — we&apos;ll bring you back here with the installation id
-            pre-filled.
+        <div className="rounded border border-dashed p-3 text-sm ">
+          <p className="text-ink-2">
+            No repository connected. The fastest path is to install the Mergecrew GitHub App on the
+            repo you want this project to work against — we&apos;ll bring you back here with the
+            installation id pre-filled.
           </p>
           <div className="mt-2">
             <a href={installHref}>
@@ -169,12 +165,10 @@ export function RepoForm({
 
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-sm">
-          <span className="block text-zinc-600 dark:text-zinc-400">
-            Repository (owner/repo)
-          </span>
+          <span className="block text-ink-2">Repository (owner/repo)</span>
           {hasDropdown ? (
             <select
-              className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+              className="mt-2 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] font-mono "
               value={repoFullName}
               onChange={(e) => onPickRepo(e.target.value)}
             >
@@ -188,7 +182,7 @@ export function RepoForm({
             </select>
           ) : (
             <input
-              className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+              className="mt-2 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] font-mono "
               placeholder="acme/webapp"
               value={repoFullName}
               onChange={(e) => setRepoFullName(e.target.value)}
@@ -196,55 +190,54 @@ export function RepoForm({
           )}
         </label>
         <label className="text-sm">
-          <span className="block text-zinc-600 dark:text-zinc-400">Default branch</span>
+          <span className="block text-ink-2">Default branch</span>
           <input
-            className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+            className="mt-2 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] font-mono "
             placeholder="main"
             value={defaultBranch}
             onChange={(e) => setDefaultBranch(e.target.value)}
           />
-          <span className="block text-xs text-zinc-500">
+          <span className="block text-xs text-muted">
             What GitHub reports as the repo&apos;s default branch.
           </span>
         </label>
         <label className="text-sm">
-          <span className="block text-zinc-600 dark:text-zinc-400">
+          <span className="block text-ink-2">
             Branch mergecrew opens PRs against{' '}
-            <span className="text-xs text-zinc-400">(defaults to default branch)</span>
+            <span className="text-xs text-muted-2">(defaults to default branch)</span>
           </span>
           <input
-            className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+            className="mt-2 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] font-mono "
             placeholder={defaultBranch || 'main'}
             value={basePrBranch}
             onChange={(e) => setBasePrBranch(e.target.value)}
           />
-          <span className="block text-xs text-zinc-500">
-            For branch-per-env workflows (e.g. <code>developer</code> → dev,{' '}
-            <code>qa</code> → stage, <code>main</code> → prod), point this at your
-            integration branch. Leave blank for trunk-based projects.
+          <span className="block text-xs text-muted">
+            For branch-per-env workflows (e.g. <code>developer</code> → dev, <code>qa</code> →
+            stage, <code>main</code> → prod), point this at your integration branch. Leave blank for
+            trunk-based projects.
           </span>
         </label>
         {installFrom !== 'wizard' && (
           <>
             <label className="text-sm">
-              <span className="block text-zinc-600 dark:text-zinc-400">
+              <span className="block text-ink-2">
                 GitHub App installation ID{' '}
-                <span className="text-xs text-zinc-400">(optional in dev)</span>
+                <span className="text-xs text-muted-2">(optional in dev)</span>
               </span>
               <input
-                className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+                className="mt-2 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] font-mono "
                 placeholder="manual"
                 value={installationId}
                 onChange={(e) => setInstallationId(e.target.value)}
               />
             </label>
             <label className="text-sm">
-              <span className="block text-zinc-600 dark:text-zinc-400">
-                Repo numeric ID{' '}
-                <span className="text-xs text-zinc-400">(optional in dev)</span>
+              <span className="block text-ink-2">
+                Repo numeric ID <span className="text-xs text-muted-2">(optional in dev)</span>
               </span>
               <input
-                className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+                className="mt-2 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] font-mono "
                 placeholder="leave blank"
                 value={repoId}
                 onChange={(e) => setRepoId(e.target.value)}
@@ -255,20 +248,20 @@ export function RepoForm({
       </div>
 
       {installFrom !== 'wizard' && (
-        <p className="text-xs text-zinc-500">
+        <p className="text-xs text-muted">
           For real GitHub App-based access, set <code>GITHUB_APP_ID</code> and{' '}
           <code>GITHUB_APP_PRIVATE_KEY</code> in your environment and provide the installation ID.
-          Without those, the connection is informational and the runner won't be able to push commits
-          — but skills like <code>repo.read_file</code> can still operate on a workspace clone.
+          Without those, the connection is informational and the runner won't be able to push
+          commits — but skills like <code>repo.read_file</code> can still operate on a workspace
+          clone.
         </p>
       )}
 
       <div className="rounded border border-emerald-200 bg-emerald-50/50 p-2 text-xs text-emerald-900 dark:border-emerald-700/40 dark:bg-emerald-950/30 dark:text-emerald-200">
-        <span className="font-medium">Issues source: GitHub Issues.</span>{' '}
-        We&apos;ll wire <code>tracker.list_issues</code> /{' '}
-        <code>tracker.create_issue</code> to this repo&apos;s Issues tab on
-        connect — Discovery and BugTriage agents call those every run.
-        Switch to Linear later from the project&apos;s Integrations page.
+        <span className="font-medium">Issues source: GitHub Issues.</span> We&apos;ll wire{' '}
+        <code>tracker.list_issues</code> / <code>tracker.create_issue</code> to this repo&apos;s
+        Issues tab on connect — Discovery and BugTriage agents call those every run. Switch to
+        Linear later from the project&apos;s Integrations page.
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -283,7 +276,7 @@ export function RepoForm({
       </div>
 
       {error && (
-        <div className="rounded bg-rose-50 p-2 text-xs text-rose-800 dark:bg-rose-900/20 dark:text-rose-300">
+        <div className="border border-energy bg-energy-soft p-3 text-[12.5px] text-energy-deep">
           {error}
         </div>
       )}

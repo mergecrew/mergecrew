@@ -48,7 +48,14 @@ function decodeCron(cron: string): Decoded {
   const isHH = /^[0-9]+$/.test(h) && Number(h) >= 0 && Number(h) <= 23;
   const isMM = /^[0-9]+$/.test(m) && Number(m) >= 0 && Number(m) <= 59;
   const hhmm = isHH && isMM ? `${h.padStart(2, '0')}:${m.padStart(2, '0')}` : '08:00';
-  if (m === '0' && /^\*\/?[0-9]*$/.test(h) && h.includes('*') && dom === '*' && mon === '*' && dow === '*') {
+  if (
+    m === '0' &&
+    /^\*\/?[0-9]*$/.test(h) &&
+    h.includes('*') &&
+    dom === '*' &&
+    mon === '*' &&
+    dow === '*'
+  ) {
     return { frequency: 'hourly', time: '00:00', weekday: 1 };
   }
   if (isMM && isHH && dom === '*' && mon === '*' && dow === '*') {
@@ -111,7 +118,10 @@ export function ScheduleForm({ initial, canEdit, onSave }: ScheduleFormProps) {
     () => encodeCron({ frequency, time, weekday }, customCron),
     [frequency, time, weekday, customCron],
   );
-  const preview = useMemo(() => previewNextFires(cronExpression, timezone), [cronExpression, timezone]);
+  const preview = useMemo(
+    () => previewNextFires(cronExpression, timezone),
+    [cronExpression, timezone],
+  );
 
   const addSkipDate = () => {
     const t = skipDraft.trim();
@@ -162,7 +172,7 @@ export function ScheduleForm({ initial, canEdit, onSave }: ScheduleFormProps) {
         />
         <span>
           Schedule enabled{' '}
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs text-muted">
             — when off, the project runs only via "Run now"
           </span>
         </span>
@@ -170,9 +180,9 @@ export function ScheduleForm({ initial, canEdit, onSave }: ScheduleFormProps) {
 
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-sm">
-          <span className="block text-zinc-600 dark:text-zinc-400">Frequency</span>
+          <span className="block text-ink-2">Frequency</span>
           <select
-            className="mt-1 w-full rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700 disabled:opacity-60"
+            className="mt-2 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] disabled:opacity-60"
             value={frequency}
             onChange={(e) => setFrequency(e.target.value as Frequency)}
             disabled={!canEdit}
@@ -187,10 +197,10 @@ export function ScheduleForm({ initial, canEdit, onSave }: ScheduleFormProps) {
 
         {frequency !== 'hourly' && frequency !== 'custom' && (
           <label className="text-sm">
-            <span className="block text-zinc-600 dark:text-zinc-400">Time of day</span>
+            <span className="block text-ink-2">Time of day</span>
             <input
               type="time"
-              className="mt-1 w-full rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700 disabled:opacity-60"
+              className="mt-2 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] disabled:opacity-60"
               value={time}
               onChange={(e) => setTime(e.target.value || '08:00')}
               disabled={!canEdit}
@@ -200,9 +210,9 @@ export function ScheduleForm({ initial, canEdit, onSave }: ScheduleFormProps) {
 
         {frequency === 'weekly' && (
           <label className="text-sm">
-            <span className="block text-zinc-600 dark:text-zinc-400">Day of week</span>
+            <span className="block text-ink-2">Day of week</span>
             <select
-              className="mt-1 w-full rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700 disabled:opacity-60"
+              className="mt-2 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] disabled:opacity-60"
               value={String(weekday)}
               onChange={(e) => setWeekday(Number(e.target.value))}
               disabled={!canEdit}
@@ -219,25 +229,25 @@ export function ScheduleForm({ initial, canEdit, onSave }: ScheduleFormProps) {
 
       {frequency === 'custom' && (
         <label className="block text-sm">
-          <span className="block text-zinc-600 dark:text-zinc-400">Cron expression</span>
+          <span className="block text-ink-2">Cron expression</span>
           <input
-            className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700 disabled:opacity-60"
+            className="mt-2 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] font-mono disabled:opacity-60"
             value={customCron}
             onChange={(e) => setCustomCron(e.target.value)}
             placeholder="0 8 * * 1-5"
             disabled={!canEdit}
           />
-          <span className="mt-1 block text-xs text-zinc-500">
+          <span className="mt-1 block text-xs text-muted">
             Standard 5-field cron. Evaluated in the timezone below.
           </span>
         </label>
       )}
 
       <label className="block text-sm">
-        <span className="block text-zinc-600 dark:text-zinc-400">Timezone</span>
+        <span className="block text-ink-2">Timezone</span>
         <input
           list="tz-presets"
-          className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700 disabled:opacity-60"
+          className="mt-2 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] font-mono disabled:opacity-60"
           value={timezone}
           onChange={(e) => setTimezone(e.target.value)}
           placeholder="UTC"
@@ -250,10 +260,8 @@ export function ScheduleForm({ initial, canEdit, onSave }: ScheduleFormProps) {
         </datalist>
       </label>
 
-      <div className="rounded border bg-zinc-50 p-2 text-xs dark:border-zinc-800 dark:bg-zinc-900/50">
-        <div className="font-medium text-zinc-700 dark:text-zinc-300">
-          Next 3 scheduled fires
-        </div>
+      <div className="rounded border bg-bg p-2 text-xs /50">
+        <div className="font-medium text-zinc-700 dark:text-muted-2">Next 3 scheduled fires</div>
         {preview.length === 0 ? (
           <div className="mt-1 text-rose-700 dark:text-rose-300">
             Invalid cron expression or unknown timezone.
@@ -265,15 +273,13 @@ export function ScheduleForm({ initial, canEdit, onSave }: ScheduleFormProps) {
             ))}
           </ul>
         )}
-        <div className="mt-1 font-mono text-[10px] text-zinc-500">
-          cron: {cronExpression}
-        </div>
+        <div className="mt-1 font-mono text-[10px] text-muted">cron: {cronExpression}</div>
       </div>
 
       <div>
-        <div className="text-sm text-zinc-600 dark:text-zinc-400">
+        <div className="text-sm text-ink-2">
           Skip dates{' '}
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs text-muted">
             — holidays / freezes. Scheduler checks today's date in the timezone above and silently
             skips when it matches.
           </span>
@@ -281,7 +287,7 @@ export function ScheduleForm({ initial, canEdit, onSave }: ScheduleFormProps) {
         <div className="mt-1 flex gap-2">
           <input
             type="date"
-            className="flex-1 rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700 disabled:opacity-60"
+            className="flex-1 border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] disabled:opacity-60"
             value={skipDraft}
             onChange={(e) => setSkipDraft(e.target.value)}
             disabled={!canEdit}
@@ -295,14 +301,14 @@ export function ScheduleForm({ initial, canEdit, onSave }: ScheduleFormProps) {
             {skipDates.map((d) => (
               <li
                 key={d}
-                className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-mono dark:bg-zinc-800"
+                className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-mono "
               >
                 {d}
                 {canEdit && (
                   <button
                     type="button"
                     onClick={() => removeSkipDate(d)}
-                    className="ml-1 text-zinc-500 hover:text-rose-600"
+                    className="ml-1 text-muted hover:text-rose-600"
                     aria-label={`Remove ${d}`}
                   >
                     ×
