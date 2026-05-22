@@ -140,7 +140,7 @@ export function OrgSidebar({
   ];
   const allHrefs = allHrefsOf(groups);
   return (
-    <aside className="flex h-full w-[260px] flex-col gap-2 overflow-y-auto border-r border-hair bg-paper p-[22px_14px]">
+    <div className="flex h-full w-full flex-col gap-2 overflow-y-auto p-[22px_14px]">
       <div className="mb-[6px] border-b border-hair-2 pb-[14px]">
         <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted">
           Organisation
@@ -170,7 +170,7 @@ export function OrgSidebar({
           )}
         </div>
       )}
-    </aside>
+    </div>
   );
 }
 
@@ -213,7 +213,7 @@ export function ProjectSidebar({
   ];
   const allHrefs = allHrefsOf(groups);
   return (
-    <aside className="flex h-full w-[260px] flex-col gap-2 overflow-y-auto border-r border-hair bg-paper p-[22px_14px]">
+    <div className="flex h-full w-full flex-col gap-2 overflow-y-auto p-[22px_14px]">
       <div className="mb-[6px] border-b border-hair-2 pb-[14px]">
         <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted">
           Project · {orgSlug}
@@ -236,6 +236,6 @@ export function ProjectSidebar({
       {groups.map((g) => (
         <GroupRender key={g.label} group={g} allHrefs={allHrefs} />
       ))}
-    </aside>
+    </div>
   );
 }
