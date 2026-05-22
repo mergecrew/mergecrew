@@ -109,6 +109,7 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
     telemetry,
     telemetryRecent,
     evals,
+    auditLog,
   ] = await Promise.all([
     api<any>(`/v1/orgs/${slug}`, { session }),
     api<{ items: any[] }>(`/v1/orgs/${slug}/members`, { session }),
@@ -129,6 +130,17 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
       `/v1/orgs/${slug}/evals/settings`,
       { session },
     ).catch(() => ({ enabled: false, lastRanAt: null })),
+    api<{
+      items: Array<{
+        id: string;
+        action: string;
+        occurredAt: string;
+        target: any;
+        metadata: any;
+        actorUserId: string | null;
+        actor: { id: string; email: string; name: string | null } | null;
+      }>;
+    }>(`/v1/orgs/${slug}/audit-log?limit=50`, { session }).catch(() => ({ items: [] })),
   ]);
   const monthlyPct =
     spendCap.monthlySpendCapUsd && spendCap.monthlySpendCapUsd > 0
@@ -166,6 +178,7 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
         { id: 'evals', label: 'Nightly evals' },
         { id: 'webhooks', label: 'Outbound webhooks' },
         { id: 'api-keys', label: 'API keys' },
+        { id: 'audit-log', label: 'Audit log' },
       ],
     },
     {
@@ -738,8 +751,57 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
         </Section>
 
         <Section
+          id="audit-log"
+          anchor="OPS · 010"
+          title="Audit log"
+          desc="Immutable record of admin actions in this org — invites, role changes, project pause / resume, telemetry opt-in. Latest 50 shown."
+        >
+          <Card>
+            {auditLog.items.length === 0 ? (
+              <div className="p-5 text-[13px] text-muted">
+                No audit events recorded yet. Anything done from this page (or another
+                admin-gated surface) lands here.
+              </div>
+            ) : (
+              <ul className="m-0 list-none p-0">
+                {auditLog.items.map((e, i) => {
+                  const actorLabel =
+                    e.actor?.name?.trim() || e.actor?.email || e.actorUserId || 'system';
+                  return (
+                    <li
+                      key={e.id}
+                      className={i < auditLog.items.length - 1 ? 'border-b border-hair-2' : ''}
+                    >
+                      <div className="grid grid-cols-1 items-baseline gap-2 px-5 py-3 text-[13px] md:grid-cols-[170px_220px_1fr] md:gap-4">
+                        <span
+                          className="font-mono text-[11.5px] text-muted"
+                          title={new Date(e.occurredAt).toLocaleString()}
+                        >
+                          {new Date(e.occurredAt).toLocaleString()}
+                        </span>
+                        <span className="bg-accent-tint px-[8px] py-[2px] font-mono text-[10.5px] uppercase tracking-[0.06em] text-accent-deep">
+                          {e.action}
+                        </span>
+                        <span className="min-w-0 truncate text-ink-2">
+                          <b className="text-ink">{actorLabel}</b>
+                          {e.target && typeof e.target === 'object' && (
+                            <span className="ml-2 font-mono text-[11.5px] text-muted">
+                              {summariseTarget(e.target)}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Card>
+        </Section>
+
+        <Section
           id="telemetry"
-          anchor="PRIVACY · 010"
+          anchor="PRIVACY · 011"
           title="Anonymous usage telemetry"
           desc={
             <>
@@ -845,5 +907,27 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
       </SettingsLayout>
     </main>
   );
+}
+
+// AuditLogEntry.target is a free-form JSON column. The common shape is
+// `{ organizationId, projectId?, memberId?, ... }`. We surface whichever
+// of the well-known keys is present, in priority order, and otherwise
+// fall back to JSON.stringify on the whole object for an audit trail
+// that's still legible (even if not pretty) for unknown actions.
+function summariseTarget(target: any): string {
+  if (!target || typeof target !== 'object') return '';
+  if (typeof target.projectSlug === 'string') return `project ${target.projectSlug}`;
+  if (typeof target.memberEmail === 'string') return target.memberEmail;
+  if (typeof target.projectId === 'string') return `project ${String(target.projectId).slice(0, 8)}`;
+  if (typeof target.membershipId === 'string')
+    return `membership ${String(target.membershipId).slice(0, 8)}`;
+  // Drop the redundant organizationId — every entry has it.
+  const { organizationId: _drop, ...rest } = target;
+  if (Object.keys(rest).length === 0) return '';
+  try {
+    return JSON.stringify(rest);
+  } catch {
+    return '';
+  }
 }
 
