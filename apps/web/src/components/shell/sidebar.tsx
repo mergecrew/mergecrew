@@ -195,6 +195,7 @@ export function ProjectSidebar({
       items: [
         { label: 'Today', href: base },
         { label: 'Runs', href: `${base}/runs` },
+        { label: 'Metrics', href: `${base}/metrics` },
         { label: 'Changesets', href: `${base}/changesets` },
         { label: 'Digests', href: `${base}/digest`, livePending: awaitingApproval },
         { label: 'Scan reports', href: `${base}/scans` },
