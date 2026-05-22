@@ -70,21 +70,24 @@ const FEATS = [
 
 function LeftEditorial() {
   return (
-    <div className="flex h-full flex-col gap-12 border-r border-hair bg-bg px-[40px] py-[48px] md:px-[60px] md:py-[80px]">
+    <div className="flex h-full flex-col gap-8 bg-bg px-[24px] py-[32px] lg:gap-12 lg:border-r lg:border-hair lg:px-[60px] lg:py-[80px]">
       <Wordmark withTag />
       <div>
         <Label className="text-accent">001 · MANIFESTO</Label>
-        <h1 className="mt-4 text-[clamp(36px,4vw,56px)] font-medium leading-[1] tracking-[-0.03em]">
+        <h1 className="mt-4 text-[clamp(28px,7vw,56px)] font-medium leading-[1.05] tracking-[-0.03em]">
           The product team that doesn&apos;t need{' '}
           <em className="not-italic text-accent">standup.</em>
         </h1>
-        <p className="mt-6 max-w-[540px] text-[16px] leading-[1.55] text-ink-2">
+        <p className="mt-5 max-w-[540px] text-[15px] leading-[1.55] text-ink-2 lg:text-[16px]">
           Mergecrew is a multi-agent crew that runs on a cron against your real repository. Spec,
           build, deploy to dev, scan for regressions — every weekday by lunch. One decision arrives
           in your inbox at 5pm: promote to production, or don&apos;t.
         </p>
       </div>
-      <div className="mt-auto grid grid-cols-1 gap-5 sm:grid-cols-2">
+      {/* The feature grid is the bottom-half of the brand pitch — useful
+          on desktop, noise on mobile where the user is already past
+          the fold and just wants to sign in. */}
+      <div className="mt-auto hidden grid-cols-1 gap-5 sm:grid-cols-2 lg:grid">
         {FEATS.map((f) => (
           <div key={f.k} className="border-t-2 border-ink pt-4">
             <div className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted">{f.k}</div>
@@ -251,8 +254,11 @@ export default async function LoginPage({
     <div className="min-h-screen bg-bg text-ink">
       <Mast />
       <div className="grid min-h-[calc(100vh-44px)] grid-cols-1 lg:grid-cols-2">
-        <LeftEditorial />
-        <div className="flex items-center justify-center bg-paper px-[36px] py-[60px] md:px-[60px] md:py-[80px]">
+        {/* OAuth form is order-1 on mobile so visitors see "Welcome
+            back" + GitHub / Google buttons above the fold without
+            scrolling past the editorial column. On lg+, the
+            editorial column reclaims the left side. */}
+        <div className="order-1 flex items-center justify-center bg-paper px-[24px] py-[40px] lg:order-2 lg:px-[60px] lg:py-[80px]">
           <div className="w-full max-w-[440px]">
             <Label accent>SIGN IN · 002</Label>
             <h2 className="mt-3 text-[32px] font-medium leading-[1.1] tracking-[-0.025em]">
@@ -307,6 +313,9 @@ export default async function LoginPage({
               production tenants.
             </p>
           </div>
+        </div>
+        <div className="order-2 lg:order-1">
+          <LeftEditorial />
         </div>
       </div>
     </div>
