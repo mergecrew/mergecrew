@@ -273,11 +273,14 @@ const WEB_VERSION = '0.1.0';
 
 export function Wordmark({ withTag = true, href = '/' }: { withTag?: boolean; href?: string }) {
   return (
-    <Link href={href} className="group inline-flex items-center gap-[14px] no-underline text-ink">
+    <Link href={href} className="group inline-flex items-center gap-[10px] no-underline text-ink sm:gap-[14px]">
       <Mark />
-      <span className="text-[19px] font-semibold tracking-[-0.025em]">Mergecrew</span>
+      <span className="text-[17px] font-semibold tracking-[-0.025em] sm:text-[19px]">Mergecrew</span>
       {withTag && (
-        <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted">
+        // Tag eats a lot of horizontal room on phones — hide it for
+        // anything below `sm` so the header bar can fit without a
+        // horizontal scroll.
+        <span className="hidden font-mono text-[10px] uppercase tracking-[0.1em] text-muted sm:inline">
           v{WEB_VERSION} · alpha
         </span>
       )}
@@ -402,28 +405,35 @@ export function PageHead({
   actions?: ReactNode;
 }) {
   return (
-    <div className="mb-7 flex items-end justify-between gap-6 border-b border-hair pb-5">
-      <div>
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-4 border-b border-hair pb-5 sm:mb-7 sm:gap-6">
+      <div className="min-w-0 flex-1">
         <div className="mb-[10px] flex flex-wrap items-center gap-[10px] font-mono text-[11px] uppercase tracking-[0.06em] text-muted">
           {crumb.map((c, i) => (
             <Fragment key={i}>
               {i > 0 && <span className="opacity-40">/</span>}
               {c.href ? (
-                <Link href={c.href} className="text-muted no-underline hover:text-ink">
+                <Link
+                  href={c.href}
+                  className="break-all text-muted no-underline hover:text-ink"
+                >
                   {c.label}
                 </Link>
               ) : (
-                <span className="text-ink">{c.label}</span>
+                <span className="break-all text-ink">{c.label}</span>
               )}
             </Fragment>
           ))}
         </div>
-        <h1 className="m-0 text-[36px] font-medium leading-none tracking-[-0.03em]">
+        <h1 className="m-0 break-words text-[24px] font-medium leading-[1.05] tracking-[-0.03em] sm:text-[32px] sm:leading-none md:text-[36px]">
           {title}
         </h1>
-        {meta && <div className="mt-3 text-[14px] text-ink-2">{meta}</div>}
+        {meta && <div className="mt-3 min-w-0 break-words text-[13px] text-ink-2 sm:text-[14px]">{meta}</div>}
       </div>
-      {actions && <div className="flex shrink-0 items-center gap-[10px]">{actions}</div>}
+      {actions && (
+        <div className="flex shrink-0 flex-wrap items-center gap-[10px]">
+          {actions}
+        </div>
+      )}
     </div>
   );
 }

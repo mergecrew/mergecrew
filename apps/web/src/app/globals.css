@@ -39,6 +39,13 @@ html, body {
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* Safety net: prevent any one wide piece of content (long PR
+     title, command code block, unwrapped repo slug) from forcing a
+     document-wide horizontal scroll on mobile. Individual surfaces
+     that need to scroll (the run timeline, the costs table, the
+     diff viewer) handle it inside their own container with
+     `overflow-x-auto`. */
+  overflow-x: hidden;
 }
 
 ::selection { background: var(--accent); color: var(--paper); }
