@@ -18,6 +18,7 @@ import { LlmProvidersCard } from '@/components/llm-providers-card';
 import { LlmProfilesCard } from '@/components/llm-profiles-card';
 import { MfaRequiredCallout } from '@/components/mfa-required-callout';
 import { OrgGeneralForm } from './org-general-form';
+import { MembersSection } from './members-section';
 
 interface BudgetInfo {
   dailyBudgetUsd: number | null;
@@ -246,42 +247,56 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
           id="members"
           anchor="ORG · 002"
           title="Members"
-          desc="Org-level membership. Each project then has its own member subset and roles."
+          desc="Org-level membership. Each project then has its own member subset and roles. Invite an existing Mergecrew user by email; pending invitations for new signups are tracked separately."
         >
-          <Card>
-            {members.items.length === 0 ? (
-              <div className="p-5 text-[13px] text-muted">No members yet.</div>
-            ) : (
-              <ul className="m-0 list-none p-0">
-                {members.items.map((m: any, i: number) => (
-                  <li
-                    key={m.id}
-                    className={i < members.items.length - 1 ? 'border-b border-hair-2' : ''}
-                  >
-                    <div className="grid grid-cols-[1fr_auto] items-center gap-4 px-5 py-3">
-                      <div className="min-w-0">
-                        <div className="text-[14px] font-medium tracking-[-0.005em]">
-                          {m.user?.name ?? m.user?.email ?? m.userId}
-                        </div>
-                        <div className="font-mono text-[11.5px] text-muted">
-                          {m.user?.email ?? ''}
-                        </div>
-                      </div>
-                      <RolePill
-                        role={
-                          (['owner', 'admin', 'reviewer', 'viewer', 'member'] as const).includes(
-                            m.role,
-                          )
-                            ? m.role
-                            : 'member'
-                        }
-                      />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
+          <MembersSection
+            members={members.items as any}
+            canEdit={canEdit}
+            currentUserId={session.userId ?? null}
+            actions={{
+              invite: async (input) => {
+                'use server';
+                try {
+                  await api(`/v1/orgs/${slug}/members`, {
+                    method: 'POST',
+                    body: JSON.stringify(input),
+                    session: await requireSession(),
+                  });
+                  revalidatePath(`/orgs/${slug}/settings`);
+                  return { ok: true } as const;
+                } catch (e: any) {
+                  return { ok: false, error: String(e?.message ?? e) } as const;
+                }
+              },
+              updateRole: async (id, role) => {
+                'use server';
+                try {
+                  await api(`/v1/orgs/${slug}/members/${id}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ role }),
+                    session: await requireSession(),
+                  });
+                  revalidatePath(`/orgs/${slug}/settings`);
+                  return { ok: true } as const;
+                } catch (e: any) {
+                  return { ok: false, error: String(e?.message ?? e) } as const;
+                }
+              },
+              remove: async (id) => {
+                'use server';
+                try {
+                  await api(`/v1/orgs/${slug}/members/${id}`, {
+                    method: 'DELETE',
+                    session: await requireSession(),
+                  });
+                  revalidatePath(`/orgs/${slug}/settings`);
+                  return { ok: true } as const;
+                } catch (e: any) {
+                  return { ok: false, error: String(e?.message ?? e) } as const;
+                }
+              },
+            }}
+          />
         </Section>
 
         <Section

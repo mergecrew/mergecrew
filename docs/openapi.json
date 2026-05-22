@@ -107,6 +107,44 @@
         "tags": [
           "Org"
         ]
+      },
+      "post": {
+        "operationId": "OrgController_inviteMember",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/members/{id}": {
+      "patch": {
+        "operationId": "OrgController_updateMember",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
+      },
+      "delete": {
+        "operationId": "OrgController_removeMember",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Org"
+        ]
       }
     },
     "/v1/orgs/{slug}/onboarding": {

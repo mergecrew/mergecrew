@@ -455,13 +455,102 @@ export class OrgService {
       tx.membership.findMany({
         where: { organizationId: t.organizationId },
         include: { user: true },
+        orderBy: { createdAt: 'asc' },
       }),
     );
     return rows.map((r) => ({
       id: r.id,
       role: r.role,
+      createdAt: r.createdAt,
       user: { id: r.user.id, email: r.user.email, name: r.user.name },
     }));
+  }
+
+  /**
+   * Invite an existing user (looked up by email) into the current org
+   * with the given role. Pending-invitation rows for users who haven't
+   * signed up yet would need an OrgInvitation table; deferred until
+   * the magic-link or OAuth flow signs up the recipient.
+   */
+  async inviteMemberByEmail(email: string, role: 'admin' | 'operator' | 'viewer') {
+    const t = this.tenant.require();
+    const normalized = email.trim().toLowerCase();
+    if (!normalized) throw new ValidationError('email is required');
+    const user = await this.prisma.withSystem((tx) =>
+      tx.user.findUnique({ where: { email: normalized } }),
+    );
+    if (!user) {
+      throw new ValidationError(
+        `No Mergecrew account found for ${normalized}. Ask them to sign up first, then invite them.`,
+      );
+    }
+    const existing = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.membership.findFirst({
+        where: { organizationId: t.organizationId, userId: user.id },
+      }),
+    );
+    if (existing) {
+      throw new ValidationError(`${normalized} is already a member of this org.`);
+    }
+    const created = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.membership.create({
+        data: { organizationId: t.organizationId, userId: user.id, role },
+      }),
+    );
+    return { id: created.id, role: created.role, user: { id: user.id, email: user.email, name: user.name } };
+  }
+
+  async updateMemberRole(membershipId: string, role: 'owner' | 'admin' | 'operator' | 'viewer') {
+    const t = this.tenant.require();
+    const m = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.membership.findFirst({
+        where: { id: membershipId, organizationId: t.organizationId },
+      }),
+    );
+    if (!m) throw new NotFoundError('membership not found');
+    // Demoting the last owner would orphan the org. Block it.
+    if (m.role === 'owner' && role !== 'owner') {
+      const owners = await this.prisma.withTenant(t.organizationId, (tx) =>
+        tx.membership.count({
+          where: { organizationId: t.organizationId, role: 'owner' },
+        }),
+      );
+      if (owners <= 1) {
+        throw new ValidationError(
+          'Cannot demote the last owner. Promote another member to owner first.',
+        );
+      }
+    }
+    const updated = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.membership.update({ where: { id: membershipId }, data: { role } }),
+    );
+    return { id: updated.id, role: updated.role };
+  }
+
+  async removeMember(membershipId: string) {
+    const t = this.tenant.require();
+    const m = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.membership.findFirst({
+        where: { id: membershipId, organizationId: t.organizationId },
+      }),
+    );
+    if (!m) throw new NotFoundError('membership not found');
+    if (m.role === 'owner') {
+      const owners = await this.prisma.withTenant(t.organizationId, (tx) =>
+        tx.membership.count({
+          where: { organizationId: t.organizationId, role: 'owner' },
+        }),
+      );
+      if (owners <= 1) {
+        throw new ValidationError(
+          'Cannot remove the last owner. Transfer ownership to another member first.',
+        );
+      }
+    }
+    await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.membership.delete({ where: { id: membershipId } }),
+    );
+    return { ok: true };
   }
 
   async listAuditLog(opts: { limit?: number }) {

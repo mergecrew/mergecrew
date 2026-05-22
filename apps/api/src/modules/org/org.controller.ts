@@ -1,4 +1,16 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UnauthorizedException, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
 import { OrgService } from './org.service.js';
 import { RoleGuard, RequireRole } from '../../common/role.guard.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
@@ -44,6 +56,42 @@ export class OrgController {
   @Get('orgs/:slug/members')
   async members(@Param('slug') _slug: string) {
     return { items: await this.orgs.listMembers() };
+  }
+
+  @Post('orgs/:slug/members')
+  @UseGuards(RoleGuard)
+  @RequireRole('admin')
+  async inviteMember(
+    @Param('slug') _slug: string,
+    @Body() body: { email: string; role: 'admin' | 'operator' | 'viewer' },
+  ) {
+    if (!body?.email) throw new BadRequestException('email is required');
+    const role = (body.role ?? 'viewer') as 'admin' | 'operator' | 'viewer';
+    if (!['admin', 'operator', 'viewer'].includes(role)) {
+      throw new BadRequestException('role must be admin | operator | viewer');
+    }
+    return this.orgs.inviteMemberByEmail(body.email, role);
+  }
+
+  @Patch('orgs/:slug/members/:id')
+  @UseGuards(RoleGuard)
+  @RequireRole('admin')
+  async updateMember(
+    @Param('slug') _slug: string,
+    @Param('id') id: string,
+    @Body() body: { role: 'owner' | 'admin' | 'operator' | 'viewer' },
+  ) {
+    if (!['owner', 'admin', 'operator', 'viewer'].includes(body?.role)) {
+      throw new BadRequestException('role must be owner | admin | operator | viewer');
+    }
+    return this.orgs.updateMemberRole(id, body.role);
+  }
+
+  @Delete('orgs/:slug/members/:id')
+  @UseGuards(RoleGuard)
+  @RequireRole('admin')
+  async removeMember(@Param('slug') _slug: string, @Param('id') id: string) {
+    return this.orgs.removeMember(id);
   }
 
   @Get('orgs/:slug/onboarding')
