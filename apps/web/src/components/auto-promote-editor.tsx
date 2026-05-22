@@ -87,7 +87,7 @@ export function AutoPromoteEditor({
   return (
     <div className="space-y-3">
       {rules.length === 0 && (
-        <p className="text-sm text-zinc-500">
+        <p className="text-sm text-muted">
           No rules configured. Every changeset goes through the manual approval gate.
         </p>
       )}
@@ -103,7 +103,7 @@ export function AutoPromoteEditor({
                 disabled={!canEdit}
                 onChange={(e) => update(i, { name: e.target.value })}
                 placeholder="rule name"
-                className="flex-1 rounded border px-2 py-1 font-medium dark:bg-zinc-900 dark:border-zinc-700"
+                className="flex-1 border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] font-medium "
               />
               {canEdit && (
                 <Button type="button" variant="destructive" onClick={() => remove(i)}>
@@ -112,7 +112,7 @@ export function AutoPromoteEditor({
               )}
             </div>
             <label className="block">
-              <span className="text-zinc-600 dark:text-zinc-400">Path patterns (one per line)</span>
+              <span className="text-ink-2">Path patterns (one per line)</span>
               <textarea
                 value={r.pathPatterns.join('\n')}
                 disabled={!canEdit}
@@ -125,12 +125,12 @@ export function AutoPromoteEditor({
                   })
                 }
                 rows={3}
-                className="mt-1 w-full rounded border px-2 py-1 font-mono text-xs dark:bg-zinc-900 dark:border-zinc-700"
+                className="mt-1 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] font-mono text-xs "
               />
             </label>
             <div className="grid grid-cols-2 gap-2">
               <label className="block">
-                <span className="text-zinc-600 dark:text-zinc-400">Max files</span>
+                <span className="text-ink-2">Max files</span>
                 <input
                   type="number"
                   min="1"
@@ -141,11 +141,11 @@ export function AutoPromoteEditor({
                       maxFilesChanged: e.target.value === '' ? undefined : Number(e.target.value),
                     })
                   }
-                  className="mt-1 w-full rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700"
+                  className="mt-1 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] "
                 />
               </label>
               <label className="block">
-                <span className="text-zinc-600 dark:text-zinc-400">Max lines</span>
+                <span className="text-ink-2">Max lines</span>
                 <input
                   type="number"
                   min="1"
@@ -156,7 +156,7 @@ export function AutoPromoteEditor({
                       maxLinesChanged: e.target.value === '' ? undefined : Number(e.target.value),
                     })
                   }
-                  className="mt-1 w-full rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700"
+                  className="mt-1 w-full border border-hair bg-paper-2 px-3 py-[7px] text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] "
                 />
               </label>
             </div>
@@ -190,12 +190,7 @@ export function AutoPromoteEditor({
             + Empty rule
           </Button>
           {TEMPLATES.map((t) => (
-            <Button
-              key={t.label}
-              type="button"
-              variant="ghost"
-              onClick={() => add({ ...t.rule })}
-            >
+            <Button key={t.label} type="button" variant="ghost" onClick={() => add({ ...t.rule })}>
               + {t.label}
             </Button>
           ))}
@@ -207,7 +202,7 @@ export function AutoPromoteEditor({
       )}
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-      {savedAt && !error && <p className="text-xs text-zinc-500">Saved.</p>}
+      {savedAt && !error && <p className="text-xs text-muted">Saved.</p>}
     </div>
   );
 }

@@ -599,7 +599,7 @@ function RunNowForm({
       <input type="hidden" name="orgSlug" value={orgSlug} />
       <input type="hidden" name="projectSlug" value={projectSlug} />
       <button
-        className="inline-flex items-center justify-center rounded-md bg-accent px-3 py-1.5 text-sm text-accent-fg transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:opacity-40"
+        className="inline-flex items-center justify-center gap-2 border border-accent bg-accent px-[14px] py-[9px] text-[13.5px] font-medium leading-none text-paper transition-[transform,background-color] duration-100 hover:-translate-y-[1px] hover:border-accent-deep hover:bg-accent-deep active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0"
         type="submit"
         disabled={disabled}
         title={disabled ? disabledReason : undefined}
@@ -608,7 +608,7 @@ function RunNowForm({
         Run now
       </button>
       {disabled && disabledReason && (
-        <p className="max-w-[16rem] text-right text-xs text-zinc-500 dark:text-zinc-400">
+        <p className="max-w-[16rem] text-right text-[11.5px] text-muted">
           {disabledReason}
         </p>
       )}

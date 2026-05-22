@@ -18,7 +18,7 @@ export function TestWebhookButton({
 
   return (
     <div className="flex items-center gap-2">
-      {msg && <span className="text-xs text-zinc-500">{msg}</span>}
+      {msg && <span className="text-xs text-muted">{msg}</span>}
       <Button
         type="button"
         variant="secondary"

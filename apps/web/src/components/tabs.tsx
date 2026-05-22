@@ -32,10 +32,7 @@ export function TabStrip({
     <nav
       role="tablist"
       aria-label="Settings sections"
-      className={clsx(
-        'flex flex-wrap gap-1 border-b border-zinc-200 dark:border-zinc-800',
-        className,
-      )}
+      className={clsx('flex flex-wrap gap-1 border-b border-hair', className)}
     >
       {tabs.map((t) => {
         const isActive = t.id === active;
@@ -49,7 +46,7 @@ export function TabStrip({
               'rounded-t-md px-3 py-1.5 text-sm transition-colors',
               isActive
                 ? 'border-b-2 border-accent font-medium text-accent'
-                : 'border-b-2 border-transparent text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100',
+                : 'border-b-2 border-transparent text-zinc-600 hover:text-ink dark:text-muted-2 ',
             )}
             // Negative bottom margin pulls the active underline onto
             // the strip's border so it visually replaces (rather than
