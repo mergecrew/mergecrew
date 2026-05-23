@@ -61,6 +61,13 @@ async function seedRun(args: {
       ...(args.orgPaused ? { runsPausedAt: now, runsPauseReason: 'budget freeze' } : {}),
     },
   });
+  // V2.af: orchestrator's dispatch reads runner_profile.kind. Test orgs
+  // model the trusted single-tenant case → instance_builtin so the
+  // legacy supervisor consumes the step. Without this, the orchestrator
+  // would fail the step closed with `runner_not_configured`.
+  await prisma.runnerProfile.create({
+    data: { organizationId: org.id, kind: 'instance_builtin' },
+  });
   const project = await prisma.project.create({
     data: {
       organizationId: org.id,

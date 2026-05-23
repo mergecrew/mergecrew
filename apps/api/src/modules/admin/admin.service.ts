@@ -9,6 +9,9 @@ const KNOWN_QUEUES = [
   // API-enqueue side
   'run.due',
   'orchestrator.dispatch',
+  // V2.af (ADR-0005): renamed from `runner.step`. Legacy kept here for
+  // one release so the admin queue view picks up draining bridge jobs.
+  'runner.step.instance',
   'runner.step',
   'orchestrator.gate.resume',
   'orchestrator.rate-limit.resume',

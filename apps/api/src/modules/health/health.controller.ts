@@ -100,6 +100,7 @@ export class HealthController {
     const redis = this.queue.connectionHandle();
     const queues = [
       'run.due',
+      'runner.step.instance',
       'runner.step',
       'webhook.fanout',
       'webhook.outbound',

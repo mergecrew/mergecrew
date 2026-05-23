@@ -96,21 +96,41 @@ pubsub
     );
   });
 
+type RunnerStepJob = {
+  organizationId: string;
+  projectId: string;
+  runId: string;
+  workflowRunId: string;
+  stepId: string;
+  agentRef: string;
+};
+
+async function handleStepJob(data: RunnerStepJob) {
+  const driver = await driverPromise;
+  const outcome = await runStep({ ...data, eventlog, logger, cancellation, driver });
+  await replyQueue.add('reply', { ...data, outcome }, { removeOnComplete: 1000 });
+  return outcome;
+}
+
+// Consumes the V2.af `instance_builtin` profile queue (ADR-0005).
 const worker = new Worker(
+  'runner.step.instance',
+  async (job: Job) => handleStepJob(job.data as RunnerStepJob),
+  { connection: conn, concurrency, autorun: true },
+);
+
+// Legacy `runner.step` consumer — one-release bridge for deployments
+// upgrading from before the V2.af rename. Drains any in-flight jobs
+// from the pre-rename queue. Remove in the next minor release after
+// confirming no production queues retain backlog under this name.
+const legacyWorker = new Worker(
   'runner.step',
   async (job: Job) => {
-    const data = job.data as {
-      organizationId: string;
-      projectId: string;
-      runId: string;
-      workflowRunId: string;
-      stepId: string;
-      agentRef: string;
-    };
-    const driver = await driverPromise;
-    const outcome = await runStep({ ...data, eventlog, logger, cancellation, driver });
-    await replyQueue.add('reply', { ...data, outcome }, { removeOnComplete: 1000 });
-    return outcome;
+    logger.warn(
+      { stepId: (job.data as RunnerStepJob)?.stepId },
+      'runner.step legacy queue job picked up — upgrading deployment? Remove the bridge worker after one release.',
+    );
+    return handleStepJob(job.data as RunnerStepJob);
   },
   { connection: conn, concurrency, autorun: true },
 );
@@ -175,6 +195,7 @@ async function shutdown() {
   probeServer.close();
   await Promise.all([
     worker.close(),
+    legacyWorker.close(),
     cleanupWorker.close(),
     pubsub.close(),
     replyQueue.close(),

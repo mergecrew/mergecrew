@@ -107,9 +107,11 @@ const fanoutWorker = new Worker<FanoutPayload>(
 );
 
 // Heartbeat sweeper (#10 V1.4): re-dispatches steps whose runner stopped
-// writing heartbeats. Reuses the same `runner.step` queue the orchestrator
-// dispatches to.
-const runnerQueue = new Queue('runner.step', { connection: conn });
+// writing heartbeats. Targets the V2.af `runner.step.instance` queue
+// (ADR-0005). The sweeper only re-dispatches steps that landed there
+// originally — agent-profile steps are handled by the agent's own
+// heartbeat path via the long-poll endpoint (lands in #766).
+const runnerQueue = new Queue('runner.step.instance', { connection: conn });
 const sweeperIntervalMs = Number(process.env.ORCHESTRATOR_HEARTBEAT_SWEEPER_INTERVAL_MS ?? 30_000);
 const heartbeatSweeper = new HeartbeatSweeper({
   runnerQueue,
@@ -131,6 +133,7 @@ const observabilityServer = startObservabilityServer({
   redis: conn,
   queues: [
     'run.due',
+    'runner.step.instance',
     'runner.step',
     'webhook.fanout',
     'webhook.outbound',
