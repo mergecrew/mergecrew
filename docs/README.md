@@ -77,6 +77,9 @@ Documentation for contributors and operators of [Mergecrew](https://github.com/m
 ### 4 — Roadmap
 - [Vision-tier roadmap](04-roadmap.md). Tactical milestones live in [GitHub Issues](https://github.com/mergecrew/mergecrew/issues) and the [project board](https://github.com/orgs/mergecrew/projects).
 
+### 5 — Architecture decisions
+- [ADR log](adrs/README.md). One ADR per load-bearing decision (Nygard format). Architecture docs describe what is; ADRs describe why.
+
 ## Visuals
 
 - **Diagrams** are embedded inline as [Mermaid](https://mermaid.js.org/) — GitHub

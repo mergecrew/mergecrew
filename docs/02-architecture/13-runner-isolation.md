@@ -2,6 +2,8 @@
 
 > **Status:** research / RFC. No code change implied by this document. It frames the design space for issues [#187](https://github.com/mergecrew/mergecrew/issues/187) (broader runner isolation) and [#188](https://github.com/mergecrew/mergecrew/issues/188) (egress allowlist scope), and proposes a phased path forward.
 
+> **Tenancy note.** After [ADR-0002](../adrs/0002-per-org-runner-profile.md), `RUNNER_SANDBOX` no longer selects "the runner" for the whole deployment — it configures the **instance-builtin** runner profile, which only orgs in the trusted-org allowlist (ADR-0006) can use. Other orgs bring their own runner.
+
 ## 1. Why this doc exists
 
 Today the runner is a **single shared Node.js process** per host. Every step from every org/project runs inside that one process, on the same host filesystem, with the same network identity, and with whatever runtimes happen to be baked into the image (`apps/runner/Dockerfile`).
