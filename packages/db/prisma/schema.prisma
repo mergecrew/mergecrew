@@ -128,6 +128,8 @@ model Organization {
   apiKeys            ApiKey[]
   outboundWebhooks   OutboundWebhook[]
   alertRoutes        AlertRoute[]
+  runnerProfile      RunnerProfile?
+  runnerAgents       RunnerAgent[]
 
   @@map("organizations")
 }
@@ -834,7 +836,7 @@ model MetricsRollup {
   p50StepMs      Int      @default(0) @map("p50_step_ms")
   p95StepMs      Int      @default(0) @map("p95_step_ms")
   llmTokensIn    BigInt   @default(0) @map("llm_tokens_in")
-  llmTokensOut  BigInt   @default(0) @map("llm_tokens_out")
+  llmTokensOut   BigInt   @default(0) @map("llm_tokens_out")
   costUsdCents   BigInt   @default(0) @map("cost_usd_cents")
   computedAt     DateTime @default(now()) @map("computed_at") @db.Timestamptz(6)
 
@@ -1384,4 +1386,88 @@ model ApiKey {
 
   @@index([organizationId])
   @@map("api_keys")
+}
+
+/// Per-org runner ownership (V2.af / ADR-0002). Picks which execution
+/// substrate runs this org's steps. `instance_builtin` keeps today's
+/// behavior — the deployment's `RUNNER_SANDBOX` driver — and is only
+/// available to orgs in the trusted-org allowlist (ADR-0006). `agent`
+/// is the primary BYO path: the org runs a `mergecrew/runner-agent`
+/// container that long-polls jobs (ADR-0003). `fargate_byo` assumes a
+/// role in the org's AWS account (ADR-0007). `github_actions` is
+/// deferred to v1.1. `none` blocks runs at scheduling with a
+/// "Configure a runner" CTA (ADR-0008).
+enum RunnerProfileKind {
+  none
+  instance_builtin
+  agent
+  fargate_byo
+  github_actions
+
+  @@map("runner_profile_kind")
+}
+
+/// 1:1 with Organization. Created by the migration backfill for every
+/// pre-existing org (kind=`instance_builtin`, preserves today's
+/// behavior) and by the org-create path for new orgs (kind=`none`,
+/// blocks runs until configured). Per-kind fields are nullable because
+/// each kind uses a different subset.
+model RunnerProfile {
+  id             String            @id @default(uuid()) @db.Uuid
+  organizationId String            @unique @map("organization_id") @db.Uuid
+  kind           RunnerProfileKind @default(none)
+
+  /// AWS role assumed by the dispatcher when kind=`fargate_byo`. We
+  /// generate `awsExternalId` (UUID v4) per org on first save so the
+  /// user can paste it into their trust policy. None of these are
+  /// secrets on their own — actual AssumeRole credentials are fetched
+  /// per-job and never stored.
+  awsRoleArn            String?  @map("aws_role_arn")
+  awsExternalId         String?  @map("aws_external_id")
+  awsRegion             String?  @map("aws_region")
+  fargateCluster        String?  @map("fargate_cluster")
+  fargateTaskDefinition String?  @map("fargate_task_definition")
+  fargateSubnets        String[] @default([]) @map("fargate_subnets")
+  fargateSecurityGroups String[] @default([]) @map("fargate_security_groups")
+
+  /// GitHub PAT for kind=`github_actions` (v1.1). Envelope-encrypted
+  /// via CryptoService against KMS_MASTER_KEY — the same chokepoint
+  /// used for slack webhooks and project secrets.
+  githubRepoFullName     String? @map("github_repo_full_name")
+  githubWorkflowFileName String? @map("github_workflow_file_name")
+  githubTokenCiphertext  Bytes?  @map("github_token_ciphertext")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("runner_profiles")
+}
+
+/// One row per enrolled runner-agent. Bearer-token authenticated; the
+/// plaintext token is shown exactly once at create time and never
+/// stored. Multiple agents per org are allowed (e.g. homelab + cloud
+/// box); each gets its own row and its own token. Revoke = set
+/// `revokedAt`. Format details and lifecycle in ADR-0004.
+model RunnerAgent {
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @map("organization_id") @db.Uuid
+  name            String
+  /// sha256(token) hex — the only persisted form of the secret.
+  tokenHash       String    @unique @map("token_hash")
+  /// First ~14 chars of the token (`mca_<orgSlug>_<6 random>`), for UI
+  /// display so operators can disambiguate agents without revealing
+  /// the secret.
+  prefix          String
+  createdByUserId String?   @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastSeenAt      DateTime? @map("last_seen_at") @db.Timestamptz(6)
+  revokedAt       DateTime? @map("revoked_at") @db.Timestamptz(6)
+  agentVersion    String?   @map("agent_version")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, revokedAt])
+  @@map("runner_agents")
 }

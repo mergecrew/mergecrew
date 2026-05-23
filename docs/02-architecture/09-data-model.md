@@ -389,6 +389,55 @@ create table memory_documents (
 create index on memory_documents using ivfflat (embedding vector_cosine_ops) with (lists = 100);
 ```
 
+### Runner ownership (V2.af, [ADR-0002](../adrs/0002-per-org-runner-profile.md))
+
+```sql
+create type runner_profile_kind as enum (
+  'none', 'instance_builtin', 'agent', 'fargate_byo', 'github_actions'
+);
+
+-- 1:1 with organizations. Default 'none' blocks runs at scheduling
+-- (ADR-0008). Pre-existing orgs are backfilled to 'instance_builtin'
+-- to preserve today's behavior.
+create table runner_profiles (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null unique,
+  kind runner_profile_kind not null default 'none',
+  -- fargate_byo (ADR-0007 — role assumption, no stored AWS keys)
+  aws_role_arn text,
+  aws_external_id text,
+  aws_region text,
+  fargate_cluster text,
+  fargate_task_definition text,
+  fargate_subnets text[] not null default '{}',
+  fargate_security_groups text[] not null default '{}',
+  -- github_actions (v1.1)
+  github_repo_full_name text,
+  github_workflow_file_name text,
+  github_token_ciphertext bytea,              -- envelope-encrypted via CryptoService
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- N:1 with organizations. One row per enrolled mergecrew/runner-agent
+-- process. token_hash is the only persisted form of the bearer token
+-- (ADR-0004); plaintext is shown exactly once at create time.
+create table runner_agents (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null,
+  name text not null,
+  token_hash text not null unique,
+  prefix text not null,                       -- 'mca_<orgSlug>_<6 random>'
+  created_by_user_id uuid,
+  created_at timestamptz not null default now(),
+  last_seen_at timestamptz,
+  revoked_at timestamptz,
+  agent_version text
+);
+
+create index runner_agents_org_revoked_idx on runner_agents (organization_id, revoked_at);
+```
+
 ## RLS
 
 For every tenant table:
