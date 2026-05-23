@@ -167,6 +167,8 @@ Each entry is symptom → likely cause → recovery → source of truth. If a sy
 ### Enable RUNNER_SANDBOX=docker
 <a id="runner-sandbox-docker"></a>
 
+> **Tenancy note.** `RUNNER_SANDBOX` now configures the **instance-builtin** runner profile only. It applies to orgs listed in `MERGECREW_TRUSTED_ORG_SLUGS` (or the implicit `MERGECREW_OWNER_ORG_SLUG`); other orgs default to the `none` profile and must bring their own runner. See [ADR-0006](../adrs/0006-trusted-org-gating.md) and [ADR-0008](../adrs/0008-default-profile-none.md).
+
 **Symptom.** Default install runs in *unsandboxed mode* — supervisor startup logs a multi-line banner with the title `UNSANDBOXED RUNNER MODE` and a warning. Build steps for every tenant execute on the supervisor host. Suitable for single-tenant self-hosters; unsuitable for multi-tenant.
 
 **Cause.** `RUNNER_SANDBOX` defaults to `process` (the ProcessDriver) for two reasons: zero install dependencies (no Docker socket required on the supervisor host) and complete behavioral parity with the V0 runner. Operators flip it deliberately once they have the host setup ready.
