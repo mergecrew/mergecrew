@@ -143,4 +143,67 @@ describe('RLS: cross-tenant isolation (V1.0 exit criterion)', () => {
       ),
     ).rejects.toThrow();
   });
+
+  it('runner_profile: cross-org read + write blocked under RLS', async () => {
+    // Seed one row per org through the migrator (bypasses RLS).
+    // Note: orgs created in beforeAll() did not exist at migration time
+    // so the backfill did not run for them — that's expected.
+    await migratorClient.runnerProfile.upsert({
+      where: { organizationId: orgAId },
+      create: { organizationId: orgAId, kind: 'instance_builtin' },
+      update: {},
+    });
+    await migratorClient.runnerProfile.upsert({
+      where: { organizationId: orgBId },
+      create: { organizationId: orgBId, kind: 'none' },
+      update: {},
+    });
+
+    // Under tenant A, B's profile must not be visible.
+    const visibleAsA = await withAppTenant(orgAId, async (tx) =>
+      tx.runnerProfile.findMany({ where: { organizationId: orgBId } }),
+    );
+    expect(visibleAsA).toEqual([]);
+
+    // Under tenant A, attempting to update B's profile must affect zero rows.
+    const updated = await withAppTenant(orgAId, async (tx) =>
+      tx.runnerProfile.updateMany({
+        where: { organizationId: orgBId },
+        data: { kind: 'agent' },
+      }),
+    );
+    expect(updated.count).toBe(0);
+  });
+
+  it('runner_agent: cross-org read + write blocked under RLS', async () => {
+    // Create one agent per org through the migrator (bypasses RLS).
+    const seededAgentB = await migratorClient.runnerAgent.create({
+      data: {
+        organizationId: orgBId,
+        name: 'b-agent',
+        tokenHash: `tokenhash-b-${Date.now()}`,
+        prefix: `mca_${ORG_B_SLUG.slice(0, 6)}_xxxxxx`,
+      },
+    });
+
+    // Under tenant A, B's agent must not be visible.
+    const visibleAgents = await withAppTenant(orgAId, async (tx) =>
+      tx.runnerAgent.findMany({ where: { id: seededAgentB.id } }),
+    );
+    expect(visibleAgents).toEqual([]);
+
+    // Under tenant A, attempt to insert an agent into B's org must fail.
+    await expect(
+      withAppTenant(orgAId, async (tx) =>
+        tx.runnerAgent.create({
+          data: {
+            organizationId: orgBId,
+            name: 'evil',
+            tokenHash: `evil-${Date.now()}`,
+            prefix: 'mca_xxxxxx_xxxxxx',
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
 });
