@@ -54,6 +54,9 @@ async function seedRun(slugSuffix: string): Promise<Seed> {
   const org = await prisma.organization.create({
     data: { slug: `${TEST_PREFIX}-${slugSuffix}`, name: `Orch Test ${slugSuffix}` },
   });
+  await prisma.runnerProfile.create({
+    data: { organizationId: org.id, kind: 'instance_builtin' },
+  });
   const project = await prisma.project.create({
     data: { organizationId: org.id, slug: 'p', name: 'P' },
   });

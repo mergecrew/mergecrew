@@ -46,7 +46,21 @@ interface OrchestratorDeps {
 }
 
 export class Orchestrator {
-  private runner: Queue;
+  /**
+   * Trusted-org `instance_builtin` queue. Consumed by the existing
+   * supervisor (`apps/runner`) using whatever the deployment's
+   * `RUNNER_SANDBOX` env points at. Renamed from the legacy single
+   * `runner.step` queue per ADR-0005; a one-release bridge worker on
+   * the legacy name lives in `apps/runner/src/main.ts`.
+   */
+  private runnerInstance: Queue;
+  /**
+   * Per-org agent queues — lazy-created on first dispatch for an org
+   * whose `runner_profile.kind = 'agent'`. The API's long-poll
+   * endpoint (#766) drains these via BRPOP. One queue per org keeps
+   * each agent's BRPOP scoped to its own jobs.
+   */
+  private agentQueues = new Map<string, Queue>();
   private wake: Queue;
   private digestSlack: Queue;
   private digestEmail: Queue;
@@ -56,13 +70,121 @@ export class Orchestrator {
   private dispatchQueue: Queue;
 
   constructor(private deps: OrchestratorDeps) {
-    this.runner = new Queue('runner.step', { connection: deps.connection });
+    this.runnerInstance = new Queue('runner.step.instance', { connection: deps.connection });
     this.wake = new Queue('orchestrator.rate-limit.resume', { connection: deps.connection });
     this.digestSlack = new Queue('digest.slack', { connection: deps.connection });
     this.digestEmail = new Queue('digest.email', { connection: deps.connection });
     this.dispatchQueue = new Queue('orchestrator.dispatch', { connection: deps.connection });
     this.orgCapWaitQueue = new Queue('orchestrator.org-cap-wait', { connection: deps.connection });
     this.workspaceCleanupQueue = new Queue('runner.workspace-cleanup', { connection: deps.connection });
+  }
+
+  private agentQueueForOrg(organizationId: string): Queue {
+    let q = this.agentQueues.get(organizationId);
+    if (!q) {
+      q = new Queue(`runner.step.agent.${organizationId}`, { connection: this.deps.connection });
+      this.agentQueues.set(organizationId, q);
+    }
+    return q;
+  }
+
+  /**
+   * Per-run dispatch (ADR-0005). Reads the org's runner profile and
+   * either enqueues to the right queue or fails the step closed with
+   * `runner_not_configured` (ADR-0008). Replaces the old direct
+   * `this.runner.add('step', …)` calls so every dispatch site goes
+   * through the same gate.
+   */
+  private async enqueueRunnerStep(args: {
+    organizationId: string;
+    projectId: string;
+    runId: string;
+    workflowRunId: string;
+    stepId: string;
+    agentRef: string;
+  }): Promise<void> {
+    const profile = await withTenant(args.organizationId, (tx) =>
+      tx.runnerProfile.findUnique({
+        where: { organizationId: args.organizationId },
+        select: { kind: true },
+      }),
+    );
+    // Orgs created before the V2.af migration are backfilled to
+    // `instance_builtin`; orgs created after the migration without an
+    // explicit profile fall through to `none` here so the failure mode
+    // matches a freshly-onboarded tenant who hasn't configured a runner.
+    const kind = profile?.kind ?? 'none';
+    const payload = { ...args };
+
+    if (kind === 'instance_builtin') {
+      this.deps.logger.info(
+        { organizationId: args.organizationId, kind, queue: 'runner.step.instance' },
+        'runner.profile_dispatch',
+      );
+      await this.runnerInstance.add('step', payload, {
+        removeOnComplete: 1000,
+        removeOnFail: 1000,
+        attempts: 1,
+      });
+      return;
+    }
+
+    if (kind === 'agent') {
+      const q = this.agentQueueForOrg(args.organizationId);
+      this.deps.logger.info(
+        { organizationId: args.organizationId, kind, queue: q.name },
+        'runner.profile_dispatch',
+      );
+      await q.add('step', payload, {
+        removeOnComplete: 1000,
+        removeOnFail: 1000,
+        attempts: 1,
+      });
+      return;
+    }
+
+    // `none`, `fargate_byo`, `github_actions` — no consumer yet (the
+    // last two arrive in #769 / v1.1). Fail closed instead of stuffing
+    // a queue with jobs that will never be picked up.
+    await this.failStepNoRunner(args, kind);
+  }
+
+  private async failStepNoRunner(
+    args: {
+      organizationId: string;
+      projectId: string;
+      runId: string;
+      workflowRunId: string;
+      stepId: string;
+      agentRef: string;
+    },
+    kind: string,
+  ): Promise<void> {
+    this.deps.logger.warn(
+      { organizationId: args.organizationId, runId: args.runId, stepId: args.stepId, kind },
+      'runner.profile_dispatch: runner_not_configured — failing step',
+    );
+    const reason = kind === 'none' ? 'runner_not_configured' : `runner_${kind}_not_supported`;
+    await withTenant(args.organizationId, (tx) =>
+      tx.agentStep.update({
+        where: { id: args.stepId },
+        data: {
+          status: 'failed',
+          failureReason: reason,
+          finishedAt: new Date(),
+        },
+      }),
+    );
+    await this.deps.eventlog.emit({
+      organizationId: args.organizationId,
+      projectId: args.projectId,
+      dailyRunId: args.runId,
+      workflowRunId: args.workflowRunId,
+      agentStepId: args.stepId,
+      type: 'AGENT_STEP_FAILED',
+      actor: { kind: 'system' },
+      payload: { reason, agentRef: args.agentRef },
+    });
   }
 
   // ─── 1. Run start ───────────────────────────────────────────────────────
@@ -703,18 +825,14 @@ export class Orchestrator {
         },
       }),
     );
-    await this.runner.add(
-      'step',
-      {
-        organizationId,
-        projectId,
-        runId,
-        workflowRunId,
-        stepId: step.id,
-        agentRef,
-      },
-      { removeOnComplete: 1000, removeOnFail: 1000, attempts: 1 },
-    );
+    await this.enqueueRunnerStep({
+      organizationId,
+      projectId,
+      runId,
+      workflowRunId,
+      stepId: step.id,
+      agentRef,
+    });
   }
 
   /**
@@ -1043,18 +1161,14 @@ export class Orchestrator {
     );
     if (!step) return;
     const input = step.input as any;
-    await this.runner.add(
-      'step',
-      {
-        organizationId: data.organizationId,
-        projectId: data.projectId,
-        runId: data.runId,
-        workflowRunId: data.workflowRunId,
-        stepId: data.stepId,
-        agentRef: input?.agentRef,
-      },
-      { removeOnComplete: 1000 },
-    );
+    await this.enqueueRunnerStep({
+      organizationId: data.organizationId,
+      projectId: data.projectId,
+      runId: data.runId,
+      workflowRunId: data.workflowRunId,
+      stepId: data.stepId,
+      agentRef: input?.agentRef,
+    });
   }
 
   async resumeGate(data: { approvalId: string; resolution: 'approve' | 'reject' | 'takeover' }): Promise<void> {
@@ -1163,18 +1277,14 @@ export class Orchestrator {
       }),
     );
     const input = step.input as any;
-    await this.runner.add(
-      'step',
-      {
-        organizationId: ar.organizationId,
-        projectId: ar.projectId,
-        runId: pause.dailyRunId,
-        workflowRunId: ar.workflowRunId,
-        stepId: step.id,
-        agentRef: input?.agentRef,
-      },
-      { removeOnComplete: 1000 },
-    );
+    await this.enqueueRunnerStep({
+      organizationId: ar.organizationId,
+      projectId: ar.projectId,
+      runId: pause.dailyRunId,
+      workflowRunId: ar.workflowRunId,
+      stepId: step.id,
+      agentRef: input?.agentRef,
+    });
   }
 
   // ─── 6. Dispatch (manual operations) ────────────────────────────────────

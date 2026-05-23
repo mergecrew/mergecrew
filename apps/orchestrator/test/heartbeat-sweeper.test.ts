@@ -47,6 +47,9 @@ async function seedRunningStep(args: {
   const org = await prisma.organization.create({
     data: { slug: `${TEST_PREFIX}-${args.slug}`, name: `HB ${args.slug}` },
   });
+  await prisma.runnerProfile.create({
+    data: { organizationId: org.id, kind: 'instance_builtin' },
+  });
   const project = await prisma.project.create({
     data: { organizationId: org.id, slug: 'p', name: 'P' },
   });

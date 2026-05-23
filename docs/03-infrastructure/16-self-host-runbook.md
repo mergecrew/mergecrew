@@ -231,6 +231,30 @@ docker exec <container-id> ip addr show               # --network none until Pha
 
 ---
 
+### Upgrading from v0 single-queue to V2.af per-profile queues
+<a id="runner-queue-migration"></a>
+
+**What changed.** The supervisor's BullMQ queue was renamed from `runner.step` to `runner.step.instance` ([ADR-0005](../adrs/0005-per-profile-queues.md)). The orchestrator now reads each org's `runner_profile.kind` and routes the step to either `runner.step.instance` (for trusted `instance_builtin` orgs) or a per-org agent queue `runner.step.agent.<orgId>` (consumed by the API's long-poll endpoint, lands in #766).
+
+**What this means for v0 operators.** Single-org deployments don't need any change beyond adding the org slug to `MERGECREW_TRUSTED_ORG_SLUGS` or `MERGECREW_OWNER_ORG_SLUG` (see § "Trust an org for the instance-builtin runner profile" above). The migration in #761 backfilled every pre-existing org to `kind='instance_builtin'`, so the supervisor's behavior is byte-identical.
+
+**Bridge worker.** A one-release back-compat worker in `apps/runner/src/main.ts` consumes any leftover jobs from the legacy `runner.step` queue and processes them with the same handler used for `runner.step.instance`. It logs a warning on every job picked up so operators can confirm the legacy queue has drained. The bridge worker is removed in the next minor release.
+
+**Verification.** After deploy:
+
+```sh
+# Both queues exist; new dispatches land in the renamed queue.
+redis-cli -u "$REDIS_URL" zcard bull:runner.step:waiting        # should trend to 0
+redis-cli -u "$REDIS_URL" zcard bull:runner.step.instance:waiting
+
+# Per-org agent queues appear lazily when an org with kind=agent dispatches.
+redis-cli -u "$REDIS_URL" keys 'bull:runner.step.agent.*'
+```
+
+**Source.** `apps/orchestrator/src/orchestrator.ts:enqueueRunnerStep` is the dispatch chokepoint. ADR: [0005](../adrs/0005-per-profile-queues.md).
+
+---
+
 ## Recipes
 
 ### Rotate KMS_MASTER_KEY

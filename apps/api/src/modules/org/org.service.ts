@@ -5,6 +5,7 @@ import { seedDemoProject } from '@mergecrew/db';
 import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
 import { TelemetryService } from '../../common/telemetry.service.js';
+import { isTrustedOrgSlug } from '../../common/trusted-orgs.js';
 
 function startOfUtcDay(d: Date): Date {
   const r = new Date(d);
@@ -54,6 +55,19 @@ export class OrgService {
     );
     await this.prisma.withSystem((tx) =>
       tx.membership.create({ data: { organizationId: org.id, userId, role: 'owner' } }),
+    );
+    // V2.af: every new org gets a `runner_profile` row. Trusted slugs
+    // (the operator's own org in the typical self-host setup) default
+    // to `instance_builtin` — the deployment's RUNNER_SANDBOX driver
+    // applies and runs work as before. Everyone else lands in `none`
+    // and must BYO via the runner-agent (ADR-0008).
+    await this.prisma.withSystem((tx) =>
+      tx.runnerProfile.create({
+        data: {
+          organizationId: org.id,
+          kind: isTrustedOrgSlug(slugged) ? 'instance_builtin' : 'none',
+        },
+      }),
     );
     // Seed the per-org read-only `demo-saas` project (#437) so the FTE
     // has something to land in (#440) and the coachmark tour (#442) has

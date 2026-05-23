@@ -76,6 +76,15 @@ async function main() {
     },
   });
 
+  // V2.af: demo org is the deployment owner in single-tenant self-host —
+  // wire it to `instance_builtin` so docker-compose-up demos can run
+  // immediately without going through the runner-profile settings UI.
+  await prisma.runnerProfile.upsert({
+    where: { organizationId: demoOrg.id },
+    update: {},
+    create: { organizationId: demoOrg.id, kind: 'instance_builtin' },
+  });
+
   console.log(`[seed] Demo org "${demoOrg.slug}" + user "${demoUser.email}" ready.`);
 
   // The demo org's project ships **paused** for the read-only sandbox UX
