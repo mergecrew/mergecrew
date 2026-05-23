@@ -143,6 +143,13 @@ services:
         # Same — passed only when the e2e harness pre-issues an API key
         # via the seed and needs the operator-role token available later.
         MERGECREW_E2E_LOCAL_API_KEY: '${MERGECREW_E2E_LOCAL_API_KEY:-}'
+        # Trusted-org allowlist for the instance-builtin runner profile
+        # (ADR-0006). Only listed slugs may pick `instance_builtin` —
+        # everyone else must BYO. Plus the implicit owner slug below.
+        # See docs/03-infrastructure/16-self-host-runbook.md § Trust an
+        # org for the instance-builtin runner profile.
+        MERGECREW_TRUSTED_ORG_SLUGS: '${MERGECREW_TRUSTED_ORG_SLUGS:-}'
+        MERGECREW_OWNER_ORG_SLUG: '${MERGECREW_OWNER_ORG_SLUG:-}'
     networks: [internal]
     depends_on:
       postgres: { condition: service_healthy }

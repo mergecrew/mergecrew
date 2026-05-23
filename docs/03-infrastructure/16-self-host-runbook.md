@@ -204,6 +204,33 @@ docker exec <container-id> ip addr show               # --network none until Pha
 
 ---
 
+### Trust an org for the instance-builtin runner profile
+<a id="trusted-orgs"></a>
+
+**Symptom.** A new org signs up on the deployment but can't pick `instance-builtin` for its runner profile — the option is greyed out in the UI, and a direct PATCH returns 403.
+
+**Cause.** Per [ADR-0006](../adrs/0006-trusted-org-gating.md), only orgs listed in `MERGECREW_TRUSTED_ORG_SLUGS` (plus the implicit `MERGECREW_OWNER_ORG_SLUG`) may select `instance-builtin` — everyone else must BYO via the runner-agent or the `fargate-byo` profile.
+
+**Recovery.**
+
+1. Add the slug to one of the envs:
+
+   ```sh
+   # Comma-separated for the multi-org case.
+   MERGECREW_TRUSTED_ORG_SLUGS=acme,beta
+   # Single-org installs typically set just the owner slug:
+   MERGECREW_OWNER_ORG_SLUG=acme
+   ```
+
+2. Restart the API (the env is read per-request, but the value is captured at startup time in some deployment topologies — safer to redeploy).
+3. The org's runner-profile settings page now shows `instance-builtin` as a selectable option. Server-side validation gates the PATCH endpoint on the same env, so a UI bypass attempt returns 403.
+
+**Verification.** `GET /api/v1/orgs/<slug>/runner-profile` returns `isTrustedForInstanceBuiltin: true` for trusted orgs and `false` otherwise.
+
+**Source.** `apps/api/src/common/trusted-orgs.ts` exposes `isTrustedOrgSlug()`. ADRs: [0006](../adrs/0006-trusted-org-gating.md), [0008](../adrs/0008-default-profile-none.md).
+
+---
+
 ## Recipes
 
 ### Rotate KMS_MASTER_KEY

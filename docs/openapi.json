@@ -347,6 +347,20 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/runner-profile": {
+      "get": {
+        "operationId": "RunnerProfileController_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RunnerProfile"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/projects": {
       "get": {
         "operationId": "ProjectController_list",
