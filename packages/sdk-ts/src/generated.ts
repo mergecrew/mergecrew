@@ -276,6 +276,22 @@ export interface paths {
         patch: operations["OrgController_updateEvalsSettings"];
         trace?: never;
     };
+    "/v1/orgs/{slug}/runner-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["RunnerProfileController_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{slug}/projects": {
         parameters: {
             query?: never;
@@ -2522,6 +2538,23 @@ export interface operations {
         };
     };
     OrgController_updateEvalsSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RunnerProfileController_get: {
         parameters: {
             query?: never;
             header?: never;
