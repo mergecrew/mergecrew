@@ -152,9 +152,13 @@ async function cleanupOrg(organizationId: string) {
 const seeds: Seed[] = [];
 
 beforeAll(async () => {
-  const runner = new Queue('runner.step', { connection: conn });
-  await runner.obliterate({ force: true }).catch(() => {});
-  await runner.close();
+  // V2.af queue rename (ADR-0005). Purge both names — legacy kept by the
+  // bridge worker for one release.
+  for (const name of ['runner.step.instance', 'runner.step'] as const) {
+    const runner = new Queue(name, { connection: conn });
+    await runner.obliterate({ force: true }).catch(() => {});
+    await runner.close();
+  }
 });
 
 afterAll(async () => {

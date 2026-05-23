@@ -115,7 +115,7 @@ async function cleanupOrg(organizationId: string) {
 }
 
 const seeds: Seed[] = [];
-const runnerQueue = new Queue('runner.step', { connection: conn });
+const runnerQueue = new Queue('runner.step.instance', { connection: conn });
 
 beforeAll(async () => {
   await runnerQueue.obliterate({ force: true }).catch(() => {});
@@ -139,7 +139,7 @@ describe('HeartbeatSweeper', () => {
     });
     seeds.push(seed);
 
-    const events = new QueueEvents('runner.step', { connection: conn.duplicate() });
+    const events = new QueueEvents('runner.step.instance', { connection: conn.duplicate() });
     await events.waitUntilReady();
     let added: string[] = [];
     events.on('added', (job) => {
@@ -252,7 +252,7 @@ describe('HeartbeatSweeper', () => {
     });
     seeds.push(seed);
 
-    const events = new QueueEvents('runner.step', { connection: conn.duplicate() });
+    const events = new QueueEvents('runner.step.instance', { connection: conn.duplicate() });
     await events.waitUntilReady();
     let added = 0;
     events.on('added', (job) => {

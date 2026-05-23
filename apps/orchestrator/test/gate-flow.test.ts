@@ -133,9 +133,15 @@ const seeds: Seed[] = [];
 
 beforeAll(async () => {
   // Clear out the runner queue so this test's enqueues are observable.
-  const runner = new Queue('runner.step', { connection: conn });
+  // V2.af renamed `runner.step` to `runner.step.instance` (ADR-0005);
+  // legacy queue purged for free since CI shares the redis instance
+  // with the runner's bridge worker.
+  const runner = new Queue('runner.step.instance', { connection: conn });
   await runner.obliterate({ force: true }).catch(() => {});
   await runner.close();
+  const legacy = new Queue('runner.step', { connection: conn });
+  await legacy.obliterate({ force: true }).catch(() => {});
+  await legacy.close();
 });
 
 afterAll(async () => {
@@ -208,8 +214,10 @@ describe('resumeGate(approve)', () => {
     // Watch the runner queue for the re-dispatched job. We can't just
     // `getWaitingCount()` because a local runner process may consume the
     // job before we observe it. `QueueEvents` lets us catch the `added`
-    // hook regardless.
-    const events = new QueueEvents('runner.step', { connection: conn.duplicate() });
+    // hook regardless. V2.af: queue was renamed from `runner.step` to
+    // `runner.step.instance` (ADR-0005) — trusted-org / instance-builtin
+    // dispatch path lands here, which is what this test exercises.
+    const events = new QueueEvents('runner.step.instance', { connection: conn.duplicate() });
     await events.waitUntilReady();
     let addedCount = 0;
     const seen = new Promise<void>((resolve) => {
