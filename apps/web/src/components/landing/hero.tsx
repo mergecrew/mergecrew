@@ -4,7 +4,7 @@ import { RunCard } from './run-card';
 
 export function Hero() {
   return (
-    <section className="relative px-[36px] py-[100px] md:px-[80px] md:pb-[140px] md:pt-[180px]">
+    <section className="relative px-[24px] py-[56px] md:px-[60px] md:pb-[80px] md:pt-[100px]">
       <div className="mb-9 flex flex-wrap items-center gap-x-6 gap-y-2">
         <span className="font-mono text-[13px] font-semibold tracking-[0.12em] text-accent">001</span>
         <Label className="!text-ink">Manifesto</Label>
