@@ -4,9 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    # `feat/byo-runners-epic` is the V2.af integration branch; remove
-    # once the EPIC ships.
-    branches: [main, feat/byo-runners-epic]
+    branches: [main]
 
 jobs:
   build:
