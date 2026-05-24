@@ -251,12 +251,32 @@ export class RunnerAgentService {
    * `timeoutSec` seconds on the per-org agent queue. Returns null on
    * timeout, or the parsed job payload on hit.
    *
+   * Pause semantics (V2.af / #768 / "Pause means silence" rule):
+   * if the org has `runsPausedAt` set, this method does NOT pop the
+   * queue — it sleeps out the long-poll budget and returns null. Jobs
+   * stay queued; the next poll after resume picks them up naturally.
+   * No new step state to manage; matches the project-level pause's
+   * forward-looking semantics.
+   *
    * Uses raw Redis BRPOP — see `agentQueueKey` for the rationale.
    */
   async pollNextJob(
     organizationId: string,
     timeoutSec: number,
   ): Promise<AgentJobPayload | null> {
+    const orgPause = await this.prisma.withSystem((tx) =>
+      tx.organization.findUnique({
+        where: { id: organizationId },
+        select: { runsPausedAt: true },
+      }),
+    );
+    if (orgPause?.runsPausedAt) {
+      // Sleep so we honor the long-poll budget — the agent expects
+      // the request to take ~timeoutSec on idle. Returning instantly
+      // would create a busy loop on the agent side.
+      await new Promise((resolve) => setTimeout(resolve, timeoutSec * 1000));
+      return null;
+    }
     const redis = this.queues.connectionHandle();
     const key = agentQueueKey(organizationId);
     const result = await redis.brpop(key, timeoutSec);

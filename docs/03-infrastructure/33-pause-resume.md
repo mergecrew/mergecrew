@@ -14,8 +14,17 @@ This is the safe answer to "my project keeps failing and burning tokens" or "we 
 | Webhook fan-out | no | no |
 | End-of-day digest | no | no |
 | Promote ritual | no | no |
+| BYO runner-agent `/poll` returning jobs | no | yes (returns idle for the long-poll budget) |
 
 The cancel on a queued job marks the `DailyRun` as `cancelled` with `metadata.cancelReason='paused'` and emits `RUN_CANCELLED` so the operator can see why nothing happened on the run-detail page.
+
+### Pause + the BYO runner-agent (V2.af / #768)
+
+For orgs whose `runner_profile.kind = 'agent'`, the API's `/v1/runner-agent/poll` endpoint checks `runsPausedAt` **before** popping the org's job queue. A paused org's agent stays connected and shows online (still bumping `lastSeenAt` via heartbeats it doesn't send during idle; it only sends them per job), but receives `{ kind: 'idle' }` for the full long-poll window even when jobs are queued. No new step state to manage — jobs remain in the queue and the **next poll after resume picks them up naturally**.
+
+This matches the existing forward-looking pause semantics: in-flight steps on the agent's machine still report their outcomes (the outcome endpoint isn't pause-gated; the deployment must accept the reply so the step doesn't dangle). Only NEW dispatches stop.
+
+The org-level concurrency cap (`organizations.org_concurrency_cap`) is already enforced upstream of the agent queue — the orchestrator's `dispatchAgentStep` defers the (N+1)-th step before LPUSH, so the agent queue never grows beyond the cap even during a load spike.
 
 ## What pause does **not** do
 
