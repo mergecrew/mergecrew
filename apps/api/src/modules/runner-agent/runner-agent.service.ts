@@ -1,7 +1,20 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma.service.js';
+import { QueueService } from '../../common/queue.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
+
+/**
+ * Per-org agent queue key in Redis (V2.af / #766, ADR-0005). Raw list,
+ * not a BullMQ queue — long-poll BRPOP is the consumer pattern and we
+ * intentionally skip BullMQ's active/completed bookkeeping on this
+ * path because the agent has its own heartbeat + outcome reply.
+ *
+ * KEEP IN SYNC WITH `apps/orchestrator/src/orchestrator.ts`.
+ */
+export function agentQueueKey(organizationId: string): string {
+  return `runner-agent:queue:${organizationId}`;
+}
 
 /**
  * Runner-agent enrollment (V2.af / #765 / ADR-0004).
@@ -62,10 +75,31 @@ function generateSecret(): string {
   return out.join('');
 }
 
+/**
+ * Job payload that lands on the per-org agent queue. Matches the
+ * orchestrator's `enqueueRunnerStep` shape — duplicated here so the API
+ * doesn't pull the orchestrator package just for a type.
+ */
+export interface AgentJobPayload {
+  organizationId: string;
+  projectId: string;
+  runId: string;
+  workflowRunId: string;
+  stepId: string;
+  agentRef: string;
+}
+
+/** Outcome shapes the agent posts back. Mirrors `onStepReply` in orchestrator. */
+export type AgentStepOutcome =
+  | { kind: 'completed'; output?: unknown; toolCallsMade?: number; totalTokens?: number }
+  | { kind: 'failed'; reason: string }
+  | { kind: 'cancelled' };
+
 @Injectable()
 export class RunnerAgentService {
   constructor(
     private prisma: PrismaService,
+    private queues: QueueService,
     private tenant: TenantContextService,
   ) {}
 
@@ -210,5 +244,159 @@ export class RunnerAgentService {
       organizationSlug: row.organization.slug,
       agentName: row.name,
     };
+  }
+
+  /**
+   * Long-poll for the next agent job (V2.af / #766). Blocks up to
+   * `timeoutSec` seconds on the per-org agent queue. Returns null on
+   * timeout, or the parsed job payload on hit.
+   *
+   * Uses raw Redis BRPOP — see `agentQueueKey` for the rationale.
+   */
+  async pollNextJob(
+    organizationId: string,
+    timeoutSec: number,
+  ): Promise<AgentJobPayload | null> {
+    const redis = this.queues.connectionHandle();
+    const key = agentQueueKey(organizationId);
+    const result = await redis.brpop(key, timeoutSec);
+    if (!result) return null;
+    // ioredis returns [key, value]; defensive parsing below covers a
+    // malformed payload (e.g. an orchestrator writing the wrong shape)
+    // by surfacing as null rather than a 500 from JSON.parse.
+    const [, raw] = result;
+    try {
+      const parsed = JSON.parse(raw) as AgentJobPayload;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Heartbeat an in-flight step the agent is processing (#766). Mirrors
+   * the supervisor's heartbeat write at `apps/runner/src/step.ts`. The
+   * orchestrator's heartbeat sweeper considers a step live so long as
+   * `heartbeatAt` advances within its staleness threshold.
+   *
+   * Authorization: the agent's resolved identity must own the step's
+   * org. Caller (controller) is expected to have already called
+   * `resolveAgent` on the bearer.
+   */
+  async heartbeatStep(organizationId: string, stepId: string): Promise<void> {
+    await this.prisma.withTenant(organizationId, async (tx) => {
+      const found = await tx.agentStep.findUnique({
+        where: { id: stepId },
+        select: { organizationId: true },
+      });
+      if (!found || found.organizationId !== organizationId) {
+        throw new NotFoundException();
+      }
+      await tx.agentStep.update({
+        where: { id: stepId },
+        data: { heartbeatAt: new Date() },
+      });
+    });
+  }
+
+  /**
+   * Forward an event the agent observed during step execution into the
+   * deployment's eventlog. v1 ships the protocol; events flow into the
+   * timeline via the existing `agentStep`-scoped event types (e.g.
+   * `AGENT_STEP_LOG`, `AGENT_STEP_STARTED`). v1.1 expands the schema
+   * + adds richer agent-side telemetry.
+   */
+  async recordStepEvent(
+    organizationId: string,
+    stepId: string,
+    event: { type: string; payload?: Record<string, unknown> },
+  ): Promise<void> {
+    // For v1 we don't yet wire a separate eventlog forwarder — the
+    // outcome reply on `orchestrator.step-reply` carries the terminal
+    // state. Intermediate events are stored as audit-log entries so an
+    // operator can still see what the agent reported. v1.1 will route
+    // them through the proper Eventlog with workflow_run + daily_run
+    // context (which the agent doesn't currently send back).
+    await this.prisma.withTenant(organizationId, async (tx) => {
+      const found = await tx.agentStep.findUnique({
+        where: { id: stepId },
+        select: { organizationId: true },
+      });
+      if (!found || found.organizationId !== organizationId) {
+        throw new NotFoundException();
+      }
+      await tx.auditLogEntry.create({
+        data: {
+          organizationId,
+          action: `runnerAgent.event.${event.type}`,
+          target: { agentStepId: stepId },
+          metadata: (event.payload ?? {}) as any,
+        },
+      });
+    });
+  }
+
+  /**
+   * Record the terminal outcome and notify the orchestrator. The agent
+   * is responsible for calling this exactly once per job; the
+   * orchestrator advances the workflow off the resulting
+   * `orchestrator.step-reply` job.
+   */
+  async recordStepOutcome(args: {
+    organizationId: string;
+    stepId: string;
+    outcome: AgentStepOutcome;
+  }): Promise<void> {
+    const { organizationId, stepId, outcome } = args;
+    const step = await this.prisma.withTenant(organizationId, (tx) =>
+      tx.agentStep.findUnique({
+        where: { id: stepId },
+        select: { organizationId: true, workflowRunId: true },
+      }),
+    );
+    if (!step || step.organizationId !== organizationId) {
+      throw new NotFoundException();
+    }
+    const wf = await this.prisma.withTenant(organizationId, (tx) =>
+      tx.workflowRun.findUnique({
+        where: { id: step.workflowRunId },
+        select: {
+          dailyRunId: true,
+          dailyRun: { select: { projectId: true } },
+        },
+      }),
+    );
+    if (!wf) throw new NotFoundException();
+
+    // Mirror the supervisor's terminal step update + step-reply enqueue
+    // shape so the orchestrator's onStepReply doesn't need a special
+    // case for agent-sourced replies.
+    const status =
+      outcome.kind === 'completed' ? 'completed'
+      : outcome.kind === 'cancelled' ? 'cancelled'
+      : 'failed';
+    await this.prisma.withTenant(organizationId, (tx) =>
+      tx.agentStep.update({
+        where: { id: stepId },
+        data: {
+          status,
+          finishedAt: new Date(),
+          heartbeatAt: null,
+          ...(outcome.kind === 'failed' ? { failureReason: outcome.reason } : {}),
+        },
+      }),
+    );
+    await this.queues.get('orchestrator.step-reply').add(
+      'reply',
+      {
+        organizationId,
+        projectId: wf.dailyRun.projectId,
+        runId: wf.dailyRunId,
+        workflowRunId: step.workflowRunId,
+        stepId,
+        outcome,
+      },
+      { removeOnComplete: 1000, removeOnFail: 1000 },
+    );
   }
 }
