@@ -102,14 +102,59 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  // #766 will replace this with the long-poll loop. For #764 the
-  // agent intentionally fails fast in non-dry-run mode so an operator
-  // who runs an old image against a deployment that expects #766
-  // sees a clear "not yet implemented" rather than a silent hang.
-  logger.error(
-    'runner-agent skeleton: job pull is not implemented yet (lands in #766). Run with --dry-run to validate config.',
-  );
-  process.exit(3);
+  // #765: prove the enrollment token works by hitting /hello, then sit
+  // in a heartbeat loop calling it every 60s. #766 replaces this with
+  // the long-poll job pull. Until then this gives operators a working
+  // online/offline signal — the API stamps lastSeenAt on each call and
+  // the org settings UI shows the badge.
+  let stopped = false;
+  process.on('SIGINT', () => {
+    stopped = true;
+  });
+  process.on('SIGTERM', () => {
+    stopped = true;
+  });
+
+  while (!stopped) {
+    try {
+      const res = await fetch(new URL('/v1/runner-agent/hello', cfg.apiUrl).toString(), {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${cfg.token}`,
+        },
+        body: JSON.stringify({ agentVersion: AGENT_VERSION }),
+      });
+      if (res.status === 401) {
+        logger.error(
+          'runner-agent: 401 from /hello — token is revoked or unknown. Re-enrol from Settings → Runner agents.',
+        );
+        process.exit(4);
+      }
+      if (!res.ok) {
+        logger.warn({ status: res.status }, 'hello: unexpected status');
+      } else {
+        const body = (await res.json()) as { agentName?: string; orgSlug?: string };
+        logger.info(
+          { agentName: body.agentName, orgSlug: body.orgSlug },
+          'agent online',
+        );
+      }
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : err },
+        'hello: request failed, will retry',
+      );
+    }
+    await sleep(HELLO_INTERVAL_MS);
+  }
+}
+
+const AGENT_VERSION = '0.1.0';
+const HELLO_INTERVAL_MS = 60_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 main().catch((err) => {
