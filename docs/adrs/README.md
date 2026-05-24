@@ -35,3 +35,4 @@ Keep each ADR short — one page is the goal, two is the limit. If you need more
 | 0006  | [Trusted-org gating for the instance-builtin profile](0006-trusted-org-gating.md) | Accepted |
 | 0007  | [AWS auth via STS role assumption; envelope-encrypt PATs](0007-byo-cloud-credentials.md) | Accepted |
 | 0008  | [Default runner profile is `none`; runs blocked at scheduling](0008-default-profile-none.md) | Accepted |
+| 0009  | [BYO runner agent as a remote `SandboxDriver`](0009-byo-agent-as-remote-sandbox-driver.md) | Accepted |

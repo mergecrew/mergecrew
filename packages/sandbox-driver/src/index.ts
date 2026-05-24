@@ -51,3 +51,4 @@ export {
   type E2BDriverOpts,
 } from './e2b-driver.js';
 export { buildE2BApiClient, type E2BClientOpts } from './e2b-api-client.js';
+export { HttpSandboxDriver, type HttpDriverDeps } from './http-driver.js';
