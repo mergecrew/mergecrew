@@ -192,6 +192,7 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
         { id: 'slack', label: 'Slack notifications' },
         { id: 'alert-routes', label: 'Alert routing' },
         { id: 'api-keys', label: 'API keys' },
+        { id: 'runner-profile', label: 'Runner' },
         { id: 'runner-agents', label: 'Runner agents' },
         { id: 'audit-log', label: 'Audit log' },
       ],
@@ -789,8 +790,38 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
         </Section>
 
         <Section
-          id="runner-agents"
+          id="runner-profile"
           anchor="OPS · 012"
+          title="Runner"
+          desc={
+            <>
+              Pick which substrate runs this org&apos;s steps:{' '}
+              <code className="font-mono text-[12px] text-ink">none</code>,{' '}
+              <code className="font-mono text-[12px] text-ink">instance-builtin</code>,{' '}
+              <code className="font-mono text-[12px] text-ink">agent</code>, or{' '}
+              <code className="font-mono text-[12px] text-ink">fargate-byo</code>.
+            </>
+          }
+        >
+          <Card className="p-5">
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="m-0 text-[13.5px] text-ink-2">
+                Switch profiles, view enrolled agents&apos; online status.
+              </p>
+              <LinkButton
+                href={`/orgs/${slug}/settings/runner`}
+                variant="ghost"
+                size="sm"
+              >
+                Manage →
+              </LinkButton>
+            </div>
+          </Card>
+        </Section>
+
+        <Section
+          id="runner-agents"
+          anchor="OPS · 013"
           title="Runner agents"
           desc={
             <>
@@ -819,7 +850,7 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
 
         <Section
           id="audit-log"
-          anchor="OPS · 013"
+          anchor="OPS · 014"
           title="Audit log"
           desc={
             <>

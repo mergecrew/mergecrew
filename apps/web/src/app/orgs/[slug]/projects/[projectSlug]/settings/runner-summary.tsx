@@ -141,17 +141,14 @@ export function RunnerSummary({
         <Link className="text-accent underline-offset-[3px] hover:underline" href={lifecycleHref}>
           your lifecycle YAML
         </Link>
-        . The supervisor's sandbox driver mode (process / docker / kubernetes / fargate / e2b) is
-        configured via the <code className="font-mono">RUNNER_SANDBOX</code> env on the runner
-        deployment — see{' '}
-        <a
+        . Which substrate runs the step (this org's built-in driver, an agent on your own machine,
+        AWS Fargate, etc.) is chosen in{' '}
+        <Link
           className="text-accent underline-offset-[3px] hover:underline"
-          href="https://github.com/mergecrew/mergecrew/blob/main/docs/03-infrastructure/16-self-host-runbook.md"
-          target="_blank"
-          rel="noreferrer"
+          href={`/orgs/${orgSlug}/settings/runner`}
         >
-          self-host runbook
-        </a>
+          org settings → Runner
+        </Link>
         .
       </p>
       <Examples />
