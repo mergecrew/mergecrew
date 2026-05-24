@@ -87,6 +87,21 @@ async function updateProfileAction(formData: FormData) {
   revalidatePath(`/orgs/${slug}/settings/runner`);
 }
 
+async function updateConcurrencyCapAction(formData: FormData) {
+  'use server';
+  const slug = String(formData.get('slug') ?? '');
+  const raw = String(formData.get('orgConcurrencyCap') ?? '').trim();
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return;
+  const session = await requireSession();
+  await api(`/v1/orgs/${slug}/concurrency-cap`, {
+    method: 'PATCH',
+    body: JSON.stringify({ orgConcurrencyCap: Math.floor(parsed) }),
+    session,
+  });
+  revalidatePath(`/orgs/${slug}/settings/runner`);
+}
+
 function trustPolicySnippet(externalId: string, deploymentAccountId = '<deployment-aws-account-id>'): string {
   return JSON.stringify(
     {
@@ -158,7 +173,10 @@ export default async function RunnerProfilePage({
   const session = await requireSession();
   const canEdit = await hasRole(slug, session, 'admin');
 
-  const profile = await api<ProfileResponse>(`/v1/orgs/${slug}/runner-profile`, { session });
+  const [profile, concurrency] = await Promise.all([
+    api<ProfileResponse>(`/v1/orgs/${slug}/runner-profile`, { session }),
+    api<{ orgConcurrencyCap: number }>(`/v1/orgs/${slug}/concurrency-cap`, { session }),
+  ]);
   const allKinds: ProfileKind[] = [
     'none',
     'instance_builtin',
@@ -192,6 +210,37 @@ export default async function RunnerProfilePage({
         <p className="mt-2 text-sm">
           <strong>{KIND_LABEL[profile.kind]}</strong> — {KIND_DESC[profile.kind]}
         </p>
+      </Card>
+
+      <Card>
+        <h2 className="font-medium">Concurrency cap</h2>
+        <p className="mt-1 text-sm text-zinc-500">
+          Max concurrent agent steps the orchestrator will dispatch for this org.
+          Enforced upstream of every queue (instance, agent, fargate-byo) — the{' '}
+          <code>(N+1)</code>-th step is deferred rather than queued. Set to{' '}
+          <code>0</code> for unlimited.
+        </p>
+        {canEdit ? (
+          <form action={updateConcurrencyCapAction} className="mt-3 flex items-center gap-2 text-sm">
+            <input type="hidden" name="slug" value={slug} />
+            <input
+              type="number"
+              name="orgConcurrencyCap"
+              min={0}
+              max={100}
+              defaultValue={concurrency.orgConcurrencyCap}
+              className="w-20 rounded border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700"
+            />
+            <Button variant="primary" type="submit" size="sm">
+              Save
+            </Button>
+          </form>
+        ) : (
+          <p className="mt-2 text-sm">
+            <strong>{concurrency.orgConcurrencyCap}</strong>
+            {concurrency.orgConcurrencyCap === 0 ? ' (unlimited)' : null}
+          </p>
+        )}
       </Card>
 
       {canEdit && (
