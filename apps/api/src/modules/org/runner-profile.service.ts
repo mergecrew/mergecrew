@@ -18,6 +18,8 @@ export interface UpdateProfileInput {
   awsRegion?: string;
   fargateCluster?: string;
   fargateTaskDefinition?: string;
+  fargateSubnets?: string[];
+  fargateSecurityGroups?: string[];
 }
 
 /**
@@ -124,6 +126,8 @@ export class RunnerProfileService {
           awsRegion: input.awsRegion ?? null,
           fargateCluster: input.fargateCluster ?? null,
           fargateTaskDefinition: input.fargateTaskDefinition ?? null,
+          fargateSubnets: input.fargateSubnets ?? [],
+          fargateSecurityGroups: input.fargateSecurityGroups ?? [],
           awsExternalId: nextExternalId,
         },
         update: {
@@ -132,6 +136,12 @@ export class RunnerProfileService {
           awsRegion: input.awsRegion ?? null,
           fargateCluster: input.fargateCluster ?? null,
           fargateTaskDefinition: input.fargateTaskDefinition ?? null,
+          ...(input.fargateSubnets !== undefined
+            ? { fargateSubnets: input.fargateSubnets }
+            : {}),
+          ...(input.fargateSecurityGroups !== undefined
+            ? { fargateSecurityGroups: input.fargateSecurityGroups }
+            : {}),
           awsExternalId: nextExternalId,
         },
       });
@@ -153,6 +163,8 @@ export class RunnerProfileService {
         awsRegion: upserted.awsRegion,
         fargateCluster: upserted.fargateCluster,
         fargateTaskDefinition: upserted.fargateTaskDefinition,
+        fargateSubnets: upserted.fargateSubnets,
+        fargateSecurityGroups: upserted.fargateSecurityGroups,
       };
     });
   }
