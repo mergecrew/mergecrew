@@ -57,6 +57,13 @@ const KIND_DESC: Record<ProfileKind, string> = {
     'Dispatch steps to a workflow_dispatch trigger in a repo you own. Coming in v1.1.',
 };
 
+function parseCsvList(v: string): string[] {
+  return v
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 async function updateProfileAction(formData: FormData) {
   'use server';
   const slug = String(formData.get('slug') ?? '');
@@ -67,6 +74,10 @@ async function updateProfileAction(formData: FormData) {
     const v = String(formData.get(field) ?? '').trim();
     if (v) body[field] = v;
   }
+  const subnetsRaw = String(formData.get('fargateSubnets') ?? '').trim();
+  if (subnetsRaw) body['fargateSubnets'] = parseCsvList(subnetsRaw);
+  const sgRaw = String(formData.get('fargateSecurityGroups') ?? '').trim();
+  if (sgRaw) body['fargateSecurityGroups'] = parseCsvList(sgRaw);
   const session = await requireSession();
   await api(`/v1/orgs/${slug}/runner-profile`, {
     method: 'PATCH',
@@ -74,6 +85,24 @@ async function updateProfileAction(formData: FormData) {
     session,
   });
   revalidatePath(`/orgs/${slug}/settings/runner`);
+}
+
+function trustPolicySnippet(externalId: string, deploymentAccountId = '<deployment-aws-account-id>'): string {
+  return JSON.stringify(
+    {
+      Version: '2012-10-17',
+      Statement: [
+        {
+          Effect: 'Allow',
+          Principal: { AWS: `arn:aws:iam::${deploymentAccountId}:root` },
+          Action: 'sts:AssumeRole',
+          Condition: { StringEquals: { 'sts:ExternalId': externalId } },
+        },
+      ],
+    },
+    null,
+    2,
+  );
 }
 
 function relativeLastSeen(iso: string | null): string {
@@ -211,7 +240,9 @@ export default async function RunnerProfilePage({
               })}
             </div>
             <details className="text-xs text-zinc-500">
-              <summary className="cursor-pointer">Fargate-BYO advanced fields (optional)</summary>
+              <summary className="cursor-pointer">
+                Fargate-BYO configuration (required for the <code>fargate_byo</code> kind)
+              </summary>
               <div className="mt-2 space-y-2">
                 <label className="block">
                   <span>AWS role ARN</span>
@@ -247,13 +278,56 @@ export default async function RunnerProfilePage({
                     className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
                   />
                 </label>
+                <label className="block">
+                  <span>Subnets (comma-separated)</span>
+                  <input
+                    name="fargateSubnets"
+                    defaultValue={(profile.fargateSubnets ?? []).join(', ')}
+                    placeholder="subnet-aaa, subnet-bbb"
+                    className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+                  />
+                </label>
+                <label className="block">
+                  <span>Security groups (comma-separated, optional)</span>
+                  <input
+                    name="fargateSecurityGroups"
+                    defaultValue={(profile.fargateSecurityGroups ?? []).join(', ')}
+                    placeholder="sg-aaa"
+                    className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+                  />
+                </label>
                 {profile.awsExternalId && (
-                  <p className="text-zinc-500">
-                    External ID:{' '}
-                    <code className="font-mono text-ink">{profile.awsExternalId}</code> —
-                    paste this into your role&apos;s trust policy.
-                  </p>
+                  <div className="space-y-1">
+                    <p>
+                      External ID:{' '}
+                      <code className="font-mono text-ink">{profile.awsExternalId}</code>{' '}
+                      — paste this into your role&apos;s trust policy. Generated once per
+                      org and never rotated.
+                    </p>
+                    <details>
+                      <summary className="cursor-pointer">Trust policy snippet</summary>
+                      <pre className="mt-2 overflow-auto rounded bg-zinc-50 p-3 text-[11px] dark:bg-zinc-900">
+                        {trustPolicySnippet(profile.awsExternalId)}
+                      </pre>
+                      <p className="mt-1">
+                        Replace <code>&lt;deployment-aws-account-id&gt;</code> with the
+                        operator&apos;s AWS account ID. See{' '}
+                        <Link
+                          href="https://github.com/mergecrew/mergecrew/blob/main/docs/03-infrastructure/35-runner-fargate-byo.md"
+                          className="text-accent underline-offset-[3px] hover:underline"
+                        >
+                          35-runner-fargate-byo.md
+                        </Link>{' '}
+                        for the IAM least-privilege list.
+                      </p>
+                    </details>
+                  </div>
                 )}
+                <p className="rounded bg-amber-50 px-2 py-1 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                  v1: the dispatcher that actually runs the ECS task is not implemented
+                  yet (tracked as <a href="https://github.com/mergecrew/mergecrew/issues/786" className="underline">#786</a>).
+                  You can save the config now to pre-provision your AWS side.
+                </p>
               </div>
             </details>
             <Button variant="primary" type="submit">

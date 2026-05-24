@@ -38,6 +38,12 @@ class UpdateProfileDto {
   @IsString()
   @MaxLength(200)
   fargateTaskDefinition?: string;
+
+  @IsOptional()
+  fargateSubnets?: string[];
+
+  @IsOptional()
+  fargateSecurityGroups?: string[];
 }
 
 /**
