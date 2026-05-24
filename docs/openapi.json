@@ -2207,6 +2207,60 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/runner-agents": {
+      "post": {
+        "operationId": "RunnerAgentController_issue",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RunnerAgent"
+        ]
+      },
+      "get": {
+        "operationId": "RunnerAgentController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RunnerAgent"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/runner-agents/{id}": {
+      "delete": {
+        "operationId": "RunnerAgentController_revoke",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RunnerAgent"
+        ]
+      }
+    },
+    "/v1/runner-agent/hello": {
+      "post": {
+        "operationId": "RunnerAgentPublicController_hello",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RunnerAgentPublic"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/webhooks": {
       "post": {
         "operationId": "OutboundWebhookController_create",

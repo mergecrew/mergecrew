@@ -255,12 +255,45 @@ redis-cli -u "$REDIS_URL" keys 'bull:runner.step.agent.*'
 
 ---
 
-### BYO runner agent (preview)
+### BYO runner agent — enrol your first agent
 <a id="byo-runner-agent"></a>
 
-**Status.** Skeleton image (`apps/runner-agent`) is published as `ghcr.io/mergecrew/runner-agent`, currently supporting only `--dry-run` for config validation. Live job pull lands in [#766](https://github.com/mergecrew/mergecrew/issues/766); enrollment surface in [#765](https://github.com/mergecrew/mergecrew/issues/765). This section is a placeholder so operators can pre-validate the image and tooling.
+The `mergecrew/runner-agent` image lets an org execute its own runs on its own machine instead of the deployment's compute (ADR-0002). After [#765](https://github.com/mergecrew/mergecrew/issues/765) the agent can authenticate against a deployment and surface as "online" in the org settings UI. Live job pull lands in [#766](https://github.com/mergecrew/mergecrew/issues/766).
 
-**Validate the image now.**
+**1. Issue an enrollment token.**
+
+Org admin → **Settings → Runner agents → Enrol agent**. Name it after the host that will run it (e.g. `homelab-1`, `eu-west-1-fargate`). The token is shown exactly once — copy it before closing the modal.
+
+**2. Run the agent.**
+
+```sh
+docker run --rm \
+  --name mergecrew-runner-agent \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  ghcr.io/mergecrew/runner-agent:latest \
+    --token mca_<orgSlug>_XXXXXXXXXXXXXXXXXXXXXXXXXX \
+    --api-url https://mergecrew.dev \
+    --name homelab-1 \
+    --driver docker
+```
+
+The agent logs `agent online` once it reaches the API and bumps `lastSeenAt` every 60 s. The org settings page shows the agent as **online** within one heartbeat cycle (badge UX lands in [#767](https://github.com/mergecrew/mergecrew/issues/767)).
+
+**3. Switch the org to the agent runner profile.**
+
+Until [#767](https://github.com/mergecrew/mergecrew/issues/767) lands the runner-profile editor, the org's `runner_profiles.kind` column has to be flipped to `agent` by direct DB edit:
+
+```sql
+update runner_profiles set kind = 'agent' where organization_id = '<org-uuid>';
+```
+
+After [#767](https://github.com/mergecrew/mergecrew/issues/767) you'll do this from the UI.
+
+**4. Revoking.**
+
+**Settings → Runner agents → Revoke** sets `revoked_at`; the next agent call fails 401 and the process exits 4. Audit log entries land for both `runnerAgent.created` and `runnerAgent.revoked`.
+
+**Validate config without committing.**
 
 ```sh
 docker run --rm ghcr.io/mergecrew/runner-agent:latest --help
@@ -271,7 +304,7 @@ docker run --rm ghcr.io/mergecrew/runner-agent:latest \
   --dry-run
 ```
 
-**Full agent docs and configuration walkthrough land alongside [#766](https://github.com/mergecrew/mergecrew/issues/766)** at `docs/03-infrastructure/34-runner-agent.md` (currently absent).
+A standalone `docs/03-infrastructure/34-runner-agent.md` lands with [#766](https://github.com/mergecrew/mergecrew/issues/766) (network posture, troubleshooting, systemd unit).
 
 ---
 
