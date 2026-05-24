@@ -102,11 +102,14 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  // #765: prove the enrollment token works by hitting /hello, then sit
-  // in a heartbeat loop calling it every 60s. #766 replaces this with
-  // the long-poll job pull. Until then this gives operators a working
-  // online/offline signal — the API stamps lastSeenAt on each call and
-  // the org settings UI shows the badge.
+  // #765/#766: hit /hello once to validate enrolment, then drop into
+  // the long-poll loop. The agent pulls jobs from /poll (BRPOP-backed
+  // on the deployment), heartbeats every 15s during a job, and posts
+  // an outcome when done.
+  //
+  // The executor is a STUB for v1 — the agent acknowledges the job and
+  // immediately reports `byo_executor_not_implemented`. Real BYO
+  // execution (sandbox + skill orchestration) lands in follow-up #782.
   let stopped = false;
   process.on('SIGINT', () => {
     stopped = true;
@@ -115,43 +118,113 @@ async function main(): Promise<void> {
     stopped = true;
   });
 
+  // Initial /hello — bail clearly on 401 so operators don't watch
+  // /poll spin against a bad token.
+  try {
+    const helloRes = await callApi(cfg, '/v1/runner-agent/hello', { agentVersion: AGENT_VERSION });
+    if (helloRes.status === 401) {
+      logger.error('runner-agent: 401 from /hello — token revoked or unknown.');
+      process.exit(4);
+    }
+    if (!helloRes.ok) {
+      logger.warn({ status: helloRes.status }, 'hello: unexpected status, proceeding anyway');
+    } else {
+      const body = (await helloRes.json()) as { agentName?: string; orgSlug?: string };
+      logger.info({ agentName: body.agentName, orgSlug: body.orgSlug }, 'agent online');
+    }
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : err },
+      'hello: request failed, proceeding to poll loop',
+    );
+  }
+
   while (!stopped) {
+    let job: PolledJob | null = null;
     try {
-      const res = await fetch(new URL('/v1/runner-agent/hello', cfg.apiUrl).toString(), {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${cfg.token}`,
-        },
-        body: JSON.stringify({ agentVersion: AGENT_VERSION }),
-      });
-      if (res.status === 401) {
-        logger.error(
-          'runner-agent: 401 from /hello — token is revoked or unknown. Re-enrol from Settings → Runner agents.',
-        );
-        process.exit(4);
-      }
-      if (!res.ok) {
-        logger.warn({ status: res.status }, 'hello: unexpected status');
-      } else {
-        const body = (await res.json()) as { agentName?: string; orgSlug?: string };
-        logger.info(
-          { agentName: body.agentName, orgSlug: body.orgSlug },
-          'agent online',
-        );
-      }
+      job = await pollNext(cfg);
     } catch (err) {
       logger.warn(
         { err: err instanceof Error ? err.message : err },
-        'hello: request failed, will retry',
+        'poll: request failed, will retry',
       );
+      await sleep(POLL_BACKOFF_MS);
+      continue;
     }
-    await sleep(HELLO_INTERVAL_MS);
+    if (!job) continue; // idle tick
+    logger.info(
+      { stepId: job.stepId, runId: job.runId, agentRef: job.agentRef },
+      'agent: picked up job',
+    );
+    await runStubExecutor(cfg, job);
+  }
+}
+
+interface PolledJob {
+  organizationId: string;
+  projectId: string;
+  runId: string;
+  workflowRunId: string;
+  stepId: string;
+  agentRef: string;
+}
+
+async function callApi(cfg: AgentConfig, path: string, body?: unknown): Promise<Response> {
+  const url = new URL(path, cfg.apiUrl).toString();
+  return fetch(url, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${cfg.token}`,
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+async function pollNext(cfg: AgentConfig): Promise<PolledJob | null> {
+  const res = await callApi(cfg, `/v1/runner-agent/poll?timeout=${POLL_TIMEOUT_SEC}`);
+  if (res.status === 401) {
+    logger.error('runner-agent: 401 from /poll — token revoked or unknown.');
+    process.exit(4);
+  }
+  if (!res.ok) {
+    logger.warn({ status: res.status }, 'poll: unexpected status');
+    return null;
+  }
+  const body = (await res.json()) as { kind: 'idle' } | ({ kind: 'job' } & PolledJob);
+  if (body.kind === 'idle') return null;
+  const { kind: _kind, ...job } = body;
+  return job;
+}
+
+/**
+ * Stub executor (v1, #766). Reports start, heartbeats once, then
+ * reports `byo_executor_not_implemented`. Real execution lands in
+ * follow-up #782 — see the EPIC for the architecture options.
+ */
+async function runStubExecutor(cfg: AgentConfig, job: PolledJob): Promise<void> {
+  try {
+    await callApi(cfg, `/v1/runner-agent/steps/${job.stepId}/events`, {
+      type: 'AGENT_STEP_STARTED',
+      payload: { agentRef: job.agentRef, executor: 'byo-stub-v1' },
+    });
+    await callApi(cfg, '/v1/runner-agent/heartbeat', { stepId: job.stepId });
+    await callApi(cfg, `/v1/runner-agent/steps/${job.stepId}/outcome`, {
+      kind: 'failed',
+      reason: 'byo_executor_not_implemented',
+    });
+    logger.info({ stepId: job.stepId }, 'agent: reported stub outcome');
+  } catch (err) {
+    logger.warn(
+      { stepId: job.stepId, err: err instanceof Error ? err.message : err },
+      'agent: failed to report outcome — orchestrator will retry via heartbeat sweeper',
+    );
   }
 }
 
 const AGENT_VERSION = '0.1.0';
-const HELLO_INTERVAL_MS = 60_000;
+const POLL_TIMEOUT_SEC = 30;
+const POLL_BACKOFF_MS = 5_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

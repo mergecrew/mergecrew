@@ -5,6 +5,7 @@ import IORedis, { type Redis } from 'ioredis';
 export type QueueName =
   | 'run.due'
   | 'orchestrator.dispatch'
+  | 'orchestrator.step-reply'
   | 'runner.step'
   | 'runner.step.instance'
   | 'runner.workspace-cleanup'

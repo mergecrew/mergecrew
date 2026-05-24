@@ -54,13 +54,6 @@ export class Orchestrator {
    * the legacy name lives in `apps/runner/src/main.ts`.
    */
   private runnerInstance: Queue;
-  /**
-   * Per-org agent queues — lazy-created on first dispatch for an org
-   * whose `runner_profile.kind = 'agent'`. The API's long-poll
-   * endpoint (#766) drains these via BRPOP. One queue per org keeps
-   * each agent's BRPOP scoped to its own jobs.
-   */
-  private agentQueues = new Map<string, Queue>();
   private wake: Queue;
   private digestSlack: Queue;
   private digestEmail: Queue;
@@ -79,13 +72,16 @@ export class Orchestrator {
     this.workspaceCleanupQueue = new Queue('runner.workspace-cleanup', { connection: deps.connection });
   }
 
-  private agentQueueForOrg(organizationId: string): Queue {
-    let q = this.agentQueues.get(organizationId);
-    if (!q) {
-      q = new Queue(`runner.step.agent.${organizationId}`, { connection: this.deps.connection });
-      this.agentQueues.set(organizationId, q);
-    }
-    return q;
+  /**
+   * Raw Redis list key for an org's agent queue (V2.af / #766,
+   * ADR-0005). Not a BullMQ queue — long-poll BRPOP is the consumer
+   * pattern and we skip BullMQ's active/completed bookkeeping on this
+   * path because the agent owns its heartbeat + outcome reply cycle.
+   *
+   * KEEP IN SYNC WITH `apps/api/src/modules/runner-agent/runner-agent.service.ts`.
+   */
+  private agentQueueKey(organizationId: string): string {
+    return `runner-agent:queue:${organizationId}`;
   }
 
   /**
@@ -130,16 +126,12 @@ export class Orchestrator {
     }
 
     if (kind === 'agent') {
-      const q = this.agentQueueForOrg(args.organizationId);
+      const key = this.agentQueueKey(args.organizationId);
       this.deps.logger.info(
-        { organizationId: args.organizationId, kind, queue: q.name },
+        { organizationId: args.organizationId, kind, key },
         'runner.profile_dispatch',
       );
-      await q.add('step', payload, {
-        removeOnComplete: 1000,
-        removeOnFail: 1000,
-        attempts: 1,
-      });
+      await this.deps.connection.lpush(key, JSON.stringify(payload));
       return;
     }
 

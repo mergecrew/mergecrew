@@ -2261,6 +2261,62 @@
         ]
       }
     },
+    "/v1/runner-agent/poll": {
+      "post": {
+        "operationId": "RunnerAgentPublicController_poll",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RunnerAgentPublic"
+        ]
+      }
+    },
+    "/v1/runner-agent/heartbeat": {
+      "post": {
+        "operationId": "RunnerAgentPublicController_heartbeat",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RunnerAgentPublic"
+        ]
+      }
+    },
+    "/v1/runner-agent/steps/{stepId}/events": {
+      "post": {
+        "operationId": "RunnerAgentPublicController_events",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RunnerAgentPublic"
+        ]
+      }
+    },
+    "/v1/runner-agent/steps/{stepId}/outcome": {
+      "post": {
+        "operationId": "RunnerAgentPublicController_outcome",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RunnerAgentPublic"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/webhooks": {
       "post": {
         "operationId": "OutboundWebhookController_create",
