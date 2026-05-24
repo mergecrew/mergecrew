@@ -255,6 +255,26 @@ redis-cli -u "$REDIS_URL" keys 'bull:runner.step.agent.*'
 
 ---
 
+### BYO runner agent (preview)
+<a id="byo-runner-agent"></a>
+
+**Status.** Skeleton image (`apps/runner-agent`) is published as `ghcr.io/mergecrew/runner-agent`, currently supporting only `--dry-run` for config validation. Live job pull lands in [#766](https://github.com/mergecrew/mergecrew/issues/766); enrollment surface in [#765](https://github.com/mergecrew/mergecrew/issues/765). This section is a placeholder so operators can pre-validate the image and tooling.
+
+**Validate the image now.**
+
+```sh
+docker run --rm ghcr.io/mergecrew/runner-agent:latest --help
+
+docker run --rm ghcr.io/mergecrew/runner-agent:latest \
+  --token mca_test_xxxxxx \
+  --api-url https://mergecrew.dev \
+  --dry-run
+```
+
+**Full agent docs and configuration walkthrough land alongside [#766](https://github.com/mergecrew/mergecrew/issues/766)** at `docs/03-infrastructure/34-runner-agent.md` (currently absent).
+
+---
+
 ## Recipes
 
 ### Rotate KMS_MASTER_KEY
