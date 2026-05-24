@@ -36,3 +36,9 @@ A separate queue per org (`runner.step.agent.<orgId>`) backs the poll endpoint, 
 - **WebSocket / SSE.** Rejected for v1: sticky sessions on AWS ALB add a config layer we'd otherwise avoid, and the 30s worst-case is invisible against step durations. SSE specifically would reuse the existing `timeline-sse.controller.ts` plumbing and is the natural escalation path if we revisit.
 - **gRPC bidi-stream.** Same connection-state problem as WebSocket, plus a new client/server stack the project doesn't already use.
 - **Inbound webhook to the agent.** Rejected: the primary BYO case is a developer running `docker run mergecrew/runner-agent` on a laptop. Making them expose a port to the internet kills the "5-minute onboarding" goal.
+
+## Realized in
+
+- #766 — long-poll endpoint, agent loop, heartbeat/events/outcome.
+- #768 — pause-aware poll (returns idle when `runsPausedAt` is set).
+- Follow-up #771 tracks revisiting WebSocket / SSE if production data warrants it.

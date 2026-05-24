@@ -41,3 +41,9 @@ Rate-limit the `/poll` and `/hello` endpoints by `tokenHash` (not by IP). Bearer
 - **Reuse `ApiKey` table.** Rejected: different lifecycle (machine vs human), different revoke semantics in practice, different rate-limit shape. Mixing them creates a foot-gun around scope rules and audit interpretation.
 - **mTLS / client certs.** Rejected: operationally heavier for an OSS user running `docker run`; revoke needs a CRL we don't have; trust roots add infrastructure surface.
 - **JWT signed by the API with embedded org claim.** Rejected: stateless tokens make revoke racy (you need a denylist anyway), and the token-as-DB-row approach lets us cheaply add fields like `agentVersion` or `lastSeenAt`.
+
+## Realized in
+
+- #761 — `runner_agents` table.
+- #765 — issue/list/revoke endpoints + `/hello` resolver.
+- #766 — token reused on `/poll`, `/heartbeat`, `/steps/:id/events`, `/steps/:id/outcome`.

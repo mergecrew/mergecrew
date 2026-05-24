@@ -93,7 +93,7 @@ The autonomous-coding category has converged on the *agent layer*: Devin, Cursor
 
 - **Scheduled, not triggered.** Runs on a cron against your real repo. No tickets required.
 - **Full lifecycle, not just code.** Spec → design → build → deploy-to-dev → bug scan → digest → human approval → prod.
-- **Multi-tenant by design.** One workspace per org, tenant-isolated Postgres (RLS), per-org budgets, per-org provider keys. Self-host privately or run as a service.
+- **Multi-tenant by design.** One workspace per org, tenant-isolated Postgres (RLS), per-org budgets, per-org provider keys, [per-org runner profile (BYO)](docs/03-infrastructure/34-runner-agent.md) so a hosted deployment never runs other tenants' containers on the operator's VM. Self-host privately or run as a service.
 - **Human-gated production.** Promotion to prod is always a human decision. Non-configurable invariant.
 - **Pluggable agents and providers.** Anthropic, OpenAI, AWS Bedrock, or local Ollama. The bundled NestJS+LangGraph runner ships by default; OpenHands / Claude Code / your own runner can be wired in.
 - **Multi-agent specialization.** Optional planner → coder → reviewer split with a reviewer loop-back; cheaper reviewer catches obvious mistakes before a human gets paged. See [`docs/03-infrastructure/18-multi-agent.md`](docs/03-infrastructure/18-multi-agent.md).

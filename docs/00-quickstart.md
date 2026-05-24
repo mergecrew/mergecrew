@@ -161,3 +161,12 @@ Every new org receives its own `demo-saas` project (`Project.demo === true`, #43
 | Bucket-not-found errors from the transcript store | MinIO bucket didn't get created | `docker compose logs minio-init` — should end with `bucket ready`. Restart with `docker compose restart minio-init`. |
 
 For deeper issues, see the [self-host runbook](03-infrastructure/16-self-host-runbook.md).
+
+## Multi-tenant: BYO runner
+
+If you invite a second org to your deployment, that org won't have access to the operator's runner by default — it needs to **bring its own runner** (V2.af / [ADR-0002](adrs/0002-per-org-runner-profile.md)). Two BYO options:
+
+- **Runner agent** — the org runs the [`mergecrew/runner-agent`](03-infrastructure/34-runner-agent.md) container on its own machine; jobs are pulled over HTTPS.
+- **AWS Fargate** — the org's [own AWS account](03-infrastructure/35-runner-fargate-byo.md) via STS role assumption; no AWS keys leave the user's account.
+
+Single-tenant self-host (the path above) needs no extra config — the demo org is implicitly trusted via the seeded `runner_profile=instance_builtin`. The trusted-org allowlist is documented in [16-self-host-runbook.md § Trust an org for the instance-builtin runner profile](03-infrastructure/16-self-host-runbook.md#trusted-orgs).

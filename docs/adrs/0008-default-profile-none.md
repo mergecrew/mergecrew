@@ -38,3 +38,9 @@ For an existing single-org deployment: the migration in #761 backfills every pre
 - **Default to an unsandboxed process driver.** Rejected — see context.
 - **Default to `none` but enqueue jobs and hold them.** Considered. Rejected because holding jobs in a queue with no consumer creates silent backlogs that surprise operators on profile-change. Failing fast at scheduling makes the misconfiguration loud.
 - **Default to `agent` and tell the user "now go enroll an agent."** Considered. Rejected because `agent` profile with zero enrolled agents is functionally equivalent to `none`, and surfacing two distinct states ("you need to pick a profile" vs "you picked agent but haven't enrolled one") makes the error UX worse, not better.
+
+## Realized in
+
+- #761 — `runner_profile.kind` defaults to `none` in the column DDL; migration backfills pre-existing orgs to `instance_builtin`.
+- #763 — orchestrator `enqueueRunnerStep` fails the step closed with `runner_not_configured` for `kind=none`; API `runNow` rejects with a clear ValidationError.
+- #763 — `org.service.ts:create` lands new orgs at `none` unless the org slug is in the trusted-orgs allowlist.
