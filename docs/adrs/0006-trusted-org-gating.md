@@ -37,3 +37,9 @@ Validation:
 - **`trusted: bool` column.** Rejected for the drift-from-config reason above. Also forces a "who can flip the bit?" UX question (only instance owners? all org owners?) that env-based config sidesteps.
 - **First-org-is-trusted heuristic.** Rejected: ambiguous on multi-org installs, and the implicit-trust behavior on org creation is exactly the failure mode we're trying to prevent.
 - **No gating; let every org pick `instance_builtin`.** Rejected: this is the foot-gun the milestone exists to fix.
+
+## Realized in
+
+- #762 — `MERGECREW_TRUSTED_ORG_SLUGS` + `MERGECREW_OWNER_ORG_SLUG` envs; `isTrustedOrgSlug` helper; surfaced in the GET response.
+- #767 — `PATCH` endpoint rejects `kind=instance_builtin` for non-trusted orgs server-side.
+- #763 — `org.service.ts:create` seeds the profile per the trust gate on org creation.
