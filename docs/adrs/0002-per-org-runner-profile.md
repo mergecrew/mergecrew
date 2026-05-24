@@ -34,3 +34,10 @@ The orchestrator reads the profile at dispatch time and routes the step accordin
 - **Per-project profile.** Rejected: agent enrollment is org-level (one token, one process). Per-project would require duplicating credentials for every project an org owns.
 - **Single boolean column on `organizations`** ("can use the deployment's runner"). Rejected: no room for per-kind config (role ARN, encrypted PAT, etc.). We'd end up with the same `runner_profile` table eventually, with a worse migration story.
 - **Keep the global env and rely on quotas to bound cost.** Rejected: solves cost but not trust, and the operator's compute is still the default attack surface.
+
+## Realized in
+
+- #761 — `runner_profiles` table + backfill.
+- #762 — `GET /api/v1/orgs/:slug/runner-profile`.
+- #763 — orchestrator reads `kind` at dispatch time.
+- #767 — `PATCH` + dedicated settings page.

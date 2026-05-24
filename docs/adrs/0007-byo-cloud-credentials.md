@@ -43,3 +43,10 @@ Existing precedent in the codebase: `CryptoService` (used at `schema.prisma:116`
 - **Store AWS access keys, encrypted.** Rejected: encryption-at-rest is necessary but not sufficient — a leaked decryption key (or a compromised process) yields long-lived credentials. Role assumption gives temporary creds even after a full compromise.
 - **OIDC federation to the user's AWS account.** Considered. Strictly stronger than external-ID role assumption (no shared secret at all). Deferred because it requires an OIDC provider on the deployment side and adds Terraform-ish setup to the operator's onboarding. We can revisit when the deployment story stabilizes.
 - **GitHub App instead of PAT.** Considered. Strictly better for GitHub credentials (short-lived installation tokens, fine-grained scopes). Deferred because it's an order-of-magnitude larger feature (app registration, manifest, installation flow, permission UX). PAT is the v1.1 shape; GitHub App is the eventual destination.
+
+## Realized in
+
+- #761 — schema fields `aws_role_arn`, `aws_external_id`, `aws_region`, `fargate_*`, `github_token_ciphertext`.
+- #767 / #769 — per-org `awsExternalId` generated on first `fargate_byo` save (never rotated); trust-policy snippet rendered in the UI with the value pre-filled.
+- Follow-up #786 wires the runtime `sts:AssumeRole` + ECS dispatcher.
+- Follow-up #772 tracks GitHub Actions PAT encryption when that profile ships.

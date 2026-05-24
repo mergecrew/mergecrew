@@ -1,12 +1,58 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
-import { RoleGuard } from '../../common/role.guard.js';
+import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { RequireRole, RoleGuard } from '../../common/role.guard.js';
 import { RunnerProfileService } from './runner-profile.service.js';
 
+const ALL_KINDS = [
+  'none',
+  'instance_builtin',
+  'agent',
+  'fargate_byo',
+  'github_actions',
+] as const;
+type ProfileKind = (typeof ALL_KINDS)[number];
+
+class UpdateProfileDto {
+  @IsString()
+  @IsIn(ALL_KINDS as unknown as string[])
+  kind!: ProfileKind;
+
+  // fargate_byo fields (validated server-side too — issue #769 lands
+  // the real wiring; for #767 we just accept + persist).
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  awsRoleArn?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  awsRegion?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  fargateCluster?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  fargateTaskDefinition?: string;
+
+  @IsOptional()
+  fargateSubnets?: string[];
+
+  @IsOptional()
+  fargateSecurityGroups?: string[];
+}
+
 /**
- * Per-org runner profile read endpoint (V2.af / ADR-0002). Write paths
- * land in #767; this PR exposes a read-only view so the web UI can
- * render the current state and operators can audit which org runs
- * where.
+ * Per-org runner profile endpoints (V2.af / ADR-0002).
+ *
+ *   GET  — read-only view of profile + enrolled agents.
+ *   PATCH — change the profile kind + per-kind config. Admin-only;
+ *           server enforces the trusted-org gate for `instance_builtin`
+ *           (ADR-0006) regardless of UI state.
  */
 @Controller('v1')
 export class RunnerProfileController {
@@ -16,5 +62,12 @@ export class RunnerProfileController {
   @UseGuards(RoleGuard)
   async get(@Param('slug') _slug: string) {
     return this.runnerProfile.get();
+  }
+
+  @Patch('orgs/:slug/runner-profile')
+  @UseGuards(RoleGuard)
+  @RequireRole('admin')
+  async update(@Param('slug') _slug: string, @Body() body: UpdateProfileDto) {
+    return this.runnerProfile.update(body);
   }
 }

@@ -36,3 +36,9 @@ Backward compatibility: the legacy `runner.step` queue is renamed to `runner.ste
 - **Single queue + runtime branch.** Rejected for the reasons above — couples the supervisor to credentials and code paths it shouldn't carry, and makes the consumer the dispatch decision-maker instead of the orchestrator.
 - **Per-org queue for every profile kind.** Rejected: only `agent` actually needs per-org isolation (because the agent itself is the consumer). For `fargate-byo` and `github-actions`, the consumer is a deployment-owned worker that handles many orgs; per-org queues there would inflate cardinality with no benefit.
 - **One queue per agent process (not per org).** Considered for the multi-agent case but rejected: an org with two agents running in parallel benefits from a single shared queue (load is balanced by `BRPOP` fairness), and one-queue-per-agent would complicate enrollment.
+
+## Realized in
+
+- #763 — orchestrator routes to `runner.step.instance` (+ legacy bridge).
+- #766 — `agent` kind LPUSHes to `runner-agent:queue:<orgId>` (raw Redis list — see ADR rationale).
+- Follow-up #786 wires the `runner.step.fargate-byo` consumer.

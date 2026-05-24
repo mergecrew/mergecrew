@@ -26,3 +26,7 @@ ADRs are immutable once accepted. To change a decision we add a new ADR and mark
 - **Inline rationale in design docs.** Rejected: the doc that describes how the runner works today is already long, and mixing "this is the code path" with "we picked it over X because Y" makes both harder to read.
 - **PR descriptions as the canonical record.** Rejected: post-merge they're discoverable only via `git log -S` archaeology, and they age out of the contributor's mental model fast.
 - **Notion / wiki / external decision log.** Rejected: this repo is OSS and aims for low contributor ramp-up; decisions must live next to the code, in git, reviewable by PR.
+
+## Realized in
+
+- #760 (bootstrap `docs/adrs/` + ADR-0001..0008).

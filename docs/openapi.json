@@ -359,6 +359,18 @@
         "tags": [
           "RunnerProfile"
         ]
+      },
+      "patch": {
+        "operationId": "RunnerProfileController_update",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RunnerProfile"
+        ]
       }
     },
     "/v1/orgs/{slug}/projects": {
@@ -2204,6 +2216,116 @@
         },
         "tags": [
           "ApiKey"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/runner-agents": {
+      "post": {
+        "operationId": "RunnerAgentController_issue",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RunnerAgent"
+        ]
+      },
+      "get": {
+        "operationId": "RunnerAgentController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RunnerAgent"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/runner-agents/{id}": {
+      "delete": {
+        "operationId": "RunnerAgentController_revoke",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RunnerAgent"
+        ]
+      }
+    },
+    "/v1/runner-agent/hello": {
+      "post": {
+        "operationId": "RunnerAgentPublicController_hello",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RunnerAgentPublic"
+        ]
+      }
+    },
+    "/v1/runner-agent/poll": {
+      "post": {
+        "operationId": "RunnerAgentPublicController_poll",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RunnerAgentPublic"
+        ]
+      }
+    },
+    "/v1/runner-agent/heartbeat": {
+      "post": {
+        "operationId": "RunnerAgentPublicController_heartbeat",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RunnerAgentPublic"
+        ]
+      }
+    },
+    "/v1/runner-agent/steps/{stepId}/events": {
+      "post": {
+        "operationId": "RunnerAgentPublicController_events",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RunnerAgentPublic"
+        ]
+      }
+    },
+    "/v1/runner-agent/steps/{stepId}/outcome": {
+      "post": {
+        "operationId": "RunnerAgentPublicController_outcome",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RunnerAgentPublic"
         ]
       }
     },
