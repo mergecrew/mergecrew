@@ -289,7 +289,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        patch: operations["RunnerProfileController_update"];
         trace?: never;
     };
     "/v1/orgs/{slug}/projects": {
@@ -2667,6 +2667,23 @@ export interface operations {
         };
     };
     RunnerProfileController_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RunnerProfileController_update: {
         parameters: {
             query?: never;
             header?: never;

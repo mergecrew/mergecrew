@@ -277,17 +277,11 @@ docker run --rm \
     --driver docker
 ```
 
-The agent logs `agent online` once it reaches the API and bumps `lastSeenAt` every 60 s. The org settings page shows the agent as **online** within one heartbeat cycle (badge UX lands in [#767](https://github.com/mergecrew/mergecrew/issues/767)).
+The agent logs `agent online` once it reaches the API and bumps `lastSeenAt` every 60 s. The org settings → Runner page surfaces the agent as **online** (green dot) within one heartbeat cycle, **idle** after a minute, **offline** after five.
 
 **3. Switch the org to the agent runner profile.**
 
-Until [#767](https://github.com/mergecrew/mergecrew/issues/767) lands the runner-profile editor, the org's `runner_profiles.kind` column has to be flipped to `agent` by direct DB edit:
-
-```sql
-update runner_profiles set kind = 'agent' where organization_id = '<org-uuid>';
-```
-
-After [#767](https://github.com/mergecrew/mergecrew/issues/767) you'll do this from the UI.
+Org admin → **Settings → Runner → Change profile → BYO agent → Save**. Server validates the trusted-org gate (ADR-0006) on every PATCH; non-trusted orgs only see the BYO options in the picker.
 
 **4. Revoking.**
 

@@ -359,6 +359,18 @@
         "tags": [
           "RunnerProfile"
         ]
+      },
+      "patch": {
+        "operationId": "RunnerProfileController_update",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RunnerProfile"
+        ]
       }
     },
     "/v1/orgs/{slug}/projects": {

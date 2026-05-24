@@ -79,13 +79,7 @@ The dedicated profile-editor + badge UI ships in [#767](https://github.com/merge
 
 ### Switching the org to the agent profile
 
-Until [#767](https://github.com/mergecrew/mergecrew/issues/767) ships the profile editor, flip the runner profile manually:
-
-```sql
-update runner_profiles set kind = 'agent' where organization_id = '<org-uuid>';
-```
-
-After #767 you'll do this from the UI.
+**Settings → Runner → Change profile → BYO agent → Save**. Server validates the trusted-org gate on every PATCH; non-trusted orgs only see the BYO options.
 
 ### Troubleshooting
 
