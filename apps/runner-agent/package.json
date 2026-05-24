@@ -1,0 +1,27 @@
+{
+  "name": "@mergecrew/runner-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bring-your-own runner agent — long-polls jobs from a mergecrew deployment and executes them locally (V2.af, ADR-0003).",
+  "main": "dist/main.js",
+  "bin": {
+    "mergecrew-runner-agent": "dist/main.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "pino": "^10.3.1",
+    "pino-pretty": "^11.2.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.1"
+  }
+}

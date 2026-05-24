@@ -1,0 +1,38 @@
+# mergecrew/runner-agent — BYO runner agent image (V2.af, #764).
+#
+# Skeleton release: --dry-run only. Job pull lands in #766. The base
+# image carries the `docker` CLI so the agent can later use the docker
+# sandbox driver against a bind-mounted /var/run/docker.sock (recommended)
+# or against a remote docker host (DOCKER_HOST).
+ARG NODE_VERSION=22-bookworm
+
+FROM node:${NODE_VERSION} AS base
+RUN corepack enable
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git ca-certificates docker.io \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /repo
+
+FROM base AS deps
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* tsconfig.base.json ./
+COPY apps/runner-agent/package.json apps/runner-agent/
+COPY packages/ packages/
+RUN pnpm install --frozen-lockfile=false
+
+FROM deps AS build
+COPY . .
+RUN pnpm --filter @mergecrew/runner-agent... build
+
+FROM node:${NODE_VERSION}-slim AS runtime
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates docker.io \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /repo/node_modules /app/node_modules
+COPY --from=build /repo/apps/runner-agent/node_modules /app/apps/runner-agent/node_modules
+COPY --from=build /repo/apps/runner-agent/dist /app/apps/runner-agent/dist
+COPY --from=build /repo/apps/runner-agent/package.json /app/apps/runner-agent/package.json
+USER node
+WORKDIR /app/apps/runner-agent
+ENTRYPOINT ["node", "dist/main.js"]
+CMD ["--help"]

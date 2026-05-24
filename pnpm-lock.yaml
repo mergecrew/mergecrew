@@ -378,6 +378,28 @@ importers:
         specifier: ^2.1.1
         version: 2.1.9(@types/node@25.9.1)(terser@5.47.1)
 
+  apps/runner-agent:
+    dependencies:
+      pino:
+        specifier: ^10.3.1
+        version: 10.3.1
+      pino-pretty:
+        specifier: ^11.2.2
+        version: 11.3.0
+    devDependencies:
+      '@types/node':
+        specifier: ^25.9.1
+        version: 25.9.1
+      tsx:
+        specifier: ^4.19.1
+        version: 4.21.0
+      typescript:
+        specifier: ^5.6.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.1
+        version: 2.1.9(@types/node@25.9.1)(terser@5.47.1)
+
   apps/runner-dns:
     dependencies:
       pino:
