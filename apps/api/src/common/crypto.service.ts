@@ -18,7 +18,7 @@ export class CryptoService {
     this.masterKey = buf;
   }
 
-  encrypt(plaintext: string): Buffer {
+  encrypt(plaintext: string): Uint8Array<ArrayBuffer> {
     const dataKey = crypto.randomBytes(32);
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv('aes-256-gcm', dataKey, iv);
@@ -30,11 +30,20 @@ export class CryptoService {
     const wrapped = Buffer.concat([wrapCipher.update(dataKey), wrapCipher.final()]);
     const wrapTag = wrapCipher.getAuthTag();
 
-    // Layout: [1B version][12B wrapIv][16B wrapTag][32B wrapped][12B iv][16B tag][N ct]
-    return Buffer.concat([Buffer.from([1]), wrapIv, wrapTag, wrapped, iv, tag, ct]);
+    // Layout: [1B version][12B wrapIv][16B wrapTag][32B wrapped][12B iv][16B tag][N ct].
+    // Buffer.concat returns Uint8Array<ArrayBufferLike> after the Prisma 6 /
+    // Node 22 type tightening; Prisma's Bytes column expects
+    // Uint8Array<ArrayBuffer>. Re-wrap to land on the right backing.
+    const concatenated = Buffer.concat([Buffer.from([1]), wrapIv, wrapTag, wrapped, iv, tag, ct]);
+    // Prisma 6 + Node 22 narrowed the generic on Uint8Array: writes
+    // expect Uint8Array<ArrayBuffer> specifically. Materialize a fresh
+    // ArrayBuffer-backed array so the variance lines up.
+    const out = new Uint8Array(concatenated.byteLength);
+    out.set(concatenated);
+    return out;
   }
 
-  decrypt(blob: Buffer): string {
+  decrypt(blob: Uint8Array): string {
     if (blob[0] !== 1) throw new Error('unknown ciphertext version');
     let pos = 1;
     const wrapIv = blob.subarray(pos, pos + 12); pos += 12;

@@ -1609,7 +1609,7 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
  * lived plaintext per call. For V1 monorepo simplicity we re-implement the
  * envelope decryption inline using the same KMS_MASTER_KEY.
  */
-function decryptDevOnly(blob: Buffer): string {
+function decryptDevOnly(blob: Uint8Array): string {
   const crypto = require('node:crypto');
   const v = process.env.KMS_MASTER_KEY ?? '';
   const buf = Buffer.from(v.replace(/^base64:/, ''), 'base64');
