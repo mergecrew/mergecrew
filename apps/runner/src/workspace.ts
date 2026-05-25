@@ -2,6 +2,7 @@ import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import type { Logger } from 'pino';
 import type { VcsProvider } from '@mergecrew/adapters-vcs';
+import type { SandboxDriver, SandboxHandle } from '@mergecrew/sandbox-driver';
 
 /**
  * Root directory for per-run workspaces. In prod set to the container's
@@ -133,4 +134,106 @@ export async function bootstrapWorkspace(args: {
       message: err?.message ?? String(err),
     };
   }
+}
+
+/**
+ * Driver-mediated workspace bootstrap (V2.ag / ADR-0009 step 4).
+ *
+ * Same contract as `bootstrapWorkspace` but runs the git clone INSIDE
+ * the sandbox via `driver.exec` instead of on the supervisor's host
+ * filesystem. Required for the BYO agent path (`HttpSandboxDriver`)
+ * where the supervisor's host workspace and the agent's sandbox
+ * workspace are different machines.
+ *
+ * Works for instance-builtin too (driver.exec inside the local docker
+ * container ends up populating the host-mounted workspace), but we
+ * keep the existing host-side `bootstrapWorkspace` as the default
+ * there because it's well-tested and shaves one round-trip.
+ *
+ * The supervisor mints a 1-hour installation token via
+ * `vcs.getInstallationToken` and bakes it into the clone URL. Token
+ * is logged-scrubbed (replaced with `***`) so the runner logs don't
+ * leak it.
+ */
+export async function bootstrapWorkspaceViaDriver(args: {
+  driver: SandboxDriver;
+  handle: SandboxHandle;
+  vcs: VcsProvider | undefined;
+  fetchConnectedRepo: () => Promise<ConnectedRepoForBootstrap | null>;
+  logger: Logger;
+}): Promise<BootstrapResult> {
+  const { driver, handle, vcs, fetchConnectedRepo, logger } = args;
+
+  // Idempotency: if `.git` already exists, the sandbox has been
+  // populated by a prior step in the same run.
+  const gitCheck = await driver
+    .exec(handle, { cmd: 'test', args: ['-d', '.git'] })
+    .catch(() => ({ exitCode: 1, stdout: '', stderr: '', timedOut: false }));
+  if (gitCheck.exitCode === 0) return { kind: 'reused' };
+
+  if (!vcs) {
+    return {
+      kind: 'failed',
+      reason: 'github_app_not_configured',
+      message:
+        'GitHub App credentials are not configured on the supervisor (set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY)',
+    };
+  }
+  const repo = await fetchConnectedRepo();
+  if (!repo) {
+    return {
+      kind: 'failed',
+      reason: 'no_connected_repo',
+      message:
+        'project has no connected repository — connect one under Project Settings → Repository before running',
+    };
+  }
+
+  let token: string;
+  try {
+    token = await vcs.getInstallationToken(repo.installationId);
+  } catch (err) {
+    return {
+      kind: 'failed',
+      reason: 'clone_failed',
+      message:
+        `failed to mint installation token for ${vcs.id}: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+  // Auth URL for git over HTTPS. GitHub accepts `x-access-token:<token>`
+  // as the basic-auth user/password pair.
+  const repoUrl = `https://x-access-token:${token}@github.com/${repo.repoFullName}.git`;
+
+  // Clone into the current workspace dir. `--depth 50` matches the
+  // host-side bootstrap; `--branch` pins to the default branch so the
+  // clone tree starts at the right ref.
+  const cloneResult = await driver
+    .exec(handle, {
+      cmd: 'git',
+      args: ['clone', '--depth', '50', '--branch', repo.defaultBranch, repoUrl, '.'],
+      // Per-call timeout. Most clones land in <60s; allow 5min for
+      // large repos. The hard supervisor ceiling on a sandbox op is
+      // 15min (server-side), so this is well inside that.
+      timeoutMs: 5 * 60_000,
+    })
+    .catch((err: unknown) => ({
+      exitCode: 1,
+      stdout: '',
+      stderr: err instanceof Error ? err.message : String(err),
+      timedOut: false,
+    }));
+
+  if (cloneResult.exitCode !== 0) {
+    return {
+      kind: 'failed',
+      reason: 'clone_failed',
+      // Scrub the token before surfacing the error.
+      message: cloneResult.stderr.replace(token, '***').slice(0, 500),
+    };
+  }
+  logger.info(
+    { repoFullName: repo.repoFullName, branch: repo.defaultBranch },
+    'workspace bootstrap (via driver): cloned',
+  );
+  return { kind: 'cloned', branch: repo.defaultBranch };
 }

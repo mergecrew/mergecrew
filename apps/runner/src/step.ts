@@ -94,6 +94,7 @@ import {
   workspaceRoot as resolveWorkspaceRoot,
   workspacePathForRun,
   bootstrapWorkspace,
+  bootstrapWorkspaceViaDriver,
 } from './workspace.js';
 import { resolveSandboxResources } from './runner-config.js';
 import { maybeRunMiseInstall } from './mise-install.js';
@@ -124,10 +125,19 @@ interface StepArgs {
    * use it.
    */
   driver: SandboxDriver;
+  /**
+   * V2.ag (ADR-0009). 'local' (default) → host-side bootstrap runs git
+   * clone on the supervisor disk. 'agent' → driver-mediated bootstrap
+   * runs `git clone` via `driver.exec` inside the BYO agent's sandbox
+   * (the supervisor's host workspace is meaningless to the remote
+   * agent).
+   */
+  executor?: 'local' | 'agent';
 }
 
 export async function runStep(args: StepArgs): Promise<StepOutcome> {
   const { organizationId, projectId, runId, workflowRunId, stepId, agentRef, eventlog, logger, cancellation, driver } = args;
+  const executor = args.executor ?? 'local';
 
   // Defense in depth: a step might have been queued before the user
   // cancelled the run. Don't waste an LLM call on it. The orchestrator
@@ -346,25 +356,38 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   const stubMode =
     process.env.MERGECREW_AGENT_STUB === '1' ||
     process.env.MERGECREW_DEMO_MODE === '1';
+  const fetchConnectedRepo = async () => {
+    const row = await withTenant(organizationId, (tx) =>
+      tx.connectedRepo.findUnique({ where: { projectId } }),
+    );
+    if (!row) return null;
+    return {
+      installationId: row.installationId,
+      repoId: row.repoId,
+      repoFullName: row.repoFullName,
+      defaultBranch: effectiveBaseBranch(row),
+    };
+  };
+  // V2.ag (ADR-0009): for the BYO agent executor the host workspace
+  // is meaningless to the remote agent — clone inside the agent's
+  // sandbox via `driver.exec` instead. Stub/demo mode still
+  // short-circuits both paths.
   const bootstrap = stubMode
     ? ({ kind: 'reused' } as const)
-    : await bootstrapWorkspace({
-        workspacePath,
-        vcs,
-        fetchConnectedRepo: async () => {
-          const row = await withTenant(organizationId, (tx) =>
-            tx.connectedRepo.findUnique({ where: { projectId } }),
-          );
-          if (!row) return null;
-          return {
-            installationId: row.installationId,
-            repoId: row.repoId,
-            repoFullName: row.repoFullName,
-            defaultBranch: effectiveBaseBranch(row),
-          };
-        },
-        logger,
-      });
+    : executor === 'agent'
+      ? await bootstrapWorkspaceViaDriver({
+          driver,
+          handle: sandbox,
+          vcs,
+          fetchConnectedRepo,
+          logger,
+        })
+      : await bootstrapWorkspace({
+          workspacePath,
+          vcs,
+          fetchConnectedRepo,
+          logger,
+        });
   if (bootstrap.kind === 'failed') {
     const failureReason =
       bootstrap.reason === 'clone_failed'

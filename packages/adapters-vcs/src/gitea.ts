@@ -92,6 +92,15 @@ export class GiteaProvider implements VcsProvider {
 
   // ─── workspace ──────────────────────────────────────────────────────────
 
+  async getInstallationToken(_installationId: string): Promise<string> {
+    // Same as GitLab: Gitea doesn't have an installation-token concept.
+    // BYO runner-agent clone-via-driver isn't wired for Gitea — runners
+    // on this adapter fall back to the host-side bootstrap.
+    throw new Error(
+      'Gitea: getInstallationToken is not supported; use the host-side bootstrap',
+    );
+  }
+
   async cloneIntoWorkspace(repo: ConnectedRepoRef, ref: string, dest: string): Promise<void> {
     await fs.mkdir(path.dirname(dest), { recursive: true });
     const url = this.cloneUrl(repo.repoFullName);

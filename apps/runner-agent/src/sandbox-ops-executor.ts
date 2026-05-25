@@ -70,6 +70,14 @@ export async function runSandboxOpsLoop(deps: SandboxOpsLoopDeps): Promise<void>
       }
       idles = 0;
 
+      // Supervisor-emitted exit signal (V2.ag step 4). The supervisor
+      // pushes this in a finally block after runStep returns, so the
+      // agent exits immediately instead of burning the idle heuristic.
+      if (popped.op === 'step-done') {
+        logger.info({ stepId }, 'agent: step-done signal received');
+        break;
+      }
+
       try {
         const result = await executeOp(driver, handle, popped, logger);
         if (popped.op === 'start') {

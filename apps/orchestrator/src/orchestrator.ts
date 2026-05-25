@@ -126,12 +126,26 @@ export class Orchestrator {
     }
 
     if (kind === 'agent') {
-      const key = this.agentQueueKey(args.organizationId);
+      // V2.ag step 4 (ADR-0009): the supervisor runs `runStep` with an
+      // HttpSandboxDriver bound to this step. The agent's role is to be
+      // the remote sandbox — it picks up a "claim" via /poll (the per-org
+      // raw-Redis-list queue) and switches into sandbox-ops mode for the
+      // stepId. So we publish to BOTH queues:
+      //   - runner.step.instance (BullMQ) → supervisor consumes, executor
+      //     marker tells it to construct HttpSandboxDriver.
+      //   - runner-agent:queue:<orgId> (raw list) → agent /poll picks up
+      //     the claim and starts polling /sandbox-ops-poll.
+      const agentKey = this.agentQueueKey(args.organizationId);
       this.deps.logger.info(
-        { organizationId: args.organizationId, kind, key },
+        { organizationId: args.organizationId, kind, supervisorQueue: 'runner.step.instance', agentKey },
         'runner.profile_dispatch',
       );
-      await this.deps.connection.lpush(key, JSON.stringify(payload));
+      await this.deps.connection.lpush(agentKey, JSON.stringify(payload));
+      await this.runnerInstance.add(
+        'step',
+        { ...payload, executor: 'agent' },
+        { removeOnComplete: 1000, removeOnFail: 1000, attempts: 1 },
+      );
       return;
     }
 

@@ -13,7 +13,7 @@ import { runStep } from './step.js';
 import { CancellationCoordinator } from './cancellation.js';
 import { startProbeServer } from './probe-server.js';
 import { cleanupWorkspace, WORKSPACE_CLEANUP_QUEUE } from './workspace.js';
-import { buildSandboxDriver, buildSandboxDriverAsync } from '@mergecrew/sandbox-driver';
+import { buildSandboxDriver, buildSandboxDriverAsync, HttpSandboxDriver } from '@mergecrew/sandbox-driver';
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
@@ -103,13 +103,56 @@ type RunnerStepJob = {
   workflowRunId: string;
   stepId: string;
   agentRef: string;
+  /**
+   * V2.ag (ADR-0009 step 4). When set to 'agent', the supervisor
+   * uses an `HttpSandboxDriver` bound to this step's id instead of
+   * the global host-side driver. Absent or 'local' → the existing
+   * RUNNER_SANDBOX-selected driver runs the step on this host.
+   */
+  executor?: 'local' | 'agent';
 };
 
 async function handleStepJob(data: RunnerStepJob) {
-  const driver = await driverPromise;
-  const outcome = await runStep({ ...data, eventlog, logger, cancellation, driver });
-  await replyQueue.add('reply', { ...data, outcome }, { removeOnComplete: 1000 });
-  return outcome;
+  const executor = data.executor ?? 'local';
+  const driver = executor === 'agent'
+    ? buildAgentDriverForStep(data.stepId)
+    : await driverPromise;
+  try {
+    const outcome = await runStep({ ...data, executor, eventlog, logger, cancellation, driver });
+    await replyQueue.add('reply', { ...data, outcome }, { removeOnComplete: 1000 });
+    return outcome;
+  } finally {
+    if (executor === 'agent') {
+      // V2.ag step 4: signal the BYO agent's sandbox-ops loop to
+      // exit immediately. KEY MUST MATCH `opsKey()` in
+      // apps/api/src/modules/runner-agent/sandbox-ops.service.ts.
+      const SENTINEL = { opId: 'done', op: 'step-done', args: {} };
+      await conn
+        .lpush(`runner-agent:sandbox-ops:${data.stepId}`, JSON.stringify(SENTINEL))
+        .catch((err: unknown) => {
+          logger.warn(
+            { stepId: data.stepId, err: err instanceof Error ? err.message : err },
+            'step-done sentinel push failed — agent will exit on idle heuristic instead',
+          );
+        });
+    }
+  }
+}
+
+function buildAgentDriverForStep(stepId: string): HttpSandboxDriver {
+  const baseUrl = (process.env.MERGECREW_API_BASE_URL ?? process.env.API_BASE_URL ?? '').trim();
+  const authToken = (process.env.MERGECREW_INTERNAL_TOKEN ?? '').trim();
+  if (!baseUrl) {
+    throw new Error(
+      'MERGECREW_API_BASE_URL (or API_BASE_URL) is required on the supervisor to drive agent-profile steps',
+    );
+  }
+  if (!authToken) {
+    throw new Error(
+      'MERGECREW_INTERNAL_TOKEN is required on the supervisor to authenticate sandbox-op dispatch',
+    );
+  }
+  return new HttpSandboxDriver({ baseUrl, authToken, stepId });
 }
 
 // Consumes the V2.af `instance_builtin` profile queue (ADR-0005).
