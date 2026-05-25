@@ -59,7 +59,7 @@ Concrete feature inventory grouped by surface. Each feature has a brief descript
 | Provider fallback chains | All | Implemented |
 | Mid-run config edits (apply on next run) | Mira | Implemented |
 | Mid-run config edits (apply immediately) | Mira | Out of scope |
-| Backpressure: cap concurrent runs / agents per org | Platform | Planned |
+| Per-org concurrent-step cap (orchestrator defers the (N+1)-th dispatch) | Platform | Implemented (`organizations.org_concurrency_cap`; surfaced in **Settings → Runner**) |
 
 ## Human-in-the-loop
 
@@ -160,6 +160,28 @@ Reasoning helpers:
 - `llm.summarize`, `llm.draft_spec`, `llm.draft_release_notes`.
 
 Each skill carries a JSON-schema input/output definition, capability requirements, side-effect class (read/write/external), and a default model assignment.
+
+## Runner & sandboxing
+
+| Feature | Persona | Status |
+|---|---|---|
+| Per-run OCI sandbox (rootless docker driver, env scrub, workspace isolation) | Platform | Implemented (V1.x EPIC #555). Selected via `RUNNER_SANDBOX={process,docker,k8s,fargate,e2b}` on the supervisor. |
+| Polyglot stock images (`runner-node`, `runner-python`, `runner-java`, `runner-go`, `runner-polyglot`) auto-detected from lockfiles | All | Implemented. See [`03-infrastructure/22-runner-images.md`](../03-infrastructure/22-runner-images.md). |
+| `.devcontainer/devcontainer.json` honored when present | Mira | Implemented |
+| BYO image ref + private-registry pull credentials | Mira | Implemented |
+| Per-project resources (`runner.image`, `runner.resources`, `runner.cache.paths`, `runner.setup`) in `mergecrew.yaml` | Mira | Implemented |
+| Per-run network namespace with hostname allowlist | Platform | Implemented (#573 / Phase 4). |
+| Per-run DNS resolver with allowlist (NXDOMAIN otherwise) | Platform | Implemented (#574). |
+| Optional egress proxy sidecar with SNI inspection + audit log | Platform | Implemented (#575). |
+| Run digest surfaces blocked-outbound list per run | Mira | Implemented (#576). |
+| **Per-org `runner_profile` (V2.af, [ADR-0002](../adrs/0002-per-org-runner-profile.md))**: `instance-builtin`, `agent`, `fargate-byo`, `github-actions`, `none`. | All | Implemented |
+| Trusted-org gating for `instance-builtin` via `MERGECREW_TRUSTED_ORG_SLUGS` ([ADR-0006](../adrs/0006-trusted-org-gating.md)) | Platform | Implemented |
+| Default profile = `none`; runs blocked at scheduling ([ADR-0008](../adrs/0008-default-profile-none.md)) | Platform | Implemented |
+| BYO runner-agent: `mergecrew/runner-agent` Docker image + long-poll job-pull protocol (#766) | Mira | In progress — protocol scaffolding shipped; agent-side executor stub until #782 (see [ADR-0009](../adrs/0009-byo-agent-as-remote-sandbox-driver.md)) |
+| BYO Fargate (STS role-assumption, no stored AWS keys, [ADR-0007](../adrs/0007-byo-cloud-credentials.md)) | Mira | In progress — config + trust-policy docs shipped; dispatcher pending #786 |
+| BYO GitHub Actions profile (`workflow_dispatch`) | Mira | Planned — #772, depends on #782 |
+| Org settings UI for runner profile + online/offline agent badge | Owner/Admin | Implemented |
+| Runner-agent enrollment + revoke (one-shot token, audit log) | Owner/Admin | Implemented |
 
 ## Settings & administration
 

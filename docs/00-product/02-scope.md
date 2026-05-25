@@ -30,7 +30,8 @@ This document defines what the Mergecrew project covers — the surface area of 
 - Manual "Run now" trigger.
 - Durable execution: a run survives process restarts and provider rate-limit pauses.
 - Provider rate-limit & quota awareness: 429 / quota errors trigger a sleep that respects `Retry-After`, then resumes.
-- Run isolation: agents work in per-run sandboxed working trees on a shared runner pool.
+- Run isolation: agents work in per-run sandboxed working trees. Default driver is `docker` (per-run OCI container); the supervisor's `RUNNER_SANDBOX` selects between `process / docker / k8s / fargate / e2b`.
+- Per-org runner ownership (V2.af): each org picks an `instance-builtin` (the operator's pool, gated by a trusted-org allowlist), an `agent` (BYO — the org runs `mergecrew/runner-agent` on its own machine), a `fargate-byo` (ECS task in the org's AWS account via STS role-assumption — no stored AWS keys), or a `github-actions` (planned) runner profile.
 
 ### Human-in-the-loop
 - Configurable gate per workflow transition: `auto`, `notify`, `require-approval`.
