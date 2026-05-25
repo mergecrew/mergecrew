@@ -125,7 +125,7 @@ async function buildLocalDriver(cfg: AgentConfig): Promise<SandboxDriver> {
   return buildSandboxDriverAsync({ mode: cfg.driver });
 }
 
-async function executeOp(
+export async function executeOp(
   driver: SandboxDriver,
   handle: SandboxHandle | null,
   envelope: OpEnvelope,
