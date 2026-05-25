@@ -15,6 +15,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@mergecrew/sandbox-driver": "workspace:*",
     "pino": "^10.3.1",
     "pino-pretty": "^11.2.2"
   },

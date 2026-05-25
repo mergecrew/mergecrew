@@ -7,6 +7,7 @@ import {
   assertConfigUsable,
   type AgentConfig,
 } from './config.js';
+import { runSandboxOpsLoop } from './sandbox-ops-executor.js';
 
 /**
  * `mergecrew/runner-agent` CLI entry (V2.af / #764).
@@ -39,8 +40,6 @@ function printHelp(): void {
       '  --dry-run              Print resolved config and exit.',
       '  --help                 Show this message.',
       '',
-      'This is the skeleton release: --dry-run is the only supported mode.',
-      'Job pull + execution lands in #766.',
       '',
     ].join('\n'),
   );
@@ -102,14 +101,14 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  // #765/#766: hit /hello once to validate enrolment, then drop into
-  // the long-poll loop. The agent pulls jobs from /poll (BRPOP-backed
-  // on the deployment), heartbeats every 15s during a job, and posts
-  // an outcome when done.
-  //
-  // The executor is a STUB for v1 — the agent acknowledges the job and
-  // immediately reports `byo_executor_not_implemented`. Real BYO
-  // execution (sandbox + skill orchestration) lands in follow-up #782.
+  // #765/#766/V2.ag: hit /hello once to validate enrolment, then drop
+  // into the long-poll loop. The agent's role per ADR-0009: when /poll
+  // returns a job, the agent claims responsibility for being the
+  // sandbox host for that step. The supervisor (apps/runner) runs
+  // `runStep` and marshals each SandboxDriver call into a POST to
+  // /v1/runner-agent/sandbox-ops/:stepId/:op. The agent long-polls
+  // /sandbox-ops-poll for those ops, executes them locally against a
+  // ProcessDriver or DockerDriver, and posts results back.
   let stopped = false;
   process.on('SIGINT', () => {
     stopped = true;
@@ -154,9 +153,14 @@ async function main(): Promise<void> {
     if (!job) continue; // idle tick
     logger.info(
       { stepId: job.stepId, runId: job.runId, agentRef: job.agentRef },
-      'agent: picked up job',
+      'agent: picked up job — switching to sandbox-ops mode',
     );
-    await runStubExecutor(cfg, job);
+    await runSandboxOpsLoop({
+      cfg,
+      stepId: job.stepId,
+      logger,
+      isStopped: () => stopped,
+    });
   }
 }
 
@@ -195,31 +199,6 @@ async function pollNext(cfg: AgentConfig): Promise<PolledJob | null> {
   if (body.kind === 'idle') return null;
   const { kind: _kind, ...job } = body;
   return job;
-}
-
-/**
- * Stub executor (v1, #766). Reports start, heartbeats once, then
- * reports `byo_executor_not_implemented`. Real execution lands in
- * follow-up #782 — see the EPIC for the architecture options.
- */
-async function runStubExecutor(cfg: AgentConfig, job: PolledJob): Promise<void> {
-  try {
-    await callApi(cfg, `/v1/runner-agent/steps/${job.stepId}/events`, {
-      type: 'AGENT_STEP_STARTED',
-      payload: { agentRef: job.agentRef, executor: 'byo-stub-v1' },
-    });
-    await callApi(cfg, '/v1/runner-agent/heartbeat', { stepId: job.stepId });
-    await callApi(cfg, `/v1/runner-agent/steps/${job.stepId}/outcome`, {
-      kind: 'failed',
-      reason: 'byo_executor_not_implemented',
-    });
-    logger.info({ stepId: job.stepId }, 'agent: reported stub outcome');
-  } catch (err) {
-    logger.warn(
-      { stepId: job.stepId, err: err instanceof Error ? err.message : err },
-      'agent: failed to report outcome — orchestrator will retry via heartbeat sweeper',
-    );
-  }
 }
 
 const AGENT_VERSION = '0.1.0';
