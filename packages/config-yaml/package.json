@@ -4,7 +4,13 @@
   "private": true,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "default": "./dist/index.js" } },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -12,7 +18,10 @@
   },
   "dependencies": {
     "@mergecrew/domain": "workspace:*",
-    "yaml": "^2.5.1"
+    "yaml": "^2.9.0"
   },
-  "devDependencies": { "typescript": "^5.6.2", "vitest": "^2.1.1" }
+  "devDependencies": {
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.1"
+  }
 }
