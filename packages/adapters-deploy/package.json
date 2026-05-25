@@ -4,7 +4,13 @@
   "private": true,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "default": "./dist/index.js" } },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -16,9 +22,9 @@
     "@octokit/rest": "^21.0.2"
   },
   "optionalDependencies": {
-    "@aws-sdk/client-cloudfront": "^3.658.0",
-    "@aws-sdk/client-ecs": "^3.658.0",
-    "@aws-sdk/client-lambda": "^3.658.0"
+    "@aws-sdk/client-cloudfront": "^3.1053.0",
+    "@aws-sdk/client-ecs": "^3.1053.0",
+    "@aws-sdk/client-lambda": "^3.1053.0"
   },
   "devDependencies": {
     "@aws-sdk/client-cloudfront": "^3.658.0",
