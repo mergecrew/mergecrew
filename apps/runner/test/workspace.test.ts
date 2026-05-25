@@ -5,10 +5,12 @@ import { tmpdir } from 'node:os';
 import pino from 'pino';
 import {
   bootstrapWorkspace,
+  bootstrapWorkspaceViaDriver,
   cleanupWorkspace,
   type ConnectedRepoForBootstrap,
 } from '../src/workspace.js';
 import type { VcsProvider } from '@mergecrew/adapters-vcs';
+import type { ExecResult, SandboxDriver, SandboxHandle } from '@mergecrew/sandbox-driver';
 
 const logger = pino({ level: 'silent' });
 
@@ -146,6 +148,183 @@ describe('bootstrapWorkspace', () => {
     });
     expect(result.kind).toBe('cloned');
     expect(seen).toEqual([]); // wipe happened — dest was empty at clone time
+  });
+});
+
+describe('bootstrapWorkspaceViaDriver (V2.ag step 4)', () => {
+  const REPO: ConnectedRepoForBootstrap = {
+    installationId: 'install-abc',
+    repoFullName: 'acme/widget',
+    defaultBranch: 'main',
+  };
+  const HANDLE: SandboxHandle = {
+    id: 'sandbox-x',
+    driver: 'fake',
+    workspacePath: '/agent/workspace',
+  };
+
+  function fakeDriver(args: {
+    gitDirExists?: boolean;
+    cloneExit?: number;
+    cloneStderr?: string;
+    onExec?: (cmd: string, opts: { args: string[] }) => void;
+  } = {}): SandboxDriver {
+    const calls: Array<{ cmd: string; args: string[] }> = [];
+    const driver: SandboxDriver = {
+      name: 'fake',
+      async start() {
+        return HANDLE;
+      },
+      async exec(_handle, opts): Promise<ExecResult> {
+        calls.push({ cmd: opts.cmd, args: opts.args });
+        args.onExec?.(opts.cmd, { args: opts.args });
+        if (opts.cmd === 'test' && opts.args[0] === '-d' && opts.args[1] === '.git') {
+          return {
+            exitCode: args.gitDirExists ? 0 : 1,
+            stdout: '',
+            stderr: '',
+            timedOut: false,
+          };
+        }
+        if (opts.cmd === 'git' && opts.args[0] === 'clone') {
+          return {
+            exitCode: args.cloneExit ?? 0,
+            stdout: '',
+            stderr: args.cloneStderr ?? '',
+            timedOut: false,
+          };
+        }
+        return { exitCode: 0, stdout: '', stderr: '', timedOut: false };
+      },
+      async readFile() {
+        return Buffer.from('');
+      },
+      async writeFile() {},
+      async kill() {},
+      async stop() {},
+    };
+    (driver as any).recordedCalls = calls;
+    return driver;
+  }
+
+  function fakeGithubVcs(opts: { token?: string; tokenError?: Error } = {}): VcsProvider {
+    return new Proxy(
+      {
+        id: 'github' as const,
+        getInstallationToken: vi.fn(async () => {
+          if (opts.tokenError) throw opts.tokenError;
+          return opts.token ?? 'ghs_fake_token_123';
+        }),
+      } as any,
+      {
+        get(target, prop) {
+          if (prop in target) return (target as any)[prop];
+          return () => {
+            throw new Error(`VcsProvider.${String(prop)} not stubbed in this test`);
+          };
+        },
+      },
+    ) as unknown as VcsProvider;
+  }
+
+  it('returns reused when .git already exists inside the sandbox (idempotent)', async () => {
+    const driver = fakeDriver({ gitDirExists: true });
+    const result = await bootstrapWorkspaceViaDriver({
+      driver,
+      handle: HANDLE,
+      vcs: fakeGithubVcs(),
+      fetchConnectedRepo: async () => REPO,
+      logger,
+    });
+    expect(result).toEqual({ kind: 'reused' });
+    const calls = (driver as any).recordedCalls as Array<{ cmd: string; args: string[] }>;
+    // Only the `test -d .git` probe should have fired — no clone.
+    expect(calls).toEqual([{ cmd: 'test', args: ['-d', '.git'] }]);
+  });
+
+  it('clones via driver.exec with an installation-token URL when sandbox is empty', async () => {
+    const driver = fakeDriver({ cloneExit: 0 });
+    const result = await bootstrapWorkspaceViaDriver({
+      driver,
+      handle: HANDLE,
+      vcs: fakeGithubVcs({ token: 'ghs_clone_token' }),
+      fetchConnectedRepo: async () => REPO,
+      logger,
+    });
+    expect(result).toEqual({ kind: 'cloned', branch: 'main' });
+    const calls = (driver as any).recordedCalls as Array<{ cmd: string; args: string[] }>;
+    const cloneCall = calls.find((c) => c.cmd === 'git' && c.args[0] === 'clone');
+    expect(cloneCall).toBeDefined();
+    // Token baked into the URL via x-access-token auth.
+    const cloneUrlArg = cloneCall!.args.find((a) => a.includes('https://'));
+    expect(cloneUrlArg).toContain('x-access-token:ghs_clone_token@github.com/acme/widget.git');
+    // Branch flag pinned to default branch.
+    expect(cloneCall!.args).toContain('--branch');
+    expect(cloneCall!.args).toContain('main');
+  });
+
+  it('fails with github_app_not_configured when vcs is undefined', async () => {
+    const driver = fakeDriver();
+    const result = await bootstrapWorkspaceViaDriver({
+      driver,
+      handle: HANDLE,
+      vcs: undefined,
+      fetchConnectedRepo: async () => REPO,
+      logger,
+    });
+    expect(result.kind).toBe('failed');
+    if (result.kind !== 'failed') throw new Error('unreachable');
+    expect(result.reason).toBe('github_app_not_configured');
+  });
+
+  it('fails with no_connected_repo when the project has no row', async () => {
+    const driver = fakeDriver();
+    const result = await bootstrapWorkspaceViaDriver({
+      driver,
+      handle: HANDLE,
+      vcs: fakeGithubVcs(),
+      fetchConnectedRepo: async () => null,
+      logger,
+    });
+    expect(result.kind).toBe('failed');
+    if (result.kind !== 'failed') throw new Error('unreachable');
+    expect(result.reason).toBe('no_connected_repo');
+  });
+
+  it('fails with clone_failed when getInstallationToken throws', async () => {
+    const driver = fakeDriver();
+    const result = await bootstrapWorkspaceViaDriver({
+      driver,
+      handle: HANDLE,
+      vcs: fakeGithubVcs({ tokenError: new Error('jwt rejected') }),
+      fetchConnectedRepo: async () => REPO,
+      logger,
+    });
+    expect(result.kind).toBe('failed');
+    if (result.kind !== 'failed') throw new Error('unreachable');
+    expect(result.reason).toBe('clone_failed');
+    expect(result.message).toMatch(/jwt rejected/);
+  });
+
+  it('fails with clone_failed and SCRUBS the token from the stderr message', async () => {
+    const driver = fakeDriver({
+      cloneExit: 128,
+      cloneStderr:
+        'fatal: unable to access https://x-access-token:ghs_clone_token@github.com/acme/widget.git/',
+    });
+    const result = await bootstrapWorkspaceViaDriver({
+      driver,
+      handle: HANDLE,
+      vcs: fakeGithubVcs({ token: 'ghs_clone_token' }),
+      fetchConnectedRepo: async () => REPO,
+      logger,
+    });
+    expect(result.kind).toBe('failed');
+    if (result.kind !== 'failed') throw new Error('unreachable');
+    expect(result.reason).toBe('clone_failed');
+    // Token must not leak in the failure message.
+    expect(result.message).not.toContain('ghs_clone_token');
+    expect(result.message).toContain('***');
   });
 });
 
