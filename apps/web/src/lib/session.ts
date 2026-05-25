@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import type { Session } from './api';
 
@@ -116,6 +117,39 @@ export async function getSession(): Promise<Session | null> {
 
 export async function requireSession(): Promise<Session> {
   const s = await getSession();
-  if (!s) throw new Error('UNAUTHENTICATED');
+  if (!s) {
+    // Log before bouncing so operators can audit "returning users
+    // who got bounced because their session expired" vs "users who
+    // just walked up to a protected page". Reason is derived from
+    // cookies — manual sign-out and stale JWT are distinguishable
+    // signals and we want to see both rates separately.
+    //
+    // No refresh-token rotation today (API JWT TTL is 14d). If the
+    // stale_jwt count climbs, that's the case for adding one.
+    try {
+      const c = await cookies();
+      const hadJwt = !!c.get(JWT_OVERRIDE_COOKIE)?.value;
+      const signedOut = c.get(SIGNED_OUT_COOKIE)?.value === '1';
+      const reason = signedOut ? 'manual_signout' : hadJwt ? 'stale_jwt' : 'no_session';
+      console.warn(
+        JSON.stringify({
+          event: 'session.expired_redirect',
+          reason,
+          ts: new Date().toISOString(),
+        }),
+      );
+    } catch {
+      // cookies() throws when called outside a request scope (build,
+      // background task). The redirect is still right to do; just
+      // skip the log line.
+    }
+    // Returning users whose session has expired land here. Throwing
+    // an Error renders Next's generic "A server error occurred" page,
+    // which is both scary and a dead-end — they have no way back to
+    // sign in. redirect() throws an internal NEXT_REDIRECT that Next
+    // handles for both server components and server actions, so this
+    // function's signature stays `Promise<Session>` for callers.
+    redirect('/login');
+  }
   return s;
 }
