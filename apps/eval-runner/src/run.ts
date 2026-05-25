@@ -39,7 +39,7 @@ export interface RunEvalsResult {
   totalLatencyMs: number;
 }
 
-function decryptDevOnly(blob: Buffer): string {
+function decryptDevOnly(blob: Uint8Array): string {
   const crypto = require('node:crypto');
   const v = process.env.KMS_MASTER_KEY ?? '';
   const buf = Buffer.from(v.replace(/^base64:/, ''), 'base64');

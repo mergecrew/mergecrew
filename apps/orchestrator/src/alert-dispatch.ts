@@ -148,7 +148,7 @@ function formatMetric(metric: string, value: unknown): string {
  *   [1B version][12B wrapIv][16B wrapTag][32B wrapped][12B iv][16B tag][N ct]
  * Master key comes from KMS_MASTER_KEY (`base64:` prefix, 32 bytes).
  */
-function decryptEnvelope(blob: Buffer): string {
+function decryptEnvelope(blob: Uint8Array): string {
   if (blob[0] !== 1) throw new Error('unknown ciphertext version');
   const masterEnv = process.env.KMS_MASTER_KEY ?? '';
   if (!masterEnv.startsWith('base64:')) throw new Error('KMS_MASTER_KEY must start with base64:');

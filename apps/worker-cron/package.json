@@ -15,7 +15,7 @@
     "@mergecrew/eval-runner": "workspace:*",
     "@mergecrew/eventlog": "workspace:*",
     "@mergecrew/telemetry": "workspace:*",
-    "@prisma/client": "^5.22.0",
+    "@prisma/client": "^6.19.3",
     "bullmq": "^5.21.0",
     "cron-parser": "^4.9.0",
     "ioredis": "^5.4.1",
