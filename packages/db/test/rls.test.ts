@@ -16,6 +16,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 
 function appUrl(): string {
   if (process.env.DATABASE_APP_URL) return process.env.DATABASE_APP_URL;
@@ -31,8 +32,15 @@ function migratorUrl(): string {
   return process.env.DATABASE_URL ?? '';
 }
 
-const migratorClient = new PrismaClient({ datasources: { db: { url: migratorUrl() } } });
-const appClient = new PrismaClient({ datasources: { db: { url: appUrl() } } });
+// Prisma 7 (#794): connection URL goes into the adapter, not a
+// `datasources` block. The split between migrator + app clients
+// stays — same RLS verification posture.
+const migratorClient = new PrismaClient({
+  adapter: new PrismaPg(migratorUrl()),
+});
+const appClient = new PrismaClient({
+  adapter: new PrismaPg(appUrl()),
+});
 
 const ORG_A_SLUG = `rls-test-a-${Date.now()}`;
 const ORG_B_SLUG = `rls-test-b-${Date.now()}`;

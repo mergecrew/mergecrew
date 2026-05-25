@@ -1,9 +1,22 @@
 /* eslint-disable no-console */
 import { createHash } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { seedDemoProject } from './demo-project-seed.js';
 
-const prisma = new PrismaClient();
+// Prisma 7 (#794): the seed runs against the migrator-shaped URL so
+// it can bypass RLS for cross-tenant data (demo org + user). Same
+// fallback chain as `getSystemPrisma()` in client.ts.
+const seedUrl =
+  process.env.DATABASE_SYSTEM_URL ??
+  process.env.DATABASE_MIGRATE_URL ??
+  process.env.DATABASE_URL;
+if (!seedUrl) {
+  throw new Error('seed: DATABASE_URL or DATABASE_MIGRATE_URL is required');
+}
+const prisma = new PrismaClient({
+  adapter: new PrismaPg(seedUrl),
+});
 const API_KEY_PREFIX = 'mc_live_';
 
 async function main() {

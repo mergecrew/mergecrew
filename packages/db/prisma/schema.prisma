@@ -1,21 +1,18 @@
 // Mergecrew database schema. See docs/02-architecture/09-data-model.md.
 // pgvector is used for memory embeddings via raw SQL migration since
 // Prisma's vector support is preview-flagged.
+//
+// Prisma 7 migration: connection URLs moved to `prisma.config.ts` and
+// the runtime client is constructed with `@prisma/adapter-pg`. See
+// `packages/db/src/client.ts` for the adapter wiring and ADR-0010 (#794).
 
-// Multi-target binaries so a build container that compiles on one libssl
-// can run inside another. `native` covers `pnpm dev`; the linux-* targets
-// cover the Debian-based Dockerfiles (debian-openssl-3.0.x is bookworm)
-// and arm64 macs that run linux/arm64 images locally.
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["postgresqlExtensions"]
-  binaryTargets   = ["native", "linux-arm64-openssl-3.0.x", "linux-arm64-openssl-1.1.x", "debian-openssl-3.0.x", "debian-openssl-1.1.x"]
 }
 
 datasource db {
   provider   = "postgresql"
-  url        = env("DATABASE_URL")
-  directUrl  = env("DATABASE_MIGRATE_URL")
   extensions = [uuidOssp(map: "uuid-ossp"), pgcrypto, vector]
 }
 

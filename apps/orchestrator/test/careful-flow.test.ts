@@ -22,14 +22,14 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import IORedis from 'ioredis';
 import { Queue } from 'bullmq';
 import pino from 'pino';
-import { PrismaClient } from '@prisma/client';
+import { buildClientForUrl } from '@mergecrew/db';
 import { Orchestrator } from '../src/orchestrator.js';
 import type { Eventlog } from '@mergecrew/eventlog';
 
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
 const TEST_PREFIX = `careful-test-${Date.now()}`;
 
-const prisma = new PrismaClient();
+const prisma = buildClientForUrl(process.env.DATABASE_URL ?? '');
 const conn = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
 
 interface RecordedEvent {
