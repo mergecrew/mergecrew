@@ -134,6 +134,13 @@ export const TimelineEventType = z.enum([
   'SLO_BREACHING',
   'SLO_AT_RISK',
   'SLO_RECOVERED',
+  // Sandbox lifecycle (#565 dogfood gate). Emitted by the supervisor
+  // immediately after `driver.start()` returns. Payload carries the
+  // resolved driver name (process/docker/k8s/fargate/e2b), the image
+  // used (null for process driver), and the cold-start duration in
+  // ms. The dogfood bake-report aggregates these to fill the
+  // process-vs-docker comparison table.
+  'SANDBOX_STARTED',
 ]);
 export type TimelineEventType = z.infer<typeof TimelineEventType>;
 

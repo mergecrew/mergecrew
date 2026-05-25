@@ -272,4 +272,98 @@ describe('DockerDriver', () => {
     await d.start({ runId: 'r', projectId: 'p', organizationId: 'o', workspacePath: workspace });
     expect(execaCalls[0]!.cmd).toBe('podman');
   });
+
+  it('start() emits a sandbox.cold_start event with durationMs (#565)', async () => {
+    const events: { msg: string; meta: any }[] = [];
+    const d = new DockerDriver({
+      logger: {
+        info: (msg, meta) => events.push({ msg, meta }),
+        warn: () => undefined,
+        error: () => undefined,
+      },
+    });
+    execaResponses.push({ exitCode: 0, stdout: 'cid-1\n' });
+    await d.start({ runId: 'r', projectId: 'p', organizationId: 'o', workspacePath: workspace });
+    const coldStart = events.find((e) => e.meta?.event === 'sandbox.cold_start');
+    expect(coldStart, 'sandbox.cold_start event was emitted').toBeTruthy();
+    expect(coldStart!.meta.driver).toBe('docker');
+    expect(coldStart!.meta.runId).toBe('r');
+    expect(coldStart!.meta.containerId).toBe('cid-1');
+    expect(typeof coldStart!.meta.durationMs).toBe('number');
+    expect(coldStart!.meta.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('exec() emits sandbox.oom_suspected with confirmed OOMKilled=true on exit 137 (#565)', async () => {
+    const events: { level: 'warn' | 'info'; msg: string; meta: any }[] = [];
+    const d = new DockerDriver({
+      logger: {
+        info: (msg, meta) => events.push({ level: 'info', msg, meta }),
+        warn: (msg, meta) => events.push({ level: 'warn', msg, meta }),
+        error: () => undefined,
+      },
+    });
+    execaResponses.push({ exitCode: 0, stdout: 'cid\n' }); // start
+    const handle = await d.start({
+      runId: 'r',
+      projectId: 'p',
+      organizationId: 'o',
+      workspacePath: workspace,
+    });
+    // exec returns 137 (SIGKILL); inspect reports OOMKilled=true.
+    execaResponses.push({ exitCode: 137, stdout: '', stderr: '' });
+    execaResponses.push({ exitCode: 0, stdout: 'true\n' });
+    const r = await d.exec(handle, { cmd: 'memhog', args: [] });
+    expect(r.exitCode).toBe(137);
+    const oom = events.find((e) => e.meta?.event === 'sandbox.oom_suspected');
+    expect(oom, 'sandbox.oom_suspected event was emitted').toBeTruthy();
+    expect(oom!.level).toBe('warn');
+    expect(oom!.meta.containerOomKilled).toBe(true);
+    expect(oom!.meta.exitCode).toBe(137);
+    expect(oom!.meta.cmd).toBe('memhog');
+  });
+
+  it('exec() emits sandbox.oom_suspected with containerOomKilled=false when only the exec process was killed', async () => {
+    const events: { meta: any }[] = [];
+    const d = new DockerDriver({
+      logger: {
+        info: () => undefined,
+        warn: (_msg, meta) => events.push({ meta }),
+        error: () => undefined,
+      },
+    });
+    execaResponses.push({ exitCode: 0, stdout: 'cid\n' });
+    const handle = await d.start({
+      runId: 'r',
+      projectId: 'p',
+      organizationId: 'o',
+      workspacePath: workspace,
+    });
+    execaResponses.push({ exitCode: 137, stdout: '', stderr: '' });
+    execaResponses.push({ exitCode: 0, stdout: 'false\n' });
+    await d.exec(handle, { cmd: 'memhog', args: [] });
+    const oom = events.find((e) => e.meta?.event === 'sandbox.oom_suspected');
+    expect(oom).toBeTruthy();
+    expect(oom!.meta.containerOomKilled).toBe(false);
+  });
+
+  it('exec() does NOT emit sandbox.oom_suspected on a plain non-137 failure', async () => {
+    const events: { meta: any }[] = [];
+    const d = new DockerDriver({
+      logger: {
+        info: () => undefined,
+        warn: (_msg, meta) => events.push({ meta }),
+        error: () => undefined,
+      },
+    });
+    execaResponses.push({ exitCode: 0, stdout: 'cid\n' });
+    const handle = await d.start({
+      runId: 'r',
+      projectId: 'p',
+      organizationId: 'o',
+      workspacePath: workspace,
+    });
+    execaResponses.push({ exitCode: 1, stdout: '', stderr: 'normal failure' });
+    await d.exec(handle, { cmd: 'false', args: [] });
+    expect(events.find((e) => e.meta?.event === 'sandbox.oom_suspected')).toBeUndefined();
+  });
 });
