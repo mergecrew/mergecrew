@@ -1,6 +1,5 @@
-import { createHash, randomBytes } from 'node:crypto';
 import type { Logger } from 'pino';
-import { withSystem } from '@mergecrew/db';
+import { mintEphemeralAgent } from './agent-tokens.js';
 
 /**
  * Launches an ECS task in the user's AWS account that runs
@@ -24,10 +23,6 @@ import { withSystem } from '@mergecrew/db';
  * the token into AWS Secrets Manager / SSM Parameter Store is a
  * future PR.
  */
-
-const TOKEN_PREFIX = 'mca_';
-const TOKEN_SECRET_LENGTH = 26;
-const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
 export interface FargateByoProfile {
   awsRoleArn: string;
@@ -55,36 +50,10 @@ export interface FargateLaunchResult {
 }
 
 /**
- * Generate + persist an ephemeral RunnerAgent row whose plaintext
- * token is returned exactly once. Caller is responsible for not
- * logging the plaintext.
+ * Re-export so existing callers (and tests) keep working without
+ * an import change. New code should import from `./agent-tokens`.
  */
-export async function mintEphemeralAgent(args: {
-  organizationId: string;
-  organizationSlug: string;
-  stepId: string;
-}): Promise<{ token: string; agentId: string }> {
-  const buf = randomBytes(TOKEN_SECRET_LENGTH);
-  const secret = Array.from(buf, (b) => BASE32[b & 0x1f]!).join('');
-  const token = `${TOKEN_PREFIX}${args.organizationSlug}_${secret}`;
-  const tokenHash = createHash('sha256').update(token).digest('hex');
-  const prefix = token.slice(0, `${TOKEN_PREFIX}${args.organizationSlug}_`.length + 6);
-
-  const row = await withSystem((tx) =>
-    tx.runnerAgent.create({
-      data: {
-        organizationId: args.organizationId,
-        name: `fargate-step-${args.stepId}`,
-        tokenHash,
-        prefix,
-        // No createdByUserId — this is a system-generated agent for
-        // a Fargate dispatch. The agents settings UI can filter
-        // these out by name pattern.
-      },
-    }),
-  );
-  return { token, agentId: row.id };
-}
+export { mintEphemeralAgent };
 
 /**
  * Assume the user's IAM role + launch the ECS task. Doesn't wait
@@ -104,6 +73,7 @@ export async function launchFargateAgent(
     organizationId,
     organizationSlug,
     stepId,
+    source: 'fargate',
   });
 
   // Lazy-load the SDK clients so the unsandboxed instance-builtin

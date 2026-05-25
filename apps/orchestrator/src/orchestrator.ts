@@ -125,23 +125,29 @@ export class Orchestrator {
       return;
     }
 
-    if (kind === 'agent' || kind === 'fargate_byo') {
-      // V2.ag step 4 + #786: the supervisor runs `runStep` with an
-      // HttpSandboxDriver bound to this step. For `agent` the user
-      // is running their own `mergecrew/runner-agent` container;
-      // for `fargate_byo` the supervisor launches an ECS task in
-      // the user's AWS account that runs the same image.
+    if (
+      kind === 'agent' ||
+      kind === 'fargate_byo' ||
+      kind === 'github_actions'
+    ) {
+      // V2.ag (steps 4 + 6 + 7 / ADR-0009 / #786 / #772): all three
+      // remote-agent kinds dispatch identically from here. The
+      // supervisor reads the executor marker and does any
+      // pre-runStep setup (ECS launch for fargate-byo, GHA
+      // workflow_dispatch for github-actions) before constructing
+      // HttpSandboxDriver.
       //
-      // Both kinds dispatch identically from here:
-      //   - runner.step.instance (BullMQ) → supervisor consumes,
-      //     executor marker selects the right pre-runStep setup.
-      //   - runner-agent:queue:<orgId> (raw list) → agent /poll
-      //     picks up the claim and switches to sandbox-ops mode.
-      //
-      // The executor marker distinguishes the two on the supervisor
-      // side (the ECS launch is the only delta).
+      //   - runner.step.instance (BullMQ) → supervisor consumes.
+      //   - runner-agent:queue:<orgId> (raw list) → the agent that
+      //     gets launched picks up the claim and switches to
+      //     sandbox-ops mode.
       const agentKey = this.agentQueueKey(args.organizationId);
-      const executor = kind === 'fargate_byo' ? 'fargate-byo' : 'agent';
+      const executor =
+        kind === 'fargate_byo'
+          ? 'fargate-byo'
+          : kind === 'github_actions'
+          ? 'github-actions'
+          : 'agent';
       this.deps.logger.info(
         {
           organizationId: args.organizationId,
@@ -161,9 +167,8 @@ export class Orchestrator {
       return;
     }
 
-    // `none`, `github_actions` — no consumer yet (the latter is
-    // tracked as #772). Fail closed instead of stuffing a queue
-    // with jobs that will never be picked up.
+    // `none` — no working consumer; fail closed instead of stuffing
+    // a queue with jobs that will never be picked up.
     await this.failStepNoRunner(args, kind);
   }
 

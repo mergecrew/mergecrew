@@ -34,6 +34,7 @@ interface ProfileResponse {
   fargateSecurityGroups: string[];
   githubRepoFullName: string | null;
   githubWorkflowFileName: string | null;
+  githubTokenConfigured: boolean;
   agents: AgentSummary[];
 }
 
@@ -54,7 +55,7 @@ const KIND_DESC: Record<ProfileKind, string> = {
   fargate_byo:
     'Execute steps as ECS tasks in your own AWS account via STS role assumption. No long-lived AWS keys are stored.',
   github_actions:
-    'Dispatch steps to a workflow_dispatch trigger in a repo you own. Coming in v1.1.',
+    'Dispatch steps to a workflow_dispatch trigger in a repo you own. The agent runs inside a GitHub-hosted runner; you pay for nothing on the deployment side.',
 };
 
 function parseCsvList(v: string): string[] {
@@ -70,7 +71,15 @@ async function updateProfileAction(formData: FormData) {
   const kind = String(formData.get('kind') ?? '') as ProfileKind;
   if (!kind) return;
   const body: Record<string, unknown> = { kind };
-  for (const field of ['awsRoleArn', 'awsRegion', 'fargateCluster', 'fargateTaskDefinition']) {
+  for (const field of [
+    'awsRoleArn',
+    'awsRegion',
+    'fargateCluster',
+    'fargateTaskDefinition',
+    'githubRepoFullName',
+    'githubWorkflowFileName',
+    'githubPat',
+  ]) {
     const v = String(formData.get(field) ?? '').trim();
     if (v) body[field] = v;
   }
@@ -252,12 +261,11 @@ export default async function RunnerProfilePage({
               {allKinds.map((k) => {
                 const disabled =
                   k === 'instance_builtin' && !profile.isTrustedForInstanceBuiltin;
-                const isComingSoon = k === 'github_actions';
                 return (
                   <label
                     key={k}
                     className={`flex items-start gap-3 rounded border p-3 ${
-                      disabled || isComingSoon
+                      disabled
                         ? 'opacity-50 cursor-not-allowed'
                         : 'cursor-pointer hover:border-accent'
                     } ${profile.kind === k ? 'border-accent' : 'border-zinc-200 dark:border-zinc-700'}`}
@@ -267,7 +275,7 @@ export default async function RunnerProfilePage({
                       name="kind"
                       value={k}
                       defaultChecked={profile.kind === k}
-                      disabled={disabled || isComingSoon}
+                      disabled={disabled}
                       className="mt-1"
                     />
                     <div>
@@ -277,9 +285,6 @@ export default async function RunnerProfilePage({
                           <span className="ml-2 text-xs text-zinc-500">
                             (not trusted — contact operator)
                           </span>
-                        )}
-                        {isComingSoon && (
-                          <span className="ml-2 text-xs text-zinc-500">(coming v1.1)</span>
                         )}
                       </div>
                       <div className="text-xs text-zinc-500">{KIND_DESC[k]}</div>
@@ -377,6 +382,66 @@ export default async function RunnerProfilePage({
                   <code>sts:AssumeRole</code> with the external ID above, and launches an
                   ECS task running <code>mergecrew/runner-agent</code> with the token in env.
                   No long-lived AWS keys are stored on the deployment.
+                </p>
+              </div>
+            </details>
+            <details className="text-xs text-zinc-500">
+              <summary className="cursor-pointer">
+                GitHub Actions configuration (required for the <code>github_actions</code> kind)
+              </summary>
+              <div className="mt-2 space-y-2">
+                <label className="block">
+                  <span>Repo (owner/repo)</span>
+                  <input
+                    name="githubRepoFullName"
+                    defaultValue={profile.githubRepoFullName ?? ''}
+                    placeholder="acme/my-repo"
+                    className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+                  />
+                </label>
+                <label className="block">
+                  <span>Workflow file</span>
+                  <input
+                    name="githubWorkflowFileName"
+                    defaultValue={profile.githubWorkflowFileName ?? ''}
+                    placeholder="mergecrew-runner.yml"
+                    className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+                  />
+                </label>
+                <label className="block">
+                  <span>
+                    GitHub PAT
+                    {profile.githubTokenConfigured ? (
+                      <span className="ml-2 rounded bg-green-100 px-1.5 py-0.5 text-[11px] text-green-800 dark:bg-green-900/30 dark:text-green-300">
+                        configured
+                      </span>
+                    ) : null}
+                  </span>
+                  <input
+                    type="password"
+                    name="githubPat"
+                    placeholder={
+                      profile.githubTokenConfigured
+                        ? 'leave blank to keep the existing token'
+                        : 'ghp_… (repo + workflow scopes)'
+                    }
+                    autoComplete="off"
+                    className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+                  />
+                </label>
+                <p className="text-zinc-500">
+                  Dispatch flow: supervisor mints a per-step agent token, calls{' '}
+                  <code>workflow_dispatch</code> on the repo with{' '}
+                  <code>mergecrewStepId</code>, <code>mergecrewAgentToken</code>, and{' '}
+                  <code>mergecrewApiUrl</code> as inputs. The workflow runs{' '}
+                  <code>mergecrew/runner-agent</code> with those inputs as env. See{' '}
+                  <Link
+                    href="https://github.com/mergecrew/mergecrew/blob/main/docs/03-infrastructure/36-runner-github-actions.md"
+                    className="text-accent underline-offset-[3px] hover:underline"
+                  >
+                    36-runner-github-actions.md
+                  </Link>{' '}
+                  for the example workflow YAML.
                 </p>
               </div>
             </details>
