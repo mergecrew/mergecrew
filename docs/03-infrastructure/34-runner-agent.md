@@ -6,7 +6,11 @@ Architectural rationale lives in [ADR-0002](../adrs/0002-per-org-runner-profile.
 
 ## Status (V2.af)
 
-The **protocol scaffolding** ships in #766 — long-poll, heartbeat, events, outcome — end-to-end and visible in the run timeline. The **agent-side executor is a stub**: it acknowledges the job and immediately reports `byo_executor_not_implemented`. Real execution (sandbox + skill orchestration) lands in follow-up [#782](https://github.com/mergecrew/mergecrew/issues/782).
+The **protocol scaffolding** ships in #766 — long-poll, heartbeat, events, outcome — end-to-end and visible in the run timeline.
+
+**Agent-side executor (V2.ag step 3, ADR-0009 Architecture A):** the agent is now the remote `SandboxDriver` for the step. When `/poll` returns a job, the agent switches to long-polling `/sandbox-ops-poll`, executes each op (`start`, `exec`, `readFile`, `writeFile`, `kill`, `stop`) against a local `ProcessDriver` or `DockerDriver`, and POSTs results back. The supervisor runs `runStep` deployment-side; the agent's job is to be its sandbox.
+
+**Supervisor wiring (V2.ag step 4):** until the supervisor is taught to route agent-profile steps through `HttpSandboxDriver` instead of the in-process driver, no sandbox ops actually arrive at the agent. The orchestrator continues to fail agent-profile steps closed at dispatch. Step 4 lands the wiring + an E2E test.
 
 What this means for now:
 

@@ -6,7 +6,9 @@ See [ADR-0002](../../docs/adrs/0002-per-org-runner-profile.md) and [ADR-0003](..
 
 ## Status
 
-**Skeleton release (#764).** The agent currently supports only `--dry-run`, which validates config and exits. Job pull + execution arrive in [#766](https://github.com/mergecrew/mergecrew/issues/766). Don't deploy this image yet for live runs.
+Per [ADR-0009](../../docs/adrs/0009-byo-agent-as-remote-sandbox-driver.md), the agent is the **remote `SandboxDriver`** for steps owned by orgs whose `runner_profile.kind = 'agent'`. The deployment-side supervisor (`apps/runner`) runs the agent loop (`runStep`) and marshals each shell command / file op into a POST that the agent picks up via long-poll, executes locally (using a process or docker driver), and replies to.
+
+**Status:** protocol + agent loop wired end-to-end (V2.ag steps 1–3). The supervisor-side wiring that routes agent-profile steps through `HttpSandboxDriver` instead of an in-process driver lands in V2.ag step 4 (in progress). Until step 4 lands, agent-profile steps land at the stub fail-closed boundary on the orchestrator side.
 
 ## Quickstart
 
