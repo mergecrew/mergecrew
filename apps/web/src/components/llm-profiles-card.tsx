@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { Card, Button } from '@/components/ui';
+import { Button } from '@/components/ui';
 
 interface Profile {
   id: string;
@@ -55,8 +55,11 @@ export function LlmProfilesCard({ profiles, availableRefs = [], canEdit, onCreat
     });
   };
 
+  // No outer <Card> here — the settings page already wraps this in
+  // a padded Card surface. Wrapping again rendered a nested unpadded
+  // card inside the padded one.
   return (
-    <Card>
+    <div>
       <div className="flex items-baseline justify-between">
         <div>
           <h2 className="font-medium">LLM profiles</h2>
@@ -182,7 +185,7 @@ export function LlmProfilesCard({ profiles, availableRefs = [], canEdit, onCreat
           </li>
         )}
       </ul>
-    </Card>
+    </div>
   );
 }
 

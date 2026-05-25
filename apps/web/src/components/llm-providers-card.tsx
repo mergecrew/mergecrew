@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { Camera } from 'lucide-react';
-import { Card, Button } from '@/components/ui';
+import { Button } from '@/components/ui';
 
 type Kind = 'anthropic' | 'openai' | 'bedrock' | 'ollama';
 
@@ -97,8 +97,11 @@ export function LlmProvidersCard({
     });
   };
 
+  // No outer <Card> here — the settings page already wraps this in
+  // a padded Card surface (apps/web/src/app/orgs/[slug]/(org)/settings/page.tsx).
+  // Wrapping again rendered a nested unpadded card inside the padded one.
   return (
-    <Card>
+    <div>
       <div className="flex items-baseline justify-between">
         <h2 className="font-medium">LLM providers</h2>
         {canEdit && !creating && (
@@ -245,7 +248,7 @@ export function LlmProvidersCard({
           </li>
         )}
       </ul>
-    </Card>
+    </div>
   );
 }
 
