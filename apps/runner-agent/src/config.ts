@@ -1,16 +1,29 @@
 /**
- * Agent config resolution (V2.af / #764).
+ * Agent config resolution (V2.af / #764 + #774).
  *
- * Flags override env, env overrides defaults. Token + API URL are
- * required for any non-dry-run mode; the agent refuses to start
- * without them.
+ * Flags override env, env overrides defaults. At least one token +
+ * an API URL are required for any non-dry-run mode; the agent
+ * refuses to start without them.
  *
- * Token is hashed at the server (ADR-0004); the agent only ever holds
- * the plaintext bearer to attach as `Authorization: Bearer <token>`.
+ * Multi-token (#774): one process can host pollers for multiple
+ * orgs simultaneously — e.g. a homelab box that serves both your
+ * personal + work tenants. Tokens still belong to exactly one org
+ * each; the agent runs one independent poller per token. Specify
+ * multiple by repeating `--token`, or by passing
+ * `MERGECREW_AGENT_TOKENS=a,b,c`. The legacy singular
+ * `MERGECREW_AGENT_TOKEN` env continues to work for one-token
+ * deployments.
+ *
+ * Token is hashed at the server (ADR-0004); the agent only ever
+ * holds the plaintext bearer to attach as `Authorization: Bearer
+ * <token>`.
  */
 export interface AgentConfig {
-  /** Bearer token issued from the org settings UI (#765). */
-  token: string;
+  /**
+   * One or more bearer tokens (one per org). Each token spawns its
+   * own poller that loops independently of the others.
+   */
+  tokens: string[];
   /** API base URL — e.g. https://mergecrew.dev or http://localhost:4000. */
   apiUrl: string;
   /** Friendly name surfaced in the org's agent list. Defaults to os.hostname(). */
@@ -19,7 +32,10 @@ export interface AgentConfig {
   driver: 'process' | 'docker';
   /** Print the resolved config and exit. */
   dryRun: boolean;
-  /** Poll concurrency — how many jobs the agent processes in parallel. */
+  /**
+   * Per-token job concurrency — how many jobs each poller will
+   * process simultaneously. Total in-flight = concurrency × tokens.length.
+   */
   concurrency: number;
 }
 
@@ -40,12 +56,44 @@ function flagValue(argv: string[], name: string): string | undefined {
   return undefined;
 }
 
+function allFlagValues(argv: string[], name: string): string[] {
+  // Collects every occurrence of `--name value` / `--name=value`.
+  const out: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === undefined) continue;
+    if (a === name) {
+      const v = argv[i + 1];
+      if (v !== undefined) out.push(v);
+    } else if (a.startsWith(`${name}=`)) {
+      out.push(a.slice(name.length + 1));
+    }
+  }
+  return out;
+}
+
 function flagPresent(argv: string[], name: string): boolean {
   return argv.includes(name);
 }
 
 export function resolveAgentConfig({ argv, env, hostname }: ResolveArgs): AgentConfig {
-  const token = flagValue(argv, '--token') ?? env.MERGECREW_AGENT_TOKEN ?? '';
+  // Token resolution (#774):
+  //   1. Repeated --token / --token= on the CLI wins entirely.
+  //   2. Otherwise MERGECREW_AGENT_TOKENS (comma-separated) wins.
+  //   3. Otherwise the legacy singular MERGECREW_AGENT_TOKEN.
+  //   4. Default = []. assertConfigUsable raises if non-dry-run.
+  const cliTokens = allFlagValues(argv, '--token');
+  let tokens: string[];
+  if (cliTokens.length > 0) {
+    tokens = cliTokens;
+  } else if (env.MERGECREW_AGENT_TOKENS) {
+    tokens = env.MERGECREW_AGENT_TOKENS.split(',').map((s) => s.trim()).filter(Boolean);
+  } else if (env.MERGECREW_AGENT_TOKEN) {
+    tokens = [env.MERGECREW_AGENT_TOKEN];
+  } else {
+    tokens = [];
+  }
+
   const apiUrl =
     flagValue(argv, '--api-url') ??
     env.MERGECREW_API_URL ??
@@ -63,7 +111,7 @@ export function resolveAgentConfig({ argv, env, hostname }: ResolveArgs): AgentC
     1,
     Number(flagValue(argv, '--concurrency') ?? env.MERGECREW_AGENT_CONCURRENCY ?? '1'),
   );
-  return { token, apiUrl, name, driver: driverRaw, dryRun, concurrency };
+  return { tokens, apiUrl, name, driver: driverRaw, dryRun, concurrency };
 }
 
 /**
@@ -81,7 +129,9 @@ export function tokenPrefix(token: string): string {
 /** Assertion suitable for non-dry-run startup. Throws on missing required fields. */
 export function assertConfigUsable(cfg: AgentConfig): void {
   const missing: string[] = [];
-  if (!cfg.token) missing.push('--token (or MERGECREW_AGENT_TOKEN)');
+  if (cfg.tokens.length === 0) {
+    missing.push('--token / MERGECREW_AGENT_TOKEN(S) (at least one)');
+  }
   if (!cfg.apiUrl) missing.push('--api-url (or MERGECREW_API_URL)');
   if (missing.length > 0) {
     throw new Error(`missing required config: ${missing.join(', ')}`);
