@@ -95,7 +95,12 @@ export class RunService {
       }),
     );
     const profileKind = profile?.kind ?? 'none';
-    const supportedKinds = new Set(['instance_builtin', 'agent', 'fargate_byo']);
+    const supportedKinds = new Set([
+      'instance_builtin',
+      'agent',
+      'fargate_byo',
+      'github_actions',
+    ]);
     if (!supportedKinds.has(profileKind)) {
       throw new ValidationError(
         profileKind === 'none'

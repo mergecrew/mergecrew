@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { ValidationError } from '@mergecrew/domain';
+import { CryptoService } from '../../common/crypto.service.js';
 import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
 import { isTrustedOrgSlug } from '../../common/trusted-orgs.js';
@@ -20,6 +21,10 @@ export interface UpdateProfileInput {
   fargateTaskDefinition?: string;
   fargateSubnets?: string[];
   fargateSecurityGroups?: string[];
+  githubRepoFullName?: string;
+  githubWorkflowFileName?: string;
+  /** Plaintext PAT — server envelope-encrypts before persisting. */
+  githubPat?: string;
 }
 
 /**
@@ -34,6 +39,7 @@ export class RunnerProfileService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenant: TenantContextService,
+    private readonly crypto: CryptoService,
   ) {}
 
   async get() {
@@ -68,6 +74,10 @@ export class RunnerProfileService {
         fargateSecurityGroups: profile?.fargateSecurityGroups ?? [],
         githubRepoFullName: profile?.githubRepoFullName ?? null,
         githubWorkflowFileName: profile?.githubWorkflowFileName ?? null,
+        // Surface only WHETHER a token is stored, never the ciphertext
+        // or the plaintext (#772). The UI uses this to decide whether
+        // the "rotate PAT" field is required.
+        githubTokenConfigured: !!profile?.githubTokenCiphertext,
         agents,
       };
     });
@@ -103,10 +113,43 @@ export class RunnerProfileService {
       );
     }
 
+    // For github_actions (#772), validate the repo/workflow are
+    // present + the PAT actually has access. The PAT goes out
+    // exactly once over HTTPS to GitHub's API; if the validation
+    // call succeeds we trust the rest of the dispatch pipeline.
+    if (input.kind === 'github_actions') {
+      if (!input.githubRepoFullName || !input.githubWorkflowFileName) {
+        throw new ValidationError(
+          'github_actions requires githubRepoFullName and githubWorkflowFileName',
+        );
+      }
+      // PAT is required on first save of github_actions OR when the
+      // caller is explicitly rotating. If unset on update we keep
+      // the existing ciphertext.
+      const existing = await this.prisma.withTenant(ctx.organizationId, (tx) =>
+        tx.runnerProfile.findUnique({
+          where: { organizationId: ctx.organizationId },
+          select: { githubTokenCiphertext: true },
+        }),
+      );
+      const willHavePat = input.githubPat || existing?.githubTokenCiphertext;
+      if (!willHavePat) {
+        throw new ValidationError(
+          'github_actions requires githubPat on first save — paste a GitHub PAT with repo + workflow scopes',
+        );
+      }
+      if (input.githubPat) {
+        await assertGithubRepoAccessible(
+          input.githubRepoFullName,
+          input.githubPat,
+        );
+      }
+    }
+
     return this.prisma.withTenant(ctx.organizationId, async (tx) => {
       const existing = await tx.runnerProfile.findUnique({
         where: { organizationId: ctx.organizationId },
-        select: { kind: true, awsExternalId: true },
+        select: { kind: true, awsExternalId: true, githubTokenCiphertext: true },
       });
       const previousKind = existing?.kind ?? 'none';
 
@@ -116,6 +159,13 @@ export class RunnerProfileService {
         input.kind === 'fargate_byo'
           ? existing?.awsExternalId ?? randomUUID()
           : existing?.awsExternalId ?? null;
+
+      // Encrypt the PAT if the caller supplied one this turn;
+      // otherwise reuse whatever's already on the row (i.e. PATCHes
+      // that don't rotate the token don't have to resend it).
+      const nextGithubCiphertext = input.githubPat
+        ? this.crypto.encrypt(input.githubPat)
+        : existing?.githubTokenCiphertext ?? null;
 
       const upserted = await tx.runnerProfile.upsert({
         where: { organizationId: ctx.organizationId },
@@ -129,6 +179,9 @@ export class RunnerProfileService {
           fargateSubnets: input.fargateSubnets ?? [],
           fargateSecurityGroups: input.fargateSecurityGroups ?? [],
           awsExternalId: nextExternalId,
+          githubRepoFullName: input.githubRepoFullName ?? null,
+          githubWorkflowFileName: input.githubWorkflowFileName ?? null,
+          githubTokenCiphertext: nextGithubCiphertext,
         },
         update: {
           kind: input.kind,
@@ -143,6 +196,9 @@ export class RunnerProfileService {
             ? { fargateSecurityGroups: input.fargateSecurityGroups }
             : {}),
           awsExternalId: nextExternalId,
+          githubRepoFullName: input.githubRepoFullName ?? null,
+          githubWorkflowFileName: input.githubWorkflowFileName ?? null,
+          githubTokenCiphertext: nextGithubCiphertext,
         },
       });
 
@@ -165,7 +221,45 @@ export class RunnerProfileService {
         fargateTaskDefinition: upserted.fargateTaskDefinition,
         fargateSubnets: upserted.fargateSubnets,
         fargateSecurityGroups: upserted.fargateSecurityGroups,
+        githubRepoFullName: upserted.githubRepoFullName,
+        githubWorkflowFileName: upserted.githubWorkflowFileName,
+        // We never echo the PAT or its ciphertext back. The presence
+        // of a stored token is surfaced via a boolean in the GET
+        // response (the read endpoint adds it below).
       };
     });
+  }
+}
+
+/**
+ * Calls `GET /repos/{full}` with the user-supplied PAT to verify it
+ * has access to the target repo. Surfacing a clear "your PAT can't
+ * reach this repo" error at save time beats failing on dispatch.
+ */
+async function assertGithubRepoAccessible(
+  repoFullName: string,
+  pat: string,
+): Promise<void> {
+  const res = await fetch(`https://api.github.com/repos/${repoFullName}`, {
+    headers: {
+      authorization: `Bearer ${pat}`,
+      accept: 'application/vnd.github+json',
+      'user-agent': 'mergecrew-api',
+    },
+  });
+  if (res.status === 404) {
+    throw new ValidationError(
+      `github_actions: repo ${repoFullName} not found or PAT lacks access (verify the PAT has the 'repo' scope)`,
+    );
+  }
+  if (res.status === 401 || res.status === 403) {
+    throw new ValidationError(
+      `github_actions: PAT rejected by GitHub (${res.status}). Confirm the token has 'repo' + 'workflow' scopes.`,
+    );
+  }
+  if (!res.ok) {
+    throw new ValidationError(
+      `github_actions: GitHub repo check returned ${res.status} ${res.statusText}`,
+    );
   }
 }

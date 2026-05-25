@@ -40,6 +40,7 @@ describe('mintEphemeralAgent', () => {
       organizationId: 'org-1',
       organizationSlug: 'acme',
       stepId: 'step-xyz',
+      source: 'fargate',
     });
     expect(r.token).toMatch(/^mca_acme_[A-Z2-7]{26}$/);
     expect(r.agentId).toBe('fake-agent-id');
@@ -60,16 +61,18 @@ describe('mintEphemeralAgent', () => {
     }));
     // Re-import after re-mocking.
     vi.resetModules();
-    const { mintEphemeralAgent: mintFresh } = await import('../src/fargate-byo-launcher.js');
+    const { mintEphemeralAgent: mintFresh } = await import('../src/agent-tokens.js');
     await mintFresh({
       organizationId: 'org-1',
       organizationSlug: 'acme',
       stepId: 'step-a',
+      source: 'fargate',
     });
     await mintFresh({
       organizationId: 'org-1',
       organizationSlug: 'acme',
       stepId: 'step-b',
+      source: 'fargate',
     });
     expect(created[0]!.data.name).toBe('fargate-step-step-a');
     expect(created[1]!.data.name).toBe('fargate-step-step-b');

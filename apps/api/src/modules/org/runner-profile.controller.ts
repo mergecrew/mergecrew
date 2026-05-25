@@ -44,6 +44,29 @@ class UpdateProfileDto {
 
   @IsOptional()
   fargateSecurityGroups?: string[];
+
+  // github_actions fields (#772).
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  githubRepoFullName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  githubWorkflowFileName?: string;
+
+  /**
+   * GitHub PAT (classic or fine-grained) with `repo` + `workflow`
+   * scope. Posted in plaintext on PATCH; the server immediately
+   * envelope-encrypts and persists the ciphertext (ADR-0007). Only
+   * the sha256 is computable from the stored blob — same posture
+   * as project secrets / slack webhooks.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  githubPat?: string;
 }
 
 /**

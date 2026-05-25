@@ -17,6 +17,14 @@ export class PrismaService implements OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
-    await getPrisma().$disconnect();
+    // Prisma 7 (#794): getPrisma() throws if DATABASE_URL is unset.
+    // openapi-export instantiates NestJS modules without a DB env
+    // and triggers onModuleDestroy on every provider during
+    // shutdown — guard so a no-DB lifecycle doesn't crash.
+    try {
+      await getPrisma().$disconnect();
+    } catch {
+      /* DB not configured for this process — nothing to disconnect. */
+    }
   }
 }

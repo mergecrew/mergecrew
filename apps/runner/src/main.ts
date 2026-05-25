@@ -16,6 +16,7 @@ import { cleanupWorkspace, WORKSPACE_CLEANUP_QUEUE } from './workspace.js';
 import { buildSandboxDriver, buildSandboxDriverAsync, HttpSandboxDriver } from '@mergecrew/sandbox-driver';
 import { withSystem } from '@mergecrew/db';
 import { launchFargateAgent } from './fargate-byo-launcher.js';
+import { launchGithubActionsWorkflow } from './github-actions-launcher.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
@@ -108,25 +109,35 @@ type RunnerStepJob = {
   /**
    * V2.ag (ADR-0009). Selects the SandboxDriver shape per-step.
    *
-   *   'local'       (default) — RUNNER_SANDBOX-selected host driver.
-   *   'agent'       — HttpSandboxDriver against a BYO agent that
-   *                   the user runs on their own machine. The
-   *                   orchestrator LPUSHes a claim onto the
-   *                   org's agent queue before enqueueing here.
-   *   'fargate-byo' — Same as 'agent' from the runStep perspective,
-   *                   but the supervisor first launches an ECS
-   *                   task in the user's AWS account that runs
-   *                   `mergecrew/runner-agent` (#786).
+   *   'local'           (default) — RUNNER_SANDBOX-selected host driver.
+   *   'agent'           — HttpSandboxDriver against a BYO agent that
+   *                       the user runs on their own machine. The
+   *                       orchestrator LPUSHes a claim onto the
+   *                       org's agent queue before enqueueing here.
+   *   'fargate-byo'     — Same as 'agent' from the runStep view, but
+   *                       the supervisor first launches an ECS task
+   *                       in the user's AWS account that runs
+   *                       `mergecrew/runner-agent` (#786).
+   *   'github-actions'  — Same as 'agent' from the runStep view, but
+   *                       the supervisor first calls
+   *                       `workflow_dispatch` on the user's repo to
+   *                       launch a one-shot agent inside a GHA
+   *                       runner (#772).
    */
-  executor?: 'local' | 'agent' | 'fargate-byo';
+  executor?: 'local' | 'agent' | 'fargate-byo' | 'github-actions';
 };
 
 async function handleStepJob(data: RunnerStepJob) {
   const executor = data.executor ?? 'local';
+  const isRemoteAgent =
+    executor === 'agent' || executor === 'fargate-byo' || executor === 'github-actions';
   let driver;
   let fargateTaskArn: string | undefined;
   if (executor === 'fargate-byo') {
     fargateTaskArn = await launchFargateForStep(data);
+    driver = buildAgentDriverForStep(data.stepId);
+  } else if (executor === 'github-actions') {
+    await launchGithubActionsForStep(data);
     driver = buildAgentDriverForStep(data.stepId);
   } else if (executor === 'agent') {
     driver = buildAgentDriverForStep(data.stepId);
@@ -136,7 +147,10 @@ async function handleStepJob(data: RunnerStepJob) {
   try {
     const outcome = await runStep({
       ...data,
-      executor: executor === 'fargate-byo' ? 'agent' : executor,
+      // From runStep's perspective all three remote-agent paths are
+      // identical (it talks to HttpSandboxDriver). The supervisor
+      // wrinkles (ECS launch, GHA dispatch) happen above.
+      executor: isRemoteAgent ? 'agent' : executor,
       eventlog,
       logger,
       cancellation,
@@ -145,7 +159,7 @@ async function handleStepJob(data: RunnerStepJob) {
     await replyQueue.add('reply', { ...data, outcome }, { removeOnComplete: 1000 });
     return outcome;
   } finally {
-    if (executor === 'agent' || executor === 'fargate-byo') {
+    if (isRemoteAgent) {
       // V2.ag: signal the BYO agent's sandbox-ops loop to exit
       // immediately. KEY MUST MATCH `opsKey()` in
       // apps/api/src/modules/runner-agent/sandbox-ops.service.ts.
@@ -170,6 +184,54 @@ async function handleStepJob(data: RunnerStepJob) {
       );
     }
   }
+}
+
+async function launchGithubActionsForStep(data: RunnerStepJob): Promise<void> {
+  const apiBaseUrl = (process.env.MERGECREW_API_BASE_URL ?? process.env.API_BASE_URL ?? '').trim();
+  if (!apiBaseUrl) {
+    throw new Error(
+      'MERGECREW_API_BASE_URL is required on the supervisor to dispatch github-actions workflows',
+    );
+  }
+  const profile = await withSystem((tx) =>
+    tx.runnerProfile.findUnique({
+      where: { organizationId: data.organizationId },
+      select: {
+        kind: true,
+        githubRepoFullName: true,
+        githubWorkflowFileName: true,
+        githubTokenCiphertext: true,
+        organization: { select: { slug: true } },
+      },
+    }),
+  );
+  if (!profile || profile.kind !== 'github_actions') {
+    throw new Error(
+      `github-actions: org ${data.organizationId} is not on the github_actions profile (got ${profile?.kind ?? 'none'})`,
+    );
+  }
+  if (
+    !profile.githubRepoFullName ||
+    !profile.githubWorkflowFileName ||
+    !profile.githubTokenCiphertext
+  ) {
+    throw new Error(
+      'github-actions: profile is missing required fields (githubRepoFullName / githubWorkflowFileName / githubTokenCiphertext)',
+    );
+  }
+  await launchGithubActionsWorkflow({
+    organizationId: data.organizationId,
+    organizationSlug: profile.organization.slug,
+    stepId: data.stepId,
+    runId: data.runId,
+    profile: {
+      githubRepoFullName: profile.githubRepoFullName,
+      githubWorkflowFileName: profile.githubWorkflowFileName,
+      githubTokenCiphertext: profile.githubTokenCiphertext,
+    },
+    apiBaseUrl,
+    logger,
+  });
 }
 
 async function launchFargateForStep(data: RunnerStepJob): Promise<string> {
