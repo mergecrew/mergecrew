@@ -161,11 +161,12 @@ services:
       postgres: { condition: service_healthy }
     # The hoisted-linker pnpm install drops the prisma binary into
     # packages/db's own node_modules rather than at the root .bin
-    # (since `prisma` isn't in `.npmrc`'s public-hoist-pattern). The
-    # Dockerfile sets WORKDIR to /app/apps/api, so go up to /app to
-    # find packages/db.
-    working_dir: /app
-    command: ['packages/db/node_modules/.bin/prisma', 'migrate', 'deploy', '--schema', 'packages/db/prisma/schema.prisma']
+    # (since `prisma` isn't in `.npmrc`'s public-hoist-pattern). Run
+    # from packages/db so v7's CLI picks up `prisma.config.ts` from
+    # CWD — that's where the migrate URL now lives (v7 removed
+    # `datasource.url` / `directUrl` from schema.prisma).
+    working_dir: /app/packages/db
+    command: ['node_modules/.bin/prisma', 'migrate', 'deploy']
     restart: 'no'
 
   # One-shot: seeds the price table + a `demo` org + `demo@mergecrew.local`
