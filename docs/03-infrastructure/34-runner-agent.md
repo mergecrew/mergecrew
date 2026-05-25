@@ -52,7 +52,9 @@ The agent will log `agent online` on first contact, then settle into the poll lo
 
 ## Protocol (for #782 implementors + debugging)
 
-Four endpoints, all authenticated with `Authorization: Bearer <agent-token>`:
+### Job-lifecycle endpoints (#766)
+
+Authenticated with `Authorization: Bearer <agent-token>`.
 
 | Endpoint                                       | Purpose                                                                                                                            |
 | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
@@ -60,6 +62,22 @@ Four endpoints, all authenticated with `Authorization: Bearer <agent-token>`:
 | `POST /v1/runner-agent/heartbeat`              | `{stepId}` body. Bumps `agent_steps.heartbeat_at`. The orchestrator's heartbeat sweeper considers a step live so long as this advances within its staleness threshold. |
 | `POST /v1/runner-agent/steps/:stepId/events`   | `{type, payload}`. v1 stores into the audit log; v1.1 (#782) will route into the Eventlog with `dailyRunId`/`workflowRunId` scope so the timeline picks events up live. |
 | `POST /v1/runner-agent/steps/:stepId/outcome`  | `{kind: 'completed' | 'failed' | 'cancelled', reason?, output?}`. Closes the step and enqueues an `orchestrator.step-reply` job so the workflow advances. |
+
+### Sandbox-op mediator (V2.ag / ADR-0009 step 2)
+
+Three endpoints, **two auth modes**: the supervisor uses the shared `MERGECREW_INTERNAL_TOKEN` for dispatch; the agent uses its bearer token for poll + result.
+
+| Endpoint                                                       | Auth                    | Purpose                                                                                                                                 |
+| -------------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /v1/runner-agent/sandbox-ops/:stepId/:op`                | `Bearer $INTERNAL_TOKEN`| Supervisor's `HttpSandboxDriver` calls this per op. Server generates `opId`, LPUSHes `{opId, op, args}` to `runner-agent:sandbox-ops:<stepId>`, BRPOPs `runner-agent:sandbox-results:<stepId>:<opId>` (max 15min), returns the agent's result envelope verbatim. |
+| `POST /v1/runner-agent/sandbox-ops-poll`                       | `Bearer <agent-token>`  | Body `{stepId, timeoutSec?}` (default 30s, capped at 30s). BRPOPs the per-step ops list. Returns `{kind:'idle'}` or `{kind:'op', opId, op, args}`. Validates the step belongs to the agent's org. |
+| `POST /v1/runner-agent/sandbox-ops/:stepId/:opId/result`       | `Bearer <agent-token>`  | Body `{ok: bool, result?, error?}`. LPUSHes the envelope onto the result list, unblocking the supervisor's BRPOP. Sets a 1h TTL on the key. |
+
+Why two queues per step (ops + per-op result) instead of one shared channel: results are correlated by `opId`, and the supervisor needs to wait on **its specific** dispatch, not whichever ops finish first. A per-`opId` result list gives BRPOP exactly one thing to wake on.
+
+Why the supervisor calls the API at all (rather than going directly to Redis): keeps a single auth + audit surface for everything that crosses the boundary, lets the same code path serve self-host deployments where the supervisor and API are on different hosts.
+
+The supervisor-side wiring (replacing the in-process `SandboxDriver` with `HttpSandboxDriver` for `kind=agent` steps) lands in a subsequent PR (V2.ag step 4).
 
 ## Operations
 

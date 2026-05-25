@@ -2329,6 +2329,48 @@
         ]
       }
     },
+    "/v1/runner-agent/sandbox-ops/{stepId}/{op}": {
+      "post": {
+        "operationId": "SandboxOpsController_dispatch",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "SandboxOps"
+        ]
+      }
+    },
+    "/v1/runner-agent/sandbox-ops-poll": {
+      "post": {
+        "operationId": "SandboxOpsController_poll",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "SandboxOps"
+        ]
+      }
+    },
+    "/v1/runner-agent/sandbox-ops/{stepId}/{opId}/result": {
+      "post": {
+        "operationId": "SandboxOpsController_postResult",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "SandboxOps"
+        ]
+      }
+    },
     "/v1/orgs/{slug}/webhooks": {
       "post": {
         "operationId": "OutboundWebhookController_create",

@@ -150,6 +150,12 @@ services:
         # org for the instance-builtin runner profile.
         MERGECREW_TRUSTED_ORG_SLUGS: '${MERGECREW_TRUSTED_ORG_SLUGS:-}'
         MERGECREW_OWNER_ORG_SLUG: '${MERGECREW_OWNER_ORG_SLUG:-}'
+        # Shared supervisor → API mediator secret (V2.ag / ADR-0009).
+        # Generate a random 32+ char string per deployment and set
+        # the same value here. Leave empty to disable the BYO
+        # executor mediator (the stub executor still surfaces a
+        # clear error).
+        MERGECREW_INTERNAL_TOKEN: '${MERGECREW_INTERNAL_TOKEN:-}'
     networks: [internal]
     depends_on:
       postgres: { condition: service_healthy }
