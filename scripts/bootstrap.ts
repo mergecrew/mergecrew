@@ -113,12 +113,15 @@ function runSeed(email: string): void {
 }
 
 async function upsertDefaultLlmProfile(): Promise<void> {
-  // Lazy import: the @prisma/client binary may not exist before migrate
-  // runs, and bootstrap is the only consumer of this code path. Keeping
-  // the import here means a fresh checkout's `pnpm bootstrap` doesn't
-  // crash on first parse.
+  // Lazy import: the generated @prisma/client may not exist before
+  // `prisma generate` has run, and bootstrap is the only consumer of this
+  // code path. Keeping the imports here means a fresh checkout's
+  // `pnpm bootstrap` doesn't crash on first parse.
   const { PrismaClient } = await import('@prisma/client');
-  const prisma = new PrismaClient();
+  const { PrismaPg } = await import('@prisma/adapter-pg');
+  const prisma = new PrismaClient({
+    adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }),
+  });
   try {
     const org = await prisma.organization.findUnique({ where: { slug: 'demo' } });
     if (!org) {

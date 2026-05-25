@@ -1,9 +1,10 @@
 /* eslint-disable no-console */
 import { createHash } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
+import { makePgAdapter } from './adapter.js';
 import { seedDemoProject } from './demo-project-seed.js';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({ adapter: makePgAdapter() });
 const API_KEY_PREFIX = 'mc_live_';
 
 async function main() {

@@ -23,13 +23,14 @@ import IORedis from 'ioredis';
 import { Queue, QueueEvents } from 'bullmq';
 import pino from 'pino';
 import { PrismaClient } from '@prisma/client';
+import { makePgAdapter } from '@mergecrew/db';
 import { Orchestrator } from '../src/orchestrator.js';
 import type { Eventlog } from '@mergecrew/eventlog';
 
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
 const TEST_PREFIX = `orch-test-${Date.now()}`;
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({ adapter: makePgAdapter() });
 const conn = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
 const eventlogStub = {
   emit: async () => undefined,

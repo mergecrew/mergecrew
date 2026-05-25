@@ -1,4 +1,5 @@
 import { Prisma, PrismaClient } from '@prisma/client';
+import { makePgAdapter } from './adapter.js';
 
 export type Tx = Prisma.TransactionClient;
 
@@ -14,6 +15,7 @@ let _systemPrisma: PrismaClient | null = null;
 export function getPrisma(): PrismaClient {
   if (_prisma) return _prisma;
   _prisma = new PrismaClient({
+    adapter: makePgAdapter(),
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
   });
   return _prisma;
@@ -54,7 +56,7 @@ export function getSystemPrisma(): PrismaClient {
   const systemUrl = process.env.DATABASE_SYSTEM_URL ?? process.env.DATABASE_MIGRATE_URL;
   _systemPrisma = systemUrl
     ? new PrismaClient({
-        datasources: { db: { url: systemUrl } },
+        adapter: makePgAdapter({ url: systemUrl }),
         log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
       })
     : getPrisma();

@@ -1,4 +1,5 @@
 export * from './client.js';
+export { makePgAdapter } from './adapter.js';
 export { effectiveBaseBranch } from './connected-repo.js';
 export {
   computeMetricsRollups,

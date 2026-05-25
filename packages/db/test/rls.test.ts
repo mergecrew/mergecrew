@@ -16,6 +16,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PrismaClient } from '@prisma/client';
+import { makePgAdapter } from '../src/adapter.js';
 
 function appUrl(): string {
   if (process.env.DATABASE_APP_URL) return process.env.DATABASE_APP_URL;
@@ -31,8 +32,8 @@ function migratorUrl(): string {
   return process.env.DATABASE_URL ?? '';
 }
 
-const migratorClient = new PrismaClient({ datasources: { db: { url: migratorUrl() } } });
-const appClient = new PrismaClient({ datasources: { db: { url: appUrl() } } });
+const migratorClient = new PrismaClient({ adapter: makePgAdapter({ url: migratorUrl() }) });
+const appClient = new PrismaClient({ adapter: makePgAdapter({ url: appUrl() }) });
 
 const ORG_A_SLUG = `rls-test-a-${Date.now()}`;
 const ORG_B_SLUG = `rls-test-b-${Date.now()}`;
