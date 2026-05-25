@@ -4,16 +4,20 @@ The `fargate_byo` runner profile executes this org's steps as ECS tasks **in you
 
 Decision rationale: [ADR-0007](../adrs/0007-byo-cloud-credentials.md).
 
-## Status (V2.af)
+## Status
 
-You can **configure + save the profile** today through **Settings → Runner → BYO Fargate (your account)**:
+Working end-to-end as of V2.ag (#786). Configuration UI lives at **Settings → Runner → BYO Fargate (your account)**: role ARN, region, cluster, task definition, subnets, security groups. The per-org `awsExternalId` is generated on first save and shown back in the UI for pasting into your trust policy.
 
-- Role ARN, region, cluster, task definition, subnets, security groups.
-- Per-org `awsExternalId` is generated on first save and shown back in the UI for pasting into your trust policy.
+**What happens on dispatch:**
 
-The **dispatcher that actually launches the ECS task is not implemented yet** — the orchestrator currently fails any `fargate_byo` step closed with `runner_fargate_byo_not_supported` at dispatch time. Real execution lands in follow-up [#786](https://github.com/mergecrew/mergecrew/issues/786) alongside the agent-side executor work in [#782](https://github.com/mergecrew/mergecrew/issues/782).
+1. The orchestrator routes the step to the supervisor's queue with a `fargate-byo` executor marker (+ LPUSHes a claim onto the org's agent queue).
+2. The supervisor mints a fresh per-step runner-agent token, does `sts:AssumeRole` into your role using the external ID, and calls `ecs:RunTask` to launch a Fargate task running `mergecrew/runner-agent` with the token in env.
+3. The agent inside the task `/poll`s the claim, switches to sandbox-ops mode, and serves shell ops back to the supervisor.
+4. When `runStep` finishes, the supervisor pushes a `step-done` sentinel and the ECS task exits cleanly.
 
-The point of shipping the config flow now: operators can pre-provision the AWS-side IAM role + trust policy ahead of #786 landing.
+The token is **per-step ephemeral** — the deployment writes only its sha256 hash to `runner_agents`. No long-lived AWS keys are stored on the deployment either: every dispatch gets fresh 1-hour creds via STS.
+
+> **Trust note.** The agent token transits via ECS task env vars, visible to anyone in your AWS account with `ecs:DescribeTasks` on the cluster. For tighter posture, route the token through AWS Secrets Manager — tracked as a follow-up.
 
 ## Provisioning your AWS account
 
