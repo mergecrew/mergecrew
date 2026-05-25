@@ -10,7 +10,9 @@ The **protocol scaffolding** ships in #766 — long-poll, heartbeat, events, out
 
 **Agent-side executor (V2.ag step 3, ADR-0009 Architecture A):** the agent is now the remote `SandboxDriver` for the step. When `/poll` returns a job, the agent switches to long-polling `/sandbox-ops-poll`, executes each op (`start`, `exec`, `readFile`, `writeFile`, `kill`, `stop`) against a local `ProcessDriver` or `DockerDriver`, and POSTs results back. The supervisor runs `runStep` deployment-side; the agent's job is to be its sandbox.
 
-**Supervisor wiring (V2.ag step 4):** until the supervisor is taught to route agent-profile steps through `HttpSandboxDriver` instead of the in-process driver, no sandbox ops actually arrive at the agent. The orchestrator continues to fail agent-profile steps closed at dispatch. Step 4 lands the wiring + an E2E test.
+**Supervisor wiring (V2.ag step 4):** when `runner_profile.kind = 'agent'`, the orchestrator dispatches to BOTH the supervisor's `runner.step.instance` queue (with `executor: 'agent'` payload marker) AND the agent's per-org claim list. The supervisor reads the marker, constructs `HttpSandboxDriver(baseUrl=API, authToken=MERGECREW_INTERNAL_TOKEN, stepId)`, and threads it through `runStep`. Workspace bootstrap branches on the marker too: agent-profile uses `bootstrapWorkspaceViaDriver` which runs `git clone` inside the agent's sandbox via `driver.exec` (using a 1-hour installation token minted by the supervisor's GitHub App credentials). The supervisor's host workspace is never populated for agent-profile steps. After `runStep` returns, the supervisor pushes a `step-done` sentinel to the per-step ops list so the agent exits its loop without burning the idle heuristic.
+
+**E2E (V2.ag step 5):** the loop above hasn't been exercised against a real agent + supervisor + Docker pair end-to-end yet — that's the next slice.
 
 What this means for now:
 

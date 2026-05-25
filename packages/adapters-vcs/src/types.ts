@@ -131,6 +131,20 @@ export interface VcsProvider {
   cloneIntoWorkspace(repo: ConnectedRepoRef, ref: string, dest: string): Promise<void>;
   fetchUpdate(workspace: string, ref: string): Promise<void>;
 
+  /**
+   * Mint a short-lived clone-capable token for the given installation
+   * (V2.ag / ADR-0009). The supervisor uses this to construct a clone
+   * URL that the BYO agent can use inside its own sandbox via
+   * `driver.exec('git clone ...')` — keeps the user's GitHub App
+   * credentials on the supervisor side rather than handing them to
+   * the agent.
+   *
+   * GitHub returns a 1-hour installation token. GitLab / Gitea may
+   * throw `not implemented` until their BYO story lands; the
+   * supervisor falls back to the host-side bootstrap for those.
+   */
+  getInstallationToken(installationId: string): Promise<string>;
+
   createBranch(workspace: string, name: string, fromRef: string): Promise<void>;
   commit(
     workspace: string,

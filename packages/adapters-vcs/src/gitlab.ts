@@ -96,6 +96,16 @@ export class GitLabProvider implements VcsProvider {
 
   // ─── workspace ──────────────────────────────────────────────────────────
 
+  async getInstallationToken(_installationId: string): Promise<string> {
+    // GitLab's auth model is per-token, not per-installation. The BYO
+    // runner-agent path (#782) doesn't have a clean clone-via-driver
+    // story for GitLab yet — runners on this adapter fall back to the
+    // host-side bootstrap.
+    throw new Error(
+      'GitLab: getInstallationToken is not supported; use the host-side bootstrap',
+    );
+  }
+
   async cloneIntoWorkspace(repo: ConnectedRepoRef, ref: string, dest: string): Promise<void> {
     await fs.mkdir(path.dirname(dest), { recursive: true });
     const url = this.cloneUrl(repo.repoFullName);
