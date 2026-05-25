@@ -14,6 +14,8 @@ import { CancellationCoordinator } from './cancellation.js';
 import { startProbeServer } from './probe-server.js';
 import { cleanupWorkspace, WORKSPACE_CLEANUP_QUEUE } from './workspace.js';
 import { buildSandboxDriver, buildSandboxDriverAsync, HttpSandboxDriver } from '@mergecrew/sandbox-driver';
+import { withSystem } from '@mergecrew/db';
+import { launchFargateAgent } from './fargate-byo-launcher.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
@@ -104,27 +106,48 @@ type RunnerStepJob = {
   stepId: string;
   agentRef: string;
   /**
-   * V2.ag (ADR-0009 step 4). When set to 'agent', the supervisor
-   * uses an `HttpSandboxDriver` bound to this step's id instead of
-   * the global host-side driver. Absent or 'local' → the existing
-   * RUNNER_SANDBOX-selected driver runs the step on this host.
+   * V2.ag (ADR-0009). Selects the SandboxDriver shape per-step.
+   *
+   *   'local'       (default) — RUNNER_SANDBOX-selected host driver.
+   *   'agent'       — HttpSandboxDriver against a BYO agent that
+   *                   the user runs on their own machine. The
+   *                   orchestrator LPUSHes a claim onto the
+   *                   org's agent queue before enqueueing here.
+   *   'fargate-byo' — Same as 'agent' from the runStep perspective,
+   *                   but the supervisor first launches an ECS
+   *                   task in the user's AWS account that runs
+   *                   `mergecrew/runner-agent` (#786).
    */
-  executor?: 'local' | 'agent';
+  executor?: 'local' | 'agent' | 'fargate-byo';
 };
 
 async function handleStepJob(data: RunnerStepJob) {
   const executor = data.executor ?? 'local';
-  const driver = executor === 'agent'
-    ? buildAgentDriverForStep(data.stepId)
-    : await driverPromise;
+  let driver;
+  let fargateTaskArn: string | undefined;
+  if (executor === 'fargate-byo') {
+    fargateTaskArn = await launchFargateForStep(data);
+    driver = buildAgentDriverForStep(data.stepId);
+  } else if (executor === 'agent') {
+    driver = buildAgentDriverForStep(data.stepId);
+  } else {
+    driver = await driverPromise;
+  }
   try {
-    const outcome = await runStep({ ...data, executor, eventlog, logger, cancellation, driver });
+    const outcome = await runStep({
+      ...data,
+      executor: executor === 'fargate-byo' ? 'agent' : executor,
+      eventlog,
+      logger,
+      cancellation,
+      driver,
+    });
     await replyQueue.add('reply', { ...data, outcome }, { removeOnComplete: 1000 });
     return outcome;
   } finally {
-    if (executor === 'agent') {
-      // V2.ag step 4: signal the BYO agent's sandbox-ops loop to
-      // exit immediately. KEY MUST MATCH `opsKey()` in
+    if (executor === 'agent' || executor === 'fargate-byo') {
+      // V2.ag: signal the BYO agent's sandbox-ops loop to exit
+      // immediately. KEY MUST MATCH `opsKey()` in
       // apps/api/src/modules/runner-agent/sandbox-ops.service.ts.
       const SENTINEL = { opId: 'done', op: 'step-done', args: {} };
       await conn
@@ -136,7 +159,80 @@ async function handleStepJob(data: RunnerStepJob) {
           );
         });
     }
+    if (fargateTaskArn) {
+      // Best-effort task-arn log only. The Fargate task exits when
+      // the agent process inside it exits (the runner-agent loop
+      // returns after step-done). We don't actively StopTask
+      // because the agent's clean shutdown is the contract.
+      logger.info(
+        { stepId: data.stepId, taskArn: fargateTaskArn },
+        'fargate-byo: step complete; ECS task will exit when agent does',
+      );
+    }
   }
+}
+
+async function launchFargateForStep(data: RunnerStepJob): Promise<string> {
+  const apiBaseUrl = (process.env.MERGECREW_API_BASE_URL ?? process.env.API_BASE_URL ?? '').trim();
+  if (!apiBaseUrl) {
+    throw new Error(
+      'MERGECREW_API_BASE_URL is required on the supervisor to launch fargate-byo tasks',
+    );
+  }
+  // Look up the org's runner_profile so we know which AWS account
+  // and ECS task to launch. The orchestrator already validated kind
+  // = 'fargate_byo' at dispatch time; we read the per-kind config
+  // here.
+  const profile = await withSystem((tx) =>
+    tx.runnerProfile.findUnique({
+      where: { organizationId: data.organizationId },
+      select: {
+        kind: true,
+        awsRoleArn: true,
+        awsExternalId: true,
+        awsRegion: true,
+        fargateCluster: true,
+        fargateTaskDefinition: true,
+        fargateSubnets: true,
+        fargateSecurityGroups: true,
+        organization: { select: { slug: true } },
+      },
+    }),
+  );
+  if (!profile || profile.kind !== 'fargate_byo') {
+    throw new Error(
+      `fargate-byo: org ${data.organizationId} is not on the fargate_byo profile (got ${profile?.kind ?? 'none'})`,
+    );
+  }
+  if (
+    !profile.awsRoleArn ||
+    !profile.awsExternalId ||
+    !profile.awsRegion ||
+    !profile.fargateCluster ||
+    !profile.fargateTaskDefinition
+  ) {
+    throw new Error(
+      'fargate-byo: profile is missing required AWS fields (awsRoleArn / awsExternalId / awsRegion / fargateCluster / fargateTaskDefinition)',
+    );
+  }
+  const { taskArn } = await launchFargateAgent({
+    organizationId: data.organizationId,
+    organizationSlug: profile.organization.slug,
+    stepId: data.stepId,
+    runId: data.runId,
+    profile: {
+      awsRoleArn: profile.awsRoleArn,
+      awsExternalId: profile.awsExternalId,
+      awsRegion: profile.awsRegion,
+      fargateCluster: profile.fargateCluster,
+      fargateTaskDefinition: profile.fargateTaskDefinition,
+      fargateSubnets: profile.fargateSubnets,
+      fargateSecurityGroups: profile.fargateSecurityGroups,
+    },
+    apiBaseUrl,
+    logger,
+  });
+  return taskArn;
 }
 
 function buildAgentDriverForStep(stepId: string): HttpSandboxDriver {

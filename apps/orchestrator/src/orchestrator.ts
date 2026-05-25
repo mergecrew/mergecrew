@@ -125,33 +125,45 @@ export class Orchestrator {
       return;
     }
 
-    if (kind === 'agent') {
-      // V2.ag step 4 (ADR-0009): the supervisor runs `runStep` with an
-      // HttpSandboxDriver bound to this step. The agent's role is to be
-      // the remote sandbox — it picks up a "claim" via /poll (the per-org
-      // raw-Redis-list queue) and switches into sandbox-ops mode for the
-      // stepId. So we publish to BOTH queues:
-      //   - runner.step.instance (BullMQ) → supervisor consumes, executor
-      //     marker tells it to construct HttpSandboxDriver.
-      //   - runner-agent:queue:<orgId> (raw list) → agent /poll picks up
-      //     the claim and starts polling /sandbox-ops-poll.
+    if (kind === 'agent' || kind === 'fargate_byo') {
+      // V2.ag step 4 + #786: the supervisor runs `runStep` with an
+      // HttpSandboxDriver bound to this step. For `agent` the user
+      // is running their own `mergecrew/runner-agent` container;
+      // for `fargate_byo` the supervisor launches an ECS task in
+      // the user's AWS account that runs the same image.
+      //
+      // Both kinds dispatch identically from here:
+      //   - runner.step.instance (BullMQ) → supervisor consumes,
+      //     executor marker selects the right pre-runStep setup.
+      //   - runner-agent:queue:<orgId> (raw list) → agent /poll
+      //     picks up the claim and switches to sandbox-ops mode.
+      //
+      // The executor marker distinguishes the two on the supervisor
+      // side (the ECS launch is the only delta).
       const agentKey = this.agentQueueKey(args.organizationId);
+      const executor = kind === 'fargate_byo' ? 'fargate-byo' : 'agent';
       this.deps.logger.info(
-        { organizationId: args.organizationId, kind, supervisorQueue: 'runner.step.instance', agentKey },
+        {
+          organizationId: args.organizationId,
+          kind,
+          supervisorQueue: 'runner.step.instance',
+          agentKey,
+          executor,
+        },
         'runner.profile_dispatch',
       );
       await this.deps.connection.lpush(agentKey, JSON.stringify(payload));
       await this.runnerInstance.add(
         'step',
-        { ...payload, executor: 'agent' },
+        { ...payload, executor },
         { removeOnComplete: 1000, removeOnFail: 1000, attempts: 1 },
       );
       return;
     }
 
-    // `none`, `fargate_byo`, `github_actions` — no consumer yet (the
-    // last two arrive in #769 / v1.1). Fail closed instead of stuffing
-    // a queue with jobs that will never be picked up.
+    // `none`, `github_actions` — no consumer yet (the latter is
+    // tracked as #772). Fail closed instead of stuffing a queue
+    // with jobs that will never be picked up.
     await this.failStepNoRunner(args, kind);
   }
 

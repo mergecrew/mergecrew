@@ -82,12 +82,12 @@ export class RunService {
         `runs paused for this project${project.runsPauseReason ? `: ${project.runsPauseReason}` : ''}`,
       );
     }
-    // Per-org runner profile gate (V2.af / ADR-0008). The orchestrator
-    // also fails closed for unsupported kinds, but rejecting at the API
-    // keeps the error close to the click and avoids a one-step run
-    // landing in `failed` with no obvious explanation. `instance_builtin`
-    // and `agent` are the kinds that have a working consumer; everything
-    // else surfaces a "Configure a runner" CTA.
+    // Per-org runner profile gate (V2.af / ADR-0008, V2.ag / #786).
+    // The orchestrator also fails closed for unsupported kinds, but
+    // rejecting at the API keeps the error close to the click and
+    // avoids a one-step run landing in `failed` with no obvious
+    // explanation. `instance_builtin`, `agent`, and `fargate_byo`
+    // have working consumers; `github_actions` (#772) is planned.
     const profile = await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.runnerProfile.findUnique({
         where: { organizationId: t.organizationId },
@@ -95,7 +95,8 @@ export class RunService {
       }),
     );
     const profileKind = profile?.kind ?? 'none';
-    if (profileKind !== 'instance_builtin' && profileKind !== 'agent') {
+    const supportedKinds = new Set(['instance_builtin', 'agent', 'fargate_byo']);
+    if (!supportedKinds.has(profileKind)) {
       throw new ValidationError(
         profileKind === 'none'
           ? 'configure a runner profile from Settings → Runner before starting runs'

@@ -372,10 +372,11 @@ export default async function RunnerProfilePage({
                     </details>
                   </div>
                 )}
-                <p className="rounded bg-amber-50 px-2 py-1 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
-                  v1: the dispatcher that actually runs the ECS task is not implemented
-                  yet (tracked as <a href="https://github.com/mergecrew/mergecrew/issues/786" className="underline">#786</a>).
-                  You can save the config now to pre-provision your AWS side.
+                <p className="text-zinc-500">
+                  Dispatch flow: supervisor mints a per-step agent token, performs{' '}
+                  <code>sts:AssumeRole</code> with the external ID above, and launches an
+                  ECS task running <code>mergecrew/runner-agent</code> with the token in env.
+                  No long-lived AWS keys are stored on the deployment.
                 </p>
               </div>
             </details>
