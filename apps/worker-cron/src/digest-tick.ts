@@ -1,6 +1,6 @@
 import type { Queue } from 'bullmq';
 import type { Logger } from 'pino';
-import { parseExpression } from 'cron-parser';
+import { CronExpressionParser } from 'cron-parser';
 import { withSystem, withTenant } from '@mergecrew/db';
 
 /**
@@ -14,7 +14,7 @@ export function lastEndOfDay(tz: string, hhmm: string, now: Date): Date | null {
   const m = Number(mStr);
   if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
   try {
-    const it = parseExpression(`${m} ${h} * * *`, { tz, currentDate: now });
+    const it = CronExpressionParser.parse(`${m} ${h} * * *`, { tz, currentDate: now });
     return it.prev().toDate();
   } catch {
     return null;

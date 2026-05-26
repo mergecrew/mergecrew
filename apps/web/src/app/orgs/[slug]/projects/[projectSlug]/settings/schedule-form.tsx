@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
-import { parseExpression } from 'cron-parser';
+import { CronExpressionParser } from 'cron-parser';
 import { Button } from '@/components/ui';
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -81,7 +81,7 @@ function encodeCron(d: Decoded, customCron: string): string {
 
 function previewNextFires(cron: string, timezone: string): string[] {
   try {
-    const it = parseExpression(cron, { tz: timezone });
+    const it = CronExpressionParser.parse(cron, { tz: timezone });
     return [it.next(), it.next(), it.next()].map((d) => d.toDate().toLocaleString());
   } catch {
     return [];
