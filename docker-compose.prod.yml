@@ -28,7 +28,22 @@ services:
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     networks: [internal]
-    command: ["/app/apps/api/node_modules/.bin/prisma", "migrate", "deploy", "--schema", "/app/packages/db/prisma/schema.prisma"]
+    # Prisma 7 reads connection config from prisma.config.ts (#794 /
+    # #819). The file lives at packages/db/prisma.config.ts; without
+    # --config the CLI searches cwd and the schema's parent dir
+    # (/app/packages/db/prisma) and finds neither, then bails with
+    # "datasource.url required". Same fix as docker-compose.full.yml's
+    # migrate service.
+    command:
+      [
+        "/app/apps/api/node_modules/.bin/prisma",
+        "migrate",
+        "deploy",
+        "--config",
+        "/app/packages/db/prisma.config.ts",
+        "--schema",
+        "/app/packages/db/prisma/schema.prisma",
+      ]
 
   # Per-service `deploy.resources.limits` (#187). In non-swarm Compose v2
   # these are honored as cgroup limits at `up` time. Runner is the most
