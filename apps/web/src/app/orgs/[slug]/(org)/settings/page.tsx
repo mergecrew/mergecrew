@@ -806,7 +806,15 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
           <Card className="p-5">
             <div className="flex items-baseline justify-between gap-3">
               <p className="m-0 text-[13.5px] text-ink-2">
-                Switch profiles, view enrolled agents&apos; online status.
+                Switch profiles, view enrolled agents&apos; online status.{' '}
+                <a
+                  href="https://github.com/mergecrew/mergecrew/blob/main/docs/adrs/0002-per-org-runner-profile.md"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline decoration-dotted underline-offset-2 hover:text-ink"
+                >
+                  Docs ↗
+                </a>
               </p>
               <LinkButton
                 href={`/orgs/${slug}/settings/runner`}
@@ -835,7 +843,15 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
           <Card className="p-5">
             <div className="flex items-baseline justify-between gap-3">
               <p className="m-0 text-[13.5px] text-ink-2">
-                Enrol a new agent or rotate existing tokens.
+                Enrol a new agent or rotate existing tokens.{' '}
+                <a
+                  href="https://github.com/mergecrew/mergecrew/blob/main/docs/03-infrastructure/34-runner-agent.md"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline decoration-dotted underline-offset-2 hover:text-ink"
+                >
+                  Docs ↗
+                </a>
               </p>
               <LinkButton
                 href={`/orgs/${slug}/settings/runner-agents`}

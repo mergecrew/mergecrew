@@ -321,6 +321,12 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   // per-run container with image + resources + cache mounts + egress
   // posture resolved above. Skills exec shell via the handle on
   // SkillExecutionContext.
+  //
+  // Cold-start timer (#565 dogfood gate): we record duration around
+  // driver.start() and emit a SANDBOX_STARTED timeline event so the
+  // bake-report can compare process vs docker cold-start overhead
+  // without depending on pino log shipping.
+  const sandboxStartedAt = Date.now();
   const sandbox: SandboxHandle = await driver.start({
     runId,
     projectId,
@@ -330,6 +336,21 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     resources: sandboxResources,
     cacheMounts,
     egressAllowlist: sandboxEgressAllow,
+  });
+  const sandboxColdStartMs = Date.now() - sandboxStartedAt;
+  await eventlog.emit({
+    organizationId,
+    projectId,
+    dailyRunId: runId,
+    workflowRunId,
+    agentStepId: stepId,
+    type: 'SANDBOX_STARTED',
+    actor: { kind: 'system' },
+    payload: {
+      driver: driver.name,
+      image: sandboxImage ?? null,
+      coldStartMs: sandboxColdStartMs,
+    },
   });
 
   // VCS adapter from env (used by the workspace bootstrap below and by
