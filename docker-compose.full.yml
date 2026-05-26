@@ -93,6 +93,14 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.api
+      # GHA build cache (CI-only). Compose passes these through to
+      # buildx; outside CI they're no-ops because `type=gha` requires
+      # the GitHub-supplied auth env. Each image gets its own scope
+      # so unrelated PRs don't invalidate each other.
+      cache_from:
+        - type=gha,scope=api
+      cache_to:
+        - type=gha,scope=api,mode=max
     image: mergecrew/api:latest
     container_name: mergecrew-migrate
     environment:
@@ -223,6 +231,10 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.orchestrator
+      cache_from:
+        - type=gha,scope=orchestrator
+      cache_to:
+        - type=gha,scope=orchestrator,mode=max
     image: mergecrew/orchestrator:latest
     container_name: mergecrew-orchestrator
     restart: unless-stopped
@@ -238,6 +250,10 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.runner
+      cache_from:
+        - type=gha,scope=runner
+      cache_to:
+        - type=gha,scope=runner,mode=max
     image: mergecrew/runner:latest
     container_name: mergecrew-runner
     restart: unless-stopped
@@ -253,6 +269,10 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.worker-cron
+      cache_from:
+        - type=gha,scope=worker-cron
+      cache_to:
+        - type=gha,scope=worker-cron,mode=max
     image: mergecrew/worker-cron:latest
     container_name: mergecrew-worker-cron
     restart: unless-stopped
@@ -267,6 +287,10 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.web
+      cache_from:
+        - type=gha,scope=web
+      cache_to:
+        - type=gha,scope=web,mode=max
     image: mergecrew/web:latest
     container_name: mergecrew-web
     restart: unless-stopped
