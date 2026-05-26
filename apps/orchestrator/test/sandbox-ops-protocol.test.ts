@@ -27,7 +27,14 @@ import { randomUUID } from 'node:crypto';
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
 const TEST_STEP = `step-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-const conn = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
+// Two separate clients — one per actor. BRPOP monopolizes its
+// connection; if the supervisor and agent shared one, the
+// supervisor's BRPOP-on-result-key would block the agent's
+// concurrent BRPOP-on-ops-key (and vice versa), leaving the test
+// timing out at 5s every run. ioredis docs are explicit about this:
+// blocking commands need a dedicated connection.
+const supConn = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
+const agentConn = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
 
 // Must match apps/api/src/modules/runner-agent/sandbox-ops.service.ts
 // and apps/runner-agent/src/sandbox-ops-executor.ts. If either drifts,
@@ -60,15 +67,15 @@ async function supervisorDispatch(
   timeoutSec = 5,
 ): Promise<ResultEnvelope> {
   const opId = randomUUID();
-  await conn.lpush(opsKey(stepId), JSON.stringify({ opId, op, args }));
-  const popped = await conn.brpop(resultKey(stepId, opId), timeoutSec);
+  await supConn.lpush(opsKey(stepId), JSON.stringify({ opId, op, args }));
+  const popped = await supConn.brpop(resultKey(stepId, opId), timeoutSec);
   if (!popped) throw new Error('supervisor: result timeout');
   return JSON.parse(popped[1]) as ResultEnvelope;
 }
 
 /** Agent side: poll next op (blocking) + post a result envelope. */
 async function agentPollNext(stepId: string, timeoutSec = 5): Promise<OpEnvelope | null> {
-  const popped = await conn.brpop(opsKey(stepId), timeoutSec);
+  const popped = await agentConn.brpop(opsKey(stepId), timeoutSec);
   if (!popped) return null;
   return JSON.parse(popped[1]) as OpEnvelope;
 }
@@ -77,18 +84,18 @@ async function agentPostResult(
   opId: string,
   envelope: ResultEnvelope,
 ): Promise<void> {
-  await conn.lpush(resultKey(stepId, opId), JSON.stringify(envelope));
-  await conn.expire(resultKey(stepId, opId), 60);
+  await agentConn.lpush(resultKey(stepId, opId), JSON.stringify(envelope));
+  await agentConn.expire(resultKey(stepId, opId), 60);
 }
 
 beforeAll(async () => {
   // Clean any leftover state from prior runs against this Redis.
-  const keys = await conn.keys('runner-agent:sandbox-*');
-  if (keys.length) await conn.del(...keys);
+  const keys = await supConn.keys('runner-agent:sandbox-*');
+  if (keys.length) await supConn.del(...keys);
 });
 
 afterAll(async () => {
-  await conn.quit();
+  await Promise.all([supConn.quit(), agentConn.quit()]);
 });
 
 describe('sandbox-ops protocol (V2.ag step 5)', () => {
@@ -170,7 +177,7 @@ describe('sandbox-ops protocol (V2.ag step 5)', () => {
     // apps/runner/src/main.ts:handleStepJob uses opId='done',
     // op='step-done', args={}. Verify the agent-side BRPOP sees
     // exactly that shape.
-    await conn.lpush(
+    await supConn.lpush(
       opsKey(TEST_STEP),
       JSON.stringify({ opId: 'done', op: 'step-done', args: {} }),
     );
@@ -180,8 +187,8 @@ describe('sandbox-ops protocol (V2.ag step 5)', () => {
 
   it('idle timeout: BRPOP returns null after timeoutSec when queue stays empty', async () => {
     // Ensure no leftover ops.
-    const drained = await conn.lrange(opsKey(TEST_STEP), 0, -1);
-    for (const _ of drained) await conn.rpop(opsKey(TEST_STEP));
+    const drained = await supConn.lrange(opsKey(TEST_STEP), 0, -1);
+    for (const _ of drained) await supConn.rpop(opsKey(TEST_STEP));
     const env = await agentPollNext(TEST_STEP, 1);
     expect(env).toBeNull();
   });

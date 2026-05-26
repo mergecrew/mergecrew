@@ -50,20 +50,26 @@ const SANDBOX_OP_POLL_TIMEOUT_SEC = 30;
 
 export interface SandboxOpsLoopDeps {
   cfg: AgentConfig;
+  /**
+   * Per-poller bearer (#774). Each multi-org poller passes its own
+   * token here so the sandbox-ops calls authenticate against the
+   * right org's API surface.
+   */
+  token: string;
   stepId: string;
   logger: Logger;
   isStopped: () => boolean;
 }
 
 export async function runSandboxOpsLoop(deps: SandboxOpsLoopDeps): Promise<void> {
-  const { cfg, stepId, logger, isStopped } = deps;
+  const { cfg, token, stepId, logger, isStopped } = deps;
   const driver = await buildLocalDriver(cfg);
   let handle: SandboxHandle | null = null;
   let idles = 0;
 
   try {
     while (!isStopped() && idles < MAX_CONSECUTIVE_IDLES) {
-      const popped = await pollNextOp(cfg, stepId, logger);
+      const popped = await pollNextOp(cfg, token, stepId, logger);
       if (!popped) {
         idles++;
         continue;
@@ -83,7 +89,7 @@ export async function runSandboxOpsLoop(deps: SandboxOpsLoopDeps): Promise<void>
         if (popped.op === 'start') {
           handle = result as SandboxHandle;
         }
-        await postOpResult(cfg, stepId, popped.opId, { ok: true, result }, logger);
+        await postOpResult(cfg, token, stepId, popped.opId, { ok: true, result }, logger);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         logger.warn(
@@ -92,6 +98,7 @@ export async function runSandboxOpsLoop(deps: SandboxOpsLoopDeps): Promise<void>
         );
         await postOpResult(
           cfg,
+          token,
           stepId,
           popped.opId,
           { ok: false, error: { message } },
@@ -187,6 +194,7 @@ async function ensureAgentWorkspace(runId: string): Promise<string> {
 
 async function pollNextOp(
   cfg: AgentConfig,
+  token: string,
   stepId: string,
   logger: Logger,
 ): Promise<OpEnvelope | null> {
@@ -195,13 +203,16 @@ async function pollNextOp(
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      authorization: `Bearer ${cfg.token}`,
+      authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ stepId, timeoutSec: SANDBOX_OP_POLL_TIMEOUT_SEC }),
   });
   if (res.status === 401) {
-    logger.error('agent: 401 from sandbox-ops-poll — token revoked or unknown.');
-    process.exit(4);
+    // Don't exit the whole process — that would kill all sibling
+    // pollers. Throw and let the caller (runSandboxOpsLoop) skip
+    // this iteration; the next /poll will hit 401 too and the
+    // outer runPollerForToken loop bails for this token only.
+    throw new Error('sandbox-ops-poll: 401 unauthorized');
   }
   if (!res.ok) {
     logger.warn({ status: res.status, stepId }, 'agent: sandbox-ops-poll unexpected status');
@@ -215,6 +226,7 @@ async function pollNextOp(
 
 async function postOpResult(
   cfg: AgentConfig,
+  token: string,
   stepId: string,
   opId: string,
   envelope: { ok: boolean; result?: unknown; error?: { message: string; kind?: string } },
@@ -228,7 +240,7 @@ async function postOpResult(
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      authorization: `Bearer ${cfg.token}`,
+      authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(envelope),
   });

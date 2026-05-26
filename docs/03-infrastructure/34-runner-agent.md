@@ -41,14 +41,47 @@ The agent will log `agent online` on first contact, then settle into the poll lo
 
 ## Configuration
 
-| Flag                  | Env                            | Default     | Notes                                            |
-| --------------------- | ------------------------------ | ----------- | ------------------------------------------------ |
-| `--token`             | `MERGECREW_AGENT_TOKEN`        | _required_  | Bearer issued from the org settings UI.          |
-| `--api-url`           | `MERGECREW_API_URL`            | _required_  | Mergecrew API base URL.                          |
-| `--name`              | `MERGECREW_AGENT_NAME`         | `hostname`  | Display name in the org settings.                |
-| `--driver`            | `MERGECREW_AGENT_DRIVER`       | `docker`    | `process` (no isolation) or `docker`.            |
-| `--concurrency`       | `MERGECREW_AGENT_CONCURRENCY`  | `1`         | Parallel jobs (#782+).                           |
-| `--dry-run`           | `MERGECREW_AGENT_DRY_RUN`      | `0`         | Print config and exit.                           |
+| Flag                  | Env                                                | Default    | Notes                                                                       |
+| --------------------- | -------------------------------------------------- | ---------- | --------------------------------------------------------------------------- |
+| `--token`             | `MERGECREW_AGENT_TOKEN` / `MERGECREW_AGENT_TOKENS` | _required_ | Bearer issued from the org settings UI. Repeat `--token` for multi-org.     |
+| `--api-url`           | `MERGECREW_API_URL`                                | _required_ | Mergecrew API base URL.                                                     |
+| `--name`              | `MERGECREW_AGENT_NAME`                             | `hostname` | Display name in the org settings.                                           |
+| `--driver`            | `MERGECREW_AGENT_DRIVER`                           | `docker`   | `process` (no isolation) or `docker`.                                       |
+| `--concurrency`       | `MERGECREW_AGENT_CONCURRENCY`                      | `1`        | Parallel jobs per token; total in-flight = `concurrency × tokens.length`.   |
+| `--dry-run`           | `MERGECREW_AGENT_DRY_RUN`                          | `0`        | Print config and exit.                                                      |
+
+### Multi-org mode (#774)
+
+A single agent process can host pollers for **multiple orgs** at the same time — pass one bearer per org and the agent runs an independent poll loop for each. Each poller authenticates against its own org's API surface, so a stalled or busy step for org A doesn't slow down org B; a revoked token (`401`) only tears down its own poller.
+
+```sh
+# Repeated CLI flag (wins over env vars)
+docker run --rm \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  ghcr.io/mergecrew/runner-agent:latest \
+    --token mca_acme_AAA...  \
+    --token mca_beta_BBB...  \
+    --api-url https://mergecrew.dev
+
+# Or via comma-separated env (legacy MERGECREW_AGENT_TOKEN still works for a single org)
+docker run --rm \
+  -e MERGECREW_AGENT_TOKENS=mca_acme_AAA...,mca_beta_BBB... \
+  -e MERGECREW_API_URL=https://mergecrew.dev \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  ghcr.io/mergecrew/runner-agent:latest
+```
+
+Resolution order is **repeated `--token`** > `MERGECREW_AGENT_TOKENS` (csv) > legacy `MERGECREW_AGENT_TOKEN` (single value).
+
+Each poller logs with a `token` field carrying the `mca_<org>_<6>` prefix (never the full secret), so:
+
+```sh
+docker logs mergecrew-runner-agent | jq -r 'select(.token=="mca_acme_ABC123")'
+```
+
+filters to one org's lines without exposing the bearer.
+
+Sizing: `--concurrency` is **per token**, so total in-flight = `concurrency × tokens.length`. A box with `--concurrency 2 --token A --token B` will run up to 4 sandboxes at once.
 
 ## Network posture
 

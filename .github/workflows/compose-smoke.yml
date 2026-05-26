@@ -31,7 +31,11 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Cold-cache buildx (5 images × ~4min sequential pnpm install) can
+    # touch ~20min; warm cache lands in ~3min. 25 is the headroom for
+    # the cold case + the ~6min smoke that follows; warm runs leave
+    # most of it on the floor.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -49,9 +53,18 @@ jobs:
           df -h
           docker image prune -af || true
           df -h
-      - name: docker compose up (build + start)
+      - uses: docker/setup-buildx-action@v4
+      - name: docker compose up (build + start, GHA-cached)
         env:
           MERGECREW_AGENT_STUB: '1'
+          # `compose --build` calls into buildx and respects the
+          # per-service cache_from/cache_to declared in
+          # docker-compose.full.yml. Compose runs the builds in
+          # parallel by default — that plus per-image GHA scopes
+          # turns the ~8min cold/serial smoke into ~3min warm.
+          COMPOSE_DOCKER_CLI_BUILD: '1'
+          DOCKER_BUILDKIT: '1'
+          BUILDX_BAKE_GIT_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Mint a per-run API key so the seed inserts a working
           # operator-role row. Same pattern as scripts/e2e-local.sh.
@@ -97,6 +110,12 @@ jobs:
       - name: Dump logs on failure
         if: failure()
         run: |
+          echo "::group::migrate"
+          docker compose -f docker-compose.full.yml logs --tail=200 migrate || true
+          echo "::endgroup::"
+          echo "::group::seed"
+          docker compose -f docker-compose.full.yml logs --tail=200 seed || true
+          echo "::endgroup::"
           echo "::group::api"
           docker compose -f docker-compose.full.yml logs --tail=200 api || true
           echo "::endgroup::"
