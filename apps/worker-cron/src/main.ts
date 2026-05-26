@@ -1,7 +1,7 @@
 import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
 import pino from 'pino';
-import { parseExpression } from 'cron-parser';
+import { CronExpressionParser } from 'cron-parser';
 import { withSystem, withTenant } from '@mergecrew/db';
 import { Eventlog, RedisPubSub, fanoutToBullmq } from '@mergecrew/eventlog';
 import { digestTick } from './digest-tick.js';
@@ -64,7 +64,7 @@ async function tick() {
     const last = s.lastFiredAt ?? new Date(now.getTime() - 60 * 86_400_000);
     let due = false;
     try {
-      const it = parseExpression(s.cron, { tz: s.timezone, currentDate: last });
+      const it = CronExpressionParser.parse(s.cron, { tz: s.timezone, currentDate: last });
       const next = it.next().toDate();
       if (next <= now) due = true;
     } catch (e) {

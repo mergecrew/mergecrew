@@ -14,7 +14,7 @@
     "@mergecrew/domain": "workspace:*",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
-    "cron-parser": "^4.9.0",
+    "cron-parser": "^5.5.0",
     "driver.js": "^1.3.1",
     "lucide-react": "^0.452.0",
     "next": "^16.2.6",

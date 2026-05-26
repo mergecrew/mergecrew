@@ -468,8 +468,8 @@ importers:
         specifier: ^2.1.1
         version: 2.1.1
       cron-parser:
-        specifier: ^4.9.0
-        version: 4.9.0
+        specifier: ^5.5.0
+        version: 5.5.0
       driver.js:
         specifier: ^1.3.1
         version: 1.4.0
@@ -544,8 +544,8 @@ importers:
         specifier: ^5.77.1
         version: 5.77.1
       cron-parser:
-        specifier: ^4.9.0
-        version: 4.9.0
+        specifier: ^5.5.0
+        version: 5.5.0
       ioredis:
         specifier: ^5.4.1
         version: 5.10.1
@@ -3767,6 +3767,10 @@ packages:
   cron-parser@4.9.0:
     resolution: {integrity: sha512-p0SaNjrHOnQeR8/VnfGbmg9te2kfyYSQ7Sc/j/6DtPL3JQvKxmjO9TSjNFpujqV3vEYYBvNNvXSxzyksBWAx1Q==}
     engines: {node: '>=12.0.0'}
+
+  cron-parser@5.5.0:
+    resolution: {integrity: sha512-oML4lKUXxizYswqmxuOCpgFS8BNUJpIu6k/2HVHyaL8Ynnf3wdf9tkns0yRdJLSIjkJ+b0DXHMZEHGpMwjnPww==}
+    engines: {node: '>=18'}
 
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
@@ -9613,6 +9617,10 @@ snapshots:
       - ts-node
 
   cron-parser@4.9.0:
+    dependencies:
+      luxon: 3.7.2
+
+  cron-parser@5.5.0:
     dependencies:
       luxon: 3.7.2
 
