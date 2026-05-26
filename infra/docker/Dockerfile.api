@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 ARG NODE_VERSION=22-bookworm-slim
 
 FROM node:${NODE_VERSION} AS base
@@ -8,8 +9,15 @@ FROM base AS deps
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* tsconfig.base.json ./
 COPY apps/api/package.json apps/api/
 COPY packages/ packages/
-RUN pnpm fetch || true
-RUN pnpm install --frozen-lockfile=false
+# pnpm's content-addressable store mounted as a BuildKit cache mount.
+# Layer-cache misses (e.g. a dependabot lockfile bump) still hit this
+# warm store for any unchanged packages, cutting `pnpm install` from
+# ~3min cold to ~30s on partial invalidation. Persisted across CI runs
+# via the parent workflow's `cache-to: type=gha,mode=max`.
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store,id=pnpm-store \
+    pnpm fetch || true
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store,id=pnpm-store \
+    pnpm install --frozen-lockfile=false
 
 FROM deps AS build
 COPY . .
