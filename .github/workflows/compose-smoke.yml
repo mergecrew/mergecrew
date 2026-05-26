@@ -31,7 +31,11 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Cold-cache buildx (5 images × ~4min sequential pnpm install) can
+    # touch ~20min; warm cache lands in ~3min. 25 is the headroom for
+    # the cold case + the ~6min smoke that follows; warm runs leave
+    # most of it on the floor.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
