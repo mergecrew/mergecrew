@@ -3,7 +3,13 @@
 # workspace image must meet (non-root mergecrew user uid 1001,
 # /workspace writable, required tools).
 
-ARG PYTHON_TAG=3.12-bookworm-slim
+# Docker Hub's python tag pattern puts `slim` BEFORE the distro
+# codename (`python:3.12-slim-bookworm`), unlike Node which uses
+# `node:20-bookworm-slim`. Getting these reversed yields a "not
+# found" from the registry — caught when the publish-runner-images
+# workflow tried to ship the python image on 2026-05-26 (run
+# 26431592221).
+ARG PYTHON_TAG=3.12-slim-bookworm
 FROM python:${PYTHON_TAG}
 
 ARG MISE_VERSION=v2025.5.0
