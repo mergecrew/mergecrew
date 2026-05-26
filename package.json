@@ -17,6 +17,7 @@
     "format": "prettier --write .",
     "bootstrap": "tsx scripts/bootstrap.ts",
     "telemetry:preview": "dotenv -e .env -- tsx scripts/telemetry-preview.ts",
+    "dogfood:bake-report": "dotenv -e .env -- tsx scripts/dogfood-bake-report.ts",
     "db:migrate": "dotenv -e .env -- pnpm --filter @mergecrew/db migrate",
     "db:generate": "dotenv -e .env -- pnpm --filter @mergecrew/db generate",
     "db:seed": "dotenv -e .env -- pnpm --filter @mergecrew/db seed",

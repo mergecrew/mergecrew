@@ -294,6 +294,15 @@ Bias-to-shipping, each phase deliverable on its own:
 - Operator opt-in via `RUNNER_SANDBOX=docker`; default stays at `process` for the first release.
 - Cost: medium. Risk: medium — agent loop unchanged; the surface is the supervisor and the driver.
 
+**Dogfood gate (#565).** Flipping the default from `process` to `docker` is gated on 14 unsupervised days of `mergecrew/mergecrew` itself running on the docker driver with no sandbox-attributable regressions. The metrics for that bake are emitted by the supervisor and the driver:
+
+- `SANDBOX_STARTED` timeline event — payload includes `driver`, `image`, `coldStartMs`. Persisted, queryable from `timeline_events`.
+- `sandbox.cold_start` pino event — same shape as above on the driver-side logger.
+- `sandbox.oom_suspected` pino event — emitted by `DockerDriver` on exit-code 137, with `containerOomKilled` from `docker inspect` for confirmation.
+- `egress.blocked` pino event — emitted by `runner-egress-proxy` for any outbound that the per-project allowlist rejects.
+
+Run `pnpm dogfood:bake-report --flip-at <iso>` to print the comparison table (step pass rate, p50/p95 step latency, p50/p95 cold-start) for the 14-day windows before and after the flip. OOM kills and egress blocks live in pino-only logs by design (debug signals, not tenant-visible events) — paste those counts in from your log shipper before posting the report back on #565.
+
 **Phase 2 — Polyglot stock catalog.**
 - Add `runner-python`, `runner-java`, `runner-go`, `runner-polyglot` images.
 - Stack auto-detection from lockfiles.

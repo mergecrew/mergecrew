@@ -109,7 +109,13 @@ export class DockerDriver implements SandboxDriver {
     const name = `mergecrew-${opts.runId}-${randomUUID().slice(0, 8)}`;
     const args = this.buildRunArgs(name, image, opts);
 
+    // Cold-start timer (#565 dogfood gate). The bake-report aggregates
+    // these per-day to compare process vs docker driver latency
+    // overhead. We measure `docker run` only — chown is bounded by
+    // workspace size and gets its own warning when slow.
+    const startedAt = Date.now();
     const result = await execa(this.bin, args, { reject: false });
+    const durationMs = Date.now() - startedAt;
     if (result.exitCode !== 0) {
       throw new Error(
         `docker run failed (exit ${result.exitCode}): ${(result.stderr ?? '').toString().trim()}`,
@@ -118,10 +124,15 @@ export class DockerDriver implements SandboxDriver {
     const containerId = result.stdout.toString().trim();
     this.workspaces.set(containerId, opts.workspacePath);
     this.logger?.info('sandbox started', {
+      event: 'sandbox.cold_start',
+      driver: 'docker',
       runId: opts.runId,
+      projectId: opts.projectId,
+      organizationId: opts.organizationId,
       containerId,
       image,
       ociRuntime: this.ociRuntime,
+      durationMs,
     });
 
     return {
@@ -179,8 +190,42 @@ export class DockerDriver implements SandboxDriver {
       } as any;
     });
     void child;
+    const exitCode = result.exitCode ?? (result.failed ? 1 : 0);
+    // OOM detection (#565 dogfood gate). Exit code 137 = SIGKILL,
+    // which on a cgroup-limited container almost always means the
+    // kernel OOM-killer hit a memory budget. Confirm via `docker
+    // inspect` when we can — operators want to distinguish "your
+    // build OOM'd" from "we sent SIGKILL on timeout" because they
+    // demand different remediations (raise --memory vs. raise
+    // --timeout). Inspect is best-effort: if it fails or the
+    // container is already gone, the suspect signal is still
+    // useful, so emit it either way.
+    if (exitCode === 137) {
+      let containerOomKilled: boolean | null = null;
+      try {
+        const inspect = await execa(
+          this.bin,
+          ['inspect', '--format', '{{.State.OOMKilled}}', handle.id],
+          { reject: false },
+        );
+        const raw = (typeof inspect.stdout === 'string' ? inspect.stdout : '').trim();
+        if (raw === 'true') containerOomKilled = true;
+        else if (raw === 'false') containerOomKilled = false;
+      } catch {
+        // Inspect failed (container already removed, daemon hiccup) —
+        // suspect signal is the best we can do; report as null.
+      }
+      this.logger?.warn('sandbox OOM suspected', {
+        event: 'sandbox.oom_suspected',
+        driver: 'docker',
+        containerId: handle.id,
+        exitCode,
+        containerOomKilled,
+        cmd: opts.cmd,
+      });
+    }
     return {
-      exitCode: result.exitCode ?? (result.failed ? 1 : 0),
+      exitCode,
       stdout: typeof result.stdout === 'string' ? result.stdout : '',
       stderr: typeof result.stderr === 'string' ? result.stderr : '',
       timedOut: Boolean((result as any).timedOut),
