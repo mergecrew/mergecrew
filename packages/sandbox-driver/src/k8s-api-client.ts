@@ -106,7 +106,10 @@ export async function buildK8sApiClient(opts: K8sClientOpts = {}): Promise<K8sAp
           },
         },
       };
-      await batch.createNamespacedJob(namespace, body as any);
+      // @kubernetes/client-node 1.x: methods take a single options
+      // object with named params (namespace, body) instead of
+      // positional args. The response IS the body — no more `.body`.
+      await batch.createNamespacedJob({ namespace, body: body as any });
       return spec.name;
     },
 
@@ -128,7 +131,7 @@ export async function buildK8sApiClient(opts: K8sClientOpts = {}): Promise<K8sAp
           })),
         },
       };
-      await net.createNamespacedNetworkPolicy(namespace, body as any);
+      await net.createNamespacedNetworkPolicy({ namespace, body: body as any });
     },
 
     async waitForPodReady(
@@ -138,15 +141,11 @@ export async function buildK8sApiClient(opts: K8sClientOpts = {}): Promise<K8sAp
     ): Promise<string> {
       const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline) {
-        const r = await core.listNamespacedPod(
+        const r = await core.listNamespacedPod({
           namespace,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          `job-name=${jobName}`,
-        );
-        const items = (r.body?.items ?? []) as any[];
+          labelSelector: `job-name=${jobName}`,
+        });
+        const items = (r.items ?? []) as any[];
         const ready = items.find((p) =>
           (p.status?.containerStatuses ?? []).every((c: any) => c.ready === true),
         );
@@ -229,12 +228,12 @@ export async function buildK8sApiClient(opts: K8sClientOpts = {}): Promise<K8sAp
 
     async deleteJob(namespace: string, jobName: string): Promise<void> {
       await batch
-        .deleteNamespacedJob(jobName, namespace, undefined, undefined, undefined, undefined, 'Foreground')
+        .deleteNamespacedJob({ name: jobName, namespace, propagationPolicy: 'Foreground' })
         .catch(() => {});
     },
 
     async deleteNetworkPolicy(namespace: string, name: string): Promise<void> {
-      await net.deleteNamespacedNetworkPolicy(name, namespace).catch(() => {});
+      await net.deleteNamespacedNetworkPolicy({ name, namespace }).catch(() => {});
     },
   };
 }
