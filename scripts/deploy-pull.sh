@@ -28,5 +28,6 @@ $COMPOSE up -d
 
 echo "==> Pruning unused images"
 docker image prune -a -f >/dev/null
+docker builder prune -a -f >/dev/null
 
 $COMPOSE ps
