@@ -97,6 +97,12 @@ jobs:
       - name: Dump logs on failure
         if: failure()
         run: |
+          echo "::group::migrate"
+          docker compose -f docker-compose.full.yml logs --tail=200 migrate || true
+          echo "::endgroup::"
+          echo "::group::seed"
+          docker compose -f docker-compose.full.yml logs --tail=200 seed || true
+          echo "::endgroup::"
           echo "::group::api"
           docker compose -f docker-compose.full.yml logs --tail=200 api || true
           echo "::endgroup::"

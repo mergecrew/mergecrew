@@ -165,7 +165,21 @@ services:
     # Dockerfile sets WORKDIR to /app/apps/api, so go up to /app to
     # find packages/db.
     working_dir: /app
-    command: ['packages/db/node_modules/.bin/prisma', 'migrate', 'deploy', '--schema', 'packages/db/prisma/schema.prisma']
+    # Prisma 7 reads connection config from prisma.config.ts (#794).
+    # The file lives at packages/db/prisma.config.ts; without --config
+    # the CLI searches cwd (/app) and the schema's parent
+    # (/app/packages/db/prisma) and finds neither, then bails with
+    # "datasource.url required."
+    command:
+      [
+        'packages/db/node_modules/.bin/prisma',
+        'migrate',
+        'deploy',
+        '--config',
+        'packages/db/prisma.config.ts',
+        '--schema',
+        'packages/db/prisma/schema.prisma',
+      ]
     restart: 'no'
 
   # One-shot: seeds the price table + a `demo` org + `demo@mergecrew.local`

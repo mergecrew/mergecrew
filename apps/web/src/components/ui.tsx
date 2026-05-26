@@ -12,9 +12,28 @@ import { clsx } from 'clsx';
    Surfaces
    ───────────────────────────────────────────────────────────── */
 
+/**
+ * Card surface — border + paper bg + shadow + sensible inner padding.
+ *
+ * Padding default: `p-5`. Callers that want a different padding (or a
+ * full-bleed card holding its own grid/table) pass a `p-*` / `px-*`
+ * / `py-*` class via `className` and we skip the default. Without this
+ * detection the Tailwind-generated CSS sorts `p-0` before `p-5`, so
+ * `<Card className="p-0">` would silently get `p-5` from the rule
+ * that appears later in the stylesheet — every "this card has no
+ * padding" complaint we've shipped traces back to that.
+ */
+const HAS_PADDING_RE = /(?:^|\s)(?:p|px|py|pt|pb|pl|pr)-/;
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
+  const callerOverridesPadding = className ? HAS_PADDING_RE.test(className) : false;
   return (
-    <div className={clsx('border border-hair bg-paper shadow-card', className)}>
+    <div
+      className={clsx(
+        'border border-hair bg-paper shadow-card',
+        !callerOverridesPadding && 'p-5',
+        className,
+      )}
+    >
       {children}
     </div>
   );
