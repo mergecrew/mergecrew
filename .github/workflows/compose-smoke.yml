@@ -54,74 +54,24 @@ jobs:
           docker image prune -af || true
           df -h
       - uses: docker/setup-buildx-action@v4
-      # Build each mergecrew image with buildx + GHA cache. The deps
-      # stage in every Dockerfile (corepack + pnpm install) is the
-      # slow step (~3-4min on cold cache, ~5s on warm). Caching it
-      # across runs is the difference between an 8min smoke and a
-      # 3min one.
-      #
-      # We `load: true` so the daemon sees each image — `docker
-      # compose up` (without --build) then picks them up by tag. The
-      # five images share the deps stage almost entirely, so the
-      # second-onward builds in a single run also benefit from the
-      # local-daemon cache, not just GHA.
-      - name: Build api image (cached)
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: infra/docker/Dockerfile.api
-          tags: mergecrew/api:latest
-          load: true
-          cache-from: type=gha,scope=api
-          cache-to: type=gha,scope=api,mode=max
-      - name: Build orchestrator image (cached)
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: infra/docker/Dockerfile.orchestrator
-          tags: mergecrew/orchestrator:latest
-          load: true
-          cache-from: type=gha,scope=orchestrator
-          cache-to: type=gha,scope=orchestrator,mode=max
-      - name: Build runner image (cached)
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: infra/docker/Dockerfile.runner
-          tags: mergecrew/runner:latest
-          load: true
-          cache-from: type=gha,scope=runner
-          cache-to: type=gha,scope=runner,mode=max
-      - name: Build web image (cached)
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: infra/docker/Dockerfile.web
-          tags: mergecrew/web:latest
-          load: true
-          cache-from: type=gha,scope=web
-          cache-to: type=gha,scope=web,mode=max
-      - name: Build worker-cron image (cached)
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: infra/docker/Dockerfile.worker-cron
-          tags: mergecrew/worker-cron:latest
-          load: true
-          cache-from: type=gha,scope=worker-cron
-          cache-to: type=gha,scope=worker-cron,mode=max
-      - name: docker compose up (start, images pre-built)
+      - name: docker compose up (build + start, GHA-cached)
         env:
           MERGECREW_AGENT_STUB: '1'
+          # `compose --build` calls into buildx and respects the
+          # per-service cache_from/cache_to declared in
+          # docker-compose.full.yml. Compose runs the builds in
+          # parallel by default — that plus per-image GHA scopes
+          # turns the ~8min cold/serial smoke into ~3min warm.
+          COMPOSE_DOCKER_CLI_BUILD: '1'
+          DOCKER_BUILDKIT: '1'
+          BUILDX_BAKE_GIT_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Mint a per-run API key so the seed inserts a working
           # operator-role row. Same pattern as scripts/e2e-local.sh.
           rand=$(head -c 32 /dev/urandom | base64 | tr -d '+/=\n' | head -c 32)
           echo "MERGECREW_E2E_LOCAL_API_KEY=mc_live_${rand}" >> "$GITHUB_ENV"
           export MERGECREW_E2E_LOCAL_API_KEY="mc_live_${rand}"
-          # No --build here — the five mergecrew images were just built
-          # above with GHA-cached layers. compose sees them by tag.
-          docker compose -f docker-compose.full.yml up -d
+          docker compose -f docker-compose.full.yml up -d --build
       - name: Wait for API /readyz
         run: |
           deadline=$(( $(date +%s) + 180 ))
