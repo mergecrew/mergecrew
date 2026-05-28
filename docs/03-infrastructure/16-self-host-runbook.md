@@ -405,6 +405,54 @@ The supervisor with a mounted `/var/run/docker.sock` is root-equivalent on the h
 
 ---
 
+### Optional: container-namespace egress enforcement
+<a id="egress-namespace"></a>
+
+Mergecrew enforces project egress allowlists at **two** layers when configured:
+
+1. **Skill layer** (always on). `packages/skills/src/egress-policy.ts` checks every HTTP-bound skill call against the project's `runner.egress.allow` and blocks pre-flight. This is the load-bearing piece for v1; sufficient for most deployments.
+2. **Container namespace + DNS layer** (opt-in). The sandbox container joins a docker network whose nftables ruleset default-drops outbound traffic except to the allowlist, and a per-run DNS resolver returns NXDOMAIN for hostnames outside the project's list. Closes the "build script bypasses skills + connects by IP" path.
+
+Enable the second layer when you don't trust step code to stay inside the skill API (e.g. you run arbitrary `npm install` / `pip install` from untrusted lockfiles).
+
+**1. Provision the network + nftables ruleset (one-time, host-side):**
+
+```sh
+sudo bash scripts/provision-egress-network.sh
+```
+
+Creates the `mergecrew-egress` docker bridge network and writes `/etc/nftables.d/mergecrew-egress.conf` with a default-drop ruleset whose `allowlist_v4` set the operator populates from project configs. See [`23-runner-network-policy.md`](23-runner-network-policy.md) for the rule mechanics.
+
+**2. Uncomment the opt-in blocks in `docker-compose.prod.yml`:**
+
+- The `runner-dns` service block (builds `infra/docker/Dockerfile.runner-dns`).
+- The `egress` external network at the bottom.
+
+Then:
+
+```sh
+docker compose -f docker-compose.prod.yml up -d runner-dns
+RESOLVER_IP=$(docker inspect mergecrew-runner-dns | jq -r '.[].NetworkSettings.Networks["mergecrew-egress"].IPAddress')
+echo "RUNNER_EGRESS_NETWORK=mergecrew-egress" >> .env
+echo "RUNNER_DNS_RESOLVER=$RESOLVER_IP"       >> .env
+docker compose -f docker-compose.prod.yml up -d runner
+```
+
+**3. Verify:**
+
+```sh
+# Trigger a run with `runner.egress.allow` set in the project's mergecrew.yaml.
+docker exec <sandbox-id> nslookup api.github.com   # resolves
+docker exec <sandbox-id> nslookup evil.com         # NXDOMAIN
+sudo nft -j list counters table inet mergecrew     # blocked-outbound counter ticks up
+```
+
+**Rollback.** Comment the two compose blocks again and unset `RUNNER_EGRESS_NETWORK` / `RUNNER_DNS_RESOLVER` in `.env`. The driver falls back to `--network none` for projects that declare an allowlist, which is a safe baseline (the skill layer still enforces).
+
+**Source.** EPIC [#828](https://github.com/mergecrew/mergecrew/issues/828) / [#834](https://github.com/mergecrew/mergecrew/issues/834). Mechanics: [`23-runner-network-policy.md`](23-runner-network-policy.md). DNS service: `apps/runner-dns/`.
+
+---
+
 ### Rotate KMS_MASTER_KEY
 <a id="rotate-kms"></a>
 
