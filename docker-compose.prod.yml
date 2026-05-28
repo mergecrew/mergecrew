@@ -114,6 +114,12 @@ services:
     container_name: mergecrew-runner
     restart: unless-stopped
     env_file: .env
+    environment:
+      # Same path on both sides of the bind mount below — the
+      # DockerDriver passes this as the source path of the sandbox
+      # container's `-v workspacePath:/workspace`, and that source is
+      # resolved by the **host** daemon. EPIC #828.
+      RUNNER_WORKSPACE_ROOT: /var/mergecrew/work
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     networks: [internal]
@@ -123,6 +129,19 @@ services:
       # pre-creates this path chowned to the `node` user, so the volume
       # initializes with the right ownership on first mount.
       - transcripts:/var/mergecrew/transcripts
+      # Docker-out-of-docker wiring (EPIC #828). Required for
+      # RUNNER_SANDBOX=docker. The runner-entrypoint.sh resolves the
+      # host docker group's GID at boot. If you don't want DooD,
+      # comment these two out and set RUNNER_SANDBOX=process (or
+      # leave the runner as a host process).
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Host workspace path. MUST exist with uid:gid 1000:1000 (the
+      # `node` user) before `docker compose up` — see
+      # docs/03-infrastructure/16-self-host-runbook.md § "Deploy to
+      # EC2". The path is the SAME on host and inside the container
+      # so the runner's workspacePath strings are resolvable by the
+      # host daemon when it processes sandbox `-v` flags.
+      - /var/mergecrew/work:/var/mergecrew/work
     depends_on:
       redis: { condition: service_healthy }
     deploy:

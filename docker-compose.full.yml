@@ -259,7 +259,17 @@ services:
     restart: unless-stopped
     environment:
       <<: *default_env
+      # See runner block in docker-compose.prod.yml + EPIC #828. Same
+      # path inside and outside the bind mount below so workspace
+      # paths are resolvable by the host daemon for sandbox `-v` flags.
+      RUNNER_WORKSPACE_ROOT: /var/mergecrew/work
     networks: [internal]
+    volumes:
+      # Docker-out-of-docker wiring (EPIC #828). Required for
+      # RUNNER_SANDBOX=docker. Pre-create the host workspace dir with
+      # `mkdir -p /var/mergecrew/work && chown 1000:1000 /var/mergecrew/work`.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/mergecrew/work:/var/mergecrew/work
     depends_on:
       seed: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
