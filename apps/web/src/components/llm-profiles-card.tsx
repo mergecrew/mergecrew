@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { Card, Button } from '@/components/ui';
+import { Button } from '@/components/ui';
 
 interface Profile {
   id: string;
@@ -56,16 +56,9 @@ export function LlmProfilesCard({ profiles, availableRefs = [], canEdit, onCreat
   };
 
   return (
-    <Card>
-      <div className="flex items-baseline justify-between">
-        <div>
-          <h2 className="font-medium">LLM profiles</h2>
-          <p className="text-xs text-zinc-500">
-            Ordered list of <code>provider/model</code> refs the router walks for each capability.
-            The first available + capable provider wins.
-          </p>
-        </div>
-        {canEdit && !creating && (
+    <>
+      {canEdit && !creating && (
+        <div className="mb-3 flex justify-end">
           <Button
             variant="primary"
             disabled={pending}
@@ -76,11 +69,11 @@ export function LlmProfilesCard({ profiles, availableRefs = [], canEdit, onCreat
           >
             New profile
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       {error && (
-        <div className="mt-2 rounded bg-rose-50 p-2 text-xs text-rose-800 dark:bg-rose-900/20 dark:text-rose-300">
+        <div className="mb-2 rounded bg-rose-50 p-2 text-xs text-rose-800 dark:bg-rose-900/20 dark:text-rose-300">
           {error}
         </div>
       )}
@@ -101,7 +94,7 @@ export function LlmProfilesCard({ profiles, availableRefs = [], canEdit, onCreat
         />
       )}
 
-      <ul className="mt-3 space-y-2">
+      <ul className="space-y-2">
         {profiles.map((p) => (
           <li key={p.id} className="rounded border p-3 dark:border-zinc-800">
             {editing === p.id ? (
@@ -182,7 +175,7 @@ export function LlmProfilesCard({ profiles, availableRefs = [], canEdit, onCreat
           </li>
         )}
       </ul>
-    </Card>
+    </>
   );
 }
 
