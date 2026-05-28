@@ -13,7 +13,12 @@ import { runStep } from './step.js';
 import { CancellationCoordinator } from './cancellation.js';
 import { startProbeServer } from './probe-server.js';
 import { cleanupWorkspace, WORKSPACE_CLEANUP_QUEUE } from './workspace.js';
-import { buildSandboxDriver, buildSandboxDriverAsync, HttpSandboxDriver } from '@mergecrew/sandbox-driver';
+import {
+  buildSandboxDriver,
+  buildSandboxDriverAsync,
+  DockerDriver,
+  HttpSandboxDriver,
+} from '@mergecrew/sandbox-driver';
 import { withSystem } from '@mergecrew/db';
 import { launchFargateAgent } from './fargate-byo-launcher.js';
 import { launchGithubActionsWorkflow } from './github-actions-launcher.js';
@@ -380,9 +385,21 @@ const probePort = Number(process.env.RUNNER_HEALTH_PORT ?? 9091);
 const probeServer = startProbeServer({ port: probePort, redis: conn, logger });
 
 driverPromise
-  .then((d) =>
-    logger.info({ concurrency, sandboxDriver: d.name }, 'runner started'),
-  )
+  .then(async (d) => {
+    // Orphan sandbox sweep (#831). If the previous supervisor crashed
+    // mid-step, its sandbox containers are still around — `docker ps -a`
+    // them and `docker rm -f` anything `mergecrew-*` older than 1h. No-op
+    // for non-docker drivers.
+    if (d instanceof DockerDriver) {
+      await d.purgeOrphans().catch((err) =>
+        logger.warn(
+          { err: err?.message ?? err },
+          'orphan sandbox sweep failed; continuing startup',
+        ),
+      );
+    }
+    logger.info({ concurrency, sandboxDriver: d.name }, 'runner started');
+  })
   .catch((err) => {
     logger.error({ err: err?.message ?? err }, 'sandbox driver init failed; exiting');
     process.exit(1);

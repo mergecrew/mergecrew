@@ -252,6 +252,102 @@ export class DockerDriver implements SandboxDriver {
     this.workspaces.delete(handle.id);
   }
 
+  /**
+   * Remove sandbox containers left behind by a previous supervisor
+   * process — OOM, kernel panic, `docker compose down` while a step
+   * was in flight (#831). Without this, crash-loops accumulate dead
+   * `mergecrew-*` containers and image-layer disk usage.
+   *
+   * Best-effort: every individual `docker rm -f` failure is warn-logged
+   * and skipped; the sweep itself never throws. Capped at `maxRemovals`
+   * so a pathological pileup can't block startup.
+   *
+   * Called once from the runner's main.ts after the driver promise
+   * resolves and before the BullMQ worker starts consuming.
+   */
+  async purgeOrphans(opts: {
+    maxAgeMs?: number;
+    maxRemovals?: number;
+    now?: () => number;
+  } = {}): Promise<{ candidates: number; removed: number; skippedRecent: number }> {
+    const maxAgeMs = opts.maxAgeMs ?? 60 * 60 * 1000;
+    const maxRemovals = opts.maxRemovals ?? 100;
+    const now = opts.now ?? (() => Date.now());
+
+    const listResult = await execa(
+      this.bin,
+      [
+        'ps',
+        '-a',
+        '--filter',
+        'name=^/mergecrew-',
+        '--filter',
+        'status=exited',
+        '--filter',
+        'status=created',
+        '--format',
+        '{{.Names}}\t{{.FinishedAt}}\t{{.State}}',
+      ],
+      { reject: false },
+    );
+    if (listResult.exitCode !== 0) {
+      this.logger?.warn('orphan sweep: docker ps -a failed; skipping', {
+        event: 'runner.orphan_sweep_failed',
+        stderr: (listResult.stderr ?? '').toString().trim(),
+      });
+      return { candidates: 0, removed: 0, skippedRecent: 0 };
+    }
+    const raw = listResult.stdout.toString().trim();
+    if (!raw) return { candidates: 0, removed: 0, skippedRecent: 0 };
+
+    const rows = raw.split('\n').map((line) => {
+      const [name, finishedAt, state] = line.split('\t');
+      return { name: name ?? '', finishedAt: finishedAt ?? '', state: state ?? '' };
+    });
+
+    const eligible: string[] = [];
+    let skippedRecent = 0;
+    for (const row of rows) {
+      if (!row.name.startsWith('mergecrew-')) continue;
+      // `created` containers never started; treat as orphan unconditionally.
+      // `exited` containers compared against maxAgeMs.
+      if (row.state === 'created') {
+        eligible.push(row.name);
+        continue;
+      }
+      if (row.state !== 'exited') continue;
+      const ts = Date.parse(row.finishedAt);
+      if (!Number.isFinite(ts) || now() - ts > maxAgeMs) {
+        eligible.push(row.name);
+      } else {
+        skippedRecent += 1;
+      }
+    }
+
+    const toRemove = eligible.slice(0, maxRemovals);
+    let removed = 0;
+    for (const name of toRemove) {
+      const rm = await execa(this.bin, ['rm', '-f', name], { reject: false });
+      if (rm.exitCode === 0) {
+        removed += 1;
+      } else {
+        this.logger?.warn('orphan sweep: docker rm -f failed', {
+          event: 'runner.orphan_rm_failed',
+          name,
+          stderr: (rm.stderr ?? '').toString().trim(),
+        });
+      }
+    }
+    this.logger?.info('orphan sweep complete', {
+      event: 'runner.orphan_sweep',
+      candidates: eligible.length,
+      removed,
+      skippedRecent,
+      cappedAt: toRemove.length < eligible.length ? maxRemovals : undefined,
+    });
+    return { candidates: eligible.length, removed, skippedRecent };
+  }
+
   /** Exposed for tests. */
   buildRunArgs(name: string, image: string, opts: SandboxStartOpts): string[] {
     const args = ['run', '-d', '--name', name];
