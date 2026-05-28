@@ -259,7 +259,23 @@ services:
     restart: unless-stopped
     environment:
       <<: *default_env
+      # See runner block in docker-compose.prod.yml + EPIC #828. The
+      # full-compose path uses a named volume rather than a host bind
+      # so a fresh `docker compose up` works without prior host
+      # setup; the named volume inherits the runner image's
+      # node-owned /var/mergecrew/work on first mount. RUNNER_SANDBOX=docker
+      # on this stack technically works for the operator's own org,
+      # but per-run sandbox `-v` flags can't resolve into a named
+      # volume so this stack is best used with RUNNER_SANDBOX=process.
+      # For DooD use docker-compose.prod.yml — it has the host bind.
+      RUNNER_WORKSPACE_ROOT: /var/mergecrew/work
     networks: [internal]
+    volumes:
+      # Docker-out-of-docker wiring (EPIC #828). Useful even with
+      # RUNNER_SANDBOX=process so `docker info` works in-container
+      # for diagnostics. Remove if your host doesn't have a daemon.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - workspaces:/var/mergecrew/work
     depends_on:
       seed: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
@@ -345,3 +361,9 @@ volumes:
   redis_data:
   minio_data:
   ollama_data:
+  # Runner workspace tree (EPIC #828). Named volume so a fresh
+  # compose up inherits the runner image's node-owned dir without
+  # operator-side mkdir/chown. For DooD (RUNNER_SANDBOX=docker on
+  # docker-compose.prod.yml) the workspace is a host bind instead
+  # so the path is resolvable by the host daemon for sandbox -v.
+  workspaces:

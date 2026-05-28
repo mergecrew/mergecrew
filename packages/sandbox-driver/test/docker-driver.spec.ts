@@ -366,4 +366,104 @@ describe('DockerDriver', () => {
     await d.exec(handle, { cmd: 'false', args: [] });
     expect(events.find((e) => e.meta?.event === 'sandbox.oom_suspected')).toBeUndefined();
   });
+
+  // ---------------------------------------------------------------
+  // Orphan sweeper (#831). Verifies the supervisor-startup cleanup
+  // pass that removes mergecrew-* containers left behind by a
+  // previous crashed runner.
+  // ---------------------------------------------------------------
+  describe('purgeOrphans', () => {
+    const NOW = Date.parse('2026-06-01T12:00:00Z');
+    const now = () => NOW;
+
+    it('removes exited orphans older than maxAgeMs, skips recent ones', async () => {
+      // docker ps -a output: name<TAB>finishedAt<TAB>state
+      const output = [
+        // 2h old → eligible
+        'mergecrew-run-1-aaaa1111\t2026-06-01T10:00:00Z\texited',
+        // 30min old → recent, skipped
+        'mergecrew-run-2-bbbb2222\t2026-06-01T11:30:00Z\texited',
+        // 5h old → eligible
+        'mergecrew-run-3-cccc3333\t2026-06-01T07:00:00Z\texited',
+      ].join('\n');
+      execaResponses.push({ exitCode: 0, stdout: output });
+      // Two rm responses for the two eligible orphans.
+      execaResponses.push({ exitCode: 0, stdout: '' });
+      execaResponses.push({ exitCode: 0, stdout: '' });
+
+      const result = await driver.purgeOrphans({ now });
+
+      expect(result).toEqual({ candidates: 2, removed: 2, skippedRecent: 1 });
+      const rmCalls = execaCalls.filter((c) => c.args[0] === 'rm');
+      expect(rmCalls).toHaveLength(2);
+      expect(rmCalls[0]!.args).toEqual(['rm', '-f', 'mergecrew-run-1-aaaa1111']);
+      expect(rmCalls[1]!.args).toEqual(['rm', '-f', 'mergecrew-run-3-cccc3333']);
+    });
+
+    it('treats `created` state as eligible regardless of timestamp', async () => {
+      // `created` containers never started — partial `docker run` from
+      // a crashed runner. FinishedAt is the zero-time string docker
+      // emits when the container never finished. Should be removed.
+      const output = 'mergecrew-run-x-deadbeef\t0001-01-01T00:00:00Z\tcreated';
+      execaResponses.push({ exitCode: 0, stdout: output });
+      execaResponses.push({ exitCode: 0, stdout: '' });
+
+      const result = await driver.purgeOrphans({ now });
+
+      expect(result.candidates).toBe(1);
+      expect(result.removed).toBe(1);
+    });
+
+    it('caps at maxRemovals when there are many orphans', async () => {
+      const rows: string[] = [];
+      for (let i = 0; i < 5; i += 1) {
+        rows.push(`mergecrew-run-${i}-aaaaaaaa\t2026-06-01T07:00:00Z\texited`);
+      }
+      execaResponses.push({ exitCode: 0, stdout: rows.join('\n') });
+      for (let i = 0; i < 3; i += 1) execaResponses.push({ exitCode: 0, stdout: '' });
+
+      const result = await driver.purgeOrphans({ now, maxRemovals: 3 });
+
+      expect(result.candidates).toBe(5);
+      expect(result.removed).toBe(3);
+      expect(execaCalls.filter((c) => c.args[0] === 'rm')).toHaveLength(3);
+    });
+
+    it('continues on individual rm failure, warn-logs each', async () => {
+      const warn = vi.fn();
+      const d = new DockerDriver({ logger: { info: () => {}, warn, error: () => {} } });
+      execaResponses.push({
+        exitCode: 0,
+        stdout:
+          'mergecrew-run-a-aaaa1111\t2026-06-01T07:00:00Z\texited\n' +
+          'mergecrew-run-b-bbbb2222\t2026-06-01T07:00:00Z\texited',
+      });
+      execaResponses.push({ exitCode: 1, stdout: '', stderr: 'no such container' });
+      execaResponses.push({ exitCode: 0, stdout: '' });
+
+      const result = await d.purgeOrphans({ now });
+
+      expect(result.candidates).toBe(2);
+      expect(result.removed).toBe(1);
+      expect(warn).toHaveBeenCalledWith(
+        'orphan sweep: docker rm -f failed',
+        expect.objectContaining({ name: 'mergecrew-run-a-aaaa1111' }),
+      );
+    });
+
+    it('no-ops on empty `docker ps -a` output', async () => {
+      execaResponses.push({ exitCode: 0, stdout: '' });
+      const result = await driver.purgeOrphans({ now });
+      expect(result).toEqual({ candidates: 0, removed: 0, skippedRecent: 0 });
+      // Only the list call, no rm calls.
+      expect(execaCalls).toHaveLength(1);
+      expect(execaCalls[0]!.args[0]).toBe('ps');
+    });
+
+    it('returns zero counts when `docker ps -a` itself fails', async () => {
+      execaResponses.push({ exitCode: 1, stdout: '', stderr: 'daemon down' });
+      const result = await driver.purgeOrphans({ now });
+      expect(result).toEqual({ candidates: 0, removed: 0, skippedRecent: 0 });
+    });
+  });
 });

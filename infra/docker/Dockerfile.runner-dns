@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1.7
+# mergecrew/runner-dns — per-run DNS resolver sidecar (#574 / #834).
+#
+# A small Node service that listens on UDP/53, returns NXDOMAIN for
+# hostnames outside the operator's allowlist, and forwards permitted
+# queries upstream. Deployed alongside the sandbox driver as the
+# DNS-layer half of the container-namespace egress policy (#573).
+#
+# Run as a sidecar on the `mergecrew-egress` docker network and
+# point the supervisor at it via RUNNER_DNS_RESOLVER=<container IP>.
+ARG NODE_VERSION=22-bookworm
+
+FROM node:${NODE_VERSION} AS base
+RUN corepack enable
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /repo
+
+FROM base AS deps
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* tsconfig.base.json ./
+COPY apps/runner-dns/package.json apps/runner-dns/
+COPY packages/ packages/
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store,id=pnpm-store \
+    pnpm install --frozen-lockfile=false
+
+FROM deps AS build
+COPY . .
+RUN pnpm --filter @mergecrew/runner-dns... build
+
+FROM node:${NODE_VERSION}-slim AS runtime
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=build /repo/node_modules /app/node_modules
+COPY --from=build /repo/apps/runner-dns/node_modules /app/apps/runner-dns/node_modules
+COPY --from=build /repo/apps/runner-dns/dist /app/apps/runner-dns/dist
+COPY --from=build /repo/apps/runner-dns/package.json /app/apps/runner-dns/package.json
+USER node
+WORKDIR /app/apps/runner-dns
+EXPOSE 53/udp
+CMD ["node", "dist/main.js"]

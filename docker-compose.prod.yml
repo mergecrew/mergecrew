@@ -114,6 +114,12 @@ services:
     container_name: mergecrew-runner
     restart: unless-stopped
     env_file: .env
+    environment:
+      # Same path on both sides of the bind mount below — the
+      # DockerDriver passes this as the source path of the sandbox
+      # container's `-v workspacePath:/workspace`, and that source is
+      # resolved by the **host** daemon. EPIC #828.
+      RUNNER_WORKSPACE_ROOT: /var/mergecrew/work
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     networks: [internal]
@@ -123,6 +129,19 @@ services:
       # pre-creates this path chowned to the `node` user, so the volume
       # initializes with the right ownership on first mount.
       - transcripts:/var/mergecrew/transcripts
+      # Docker-out-of-docker wiring (EPIC #828). Required for
+      # RUNNER_SANDBOX=docker. The runner-entrypoint.sh resolves the
+      # host docker group's GID at boot. If you don't want DooD,
+      # comment these two out and set RUNNER_SANDBOX=process (or
+      # leave the runner as a host process).
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Host workspace path. MUST exist with uid:gid 1000:1000 (the
+      # `node` user) before `docker compose up` — see
+      # docs/03-infrastructure/16-self-host-runbook.md § "Deploy to
+      # EC2". The path is the SAME on host and inside the container
+      # so the runner's workspacePath strings are resolvable by the
+      # host daemon when it processes sandbox `-v` flags.
+      - /var/mergecrew/work:/var/mergecrew/work
     depends_on:
       redis: { condition: service_healthy }
     deploy:
@@ -170,8 +189,47 @@ services:
           cpus: '${WEB_CPU_LIMIT:-0.5}'
           memory: ${WEB_MEM_LIMIT:-512m}
 
+  # Optional per-run DNS resolver (#574 / #834). Returns NXDOMAIN
+  # for hostnames outside the operator-managed allowlist; forwards
+  # permitted queries upstream. Sandboxes that join the egress
+  # network get their /etc/resolv.conf pointed here via the
+  # driver's --dns flag (set RUNNER_DNS_RESOLVER=<this container's
+  # IP> in .env). See docs/03-infrastructure/23-runner-network-policy.md.
+  #
+  # Opt in by uncommenting this block AND the `egress` network
+  # definition below, then run `sudo bash scripts/provision-egress-network.sh`.
+  #
+  # runner-dns:
+  #   build:
+  #     context: .
+  #     dockerfile: infra/docker/Dockerfile.runner-dns
+  #   image: ghcr.io/mergecrew/runner-dns:${MERGECREW_TAG:-latest}
+  #   container_name: mergecrew-runner-dns
+  #   restart: unless-stopped
+  #   environment:
+  #     RUNNER_DNS_PORT: "53"
+  #     # Comma-separated; supports *.suffix.tld wildcards. Union of every
+  #     # project's runner.egress.allow that this operator hosts.
+  #     RUNNER_DNS_ALLOWLIST: "api.github.com,*.fastly.net,*.pypi.org,files.pythonhosted.org"
+  #     RUNNER_DNS_UPSTREAM: "1.1.1.1:53"
+  #   networks: [egress]
+
 networks:
   internal:
+  # Optional per-project egress network (#834). External so the
+  # operator provisions it via scripts/provision-egress-network.sh
+  # which also installs the matching nftables ruleset. The
+  # runner-dns service + the sandbox containers (when a project
+  # sets runner.egress.allow) join this network; the host nftables
+  # default-drops outbound traffic from the bridge unless the
+  # destination is in the operator-managed allowlist set.
+  #
+  # Leave this disabled (commented) for the default single-tenant
+  # path — the skill-layer allowlist still works, this just adds
+  # the container-namespace layer.
+  # egress:
+  #   external: true
+  #   name: mergecrew-egress
 
 volumes:
   redis_data:

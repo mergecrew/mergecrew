@@ -21,6 +21,8 @@ Each entry is symptom → likely cause → recovery → source of truth. If a sy
 | Configure outbound email (digests, magic-link) | [Configure outbound email](#configure-email) |
 | Worker stuck, want to restart safely | [Restart a worker without losing in-flight runs](#safe-restart) |
 | Switch the runner to the docker sandbox driver | [Enable RUNNER_SANDBOX=docker](#runner-sandbox-docker) |
+| Stand up a fresh deployment on an AWS EC2 (Amazon Linux 2023) box | [Deploy to AWS EC2](#deploy-ec2) |
+| Understand the host-root exposure when mounting `/var/run/docker.sock` | [Docker socket security](37-runner-docker-sock-security.md) |
 
 ---
 
@@ -175,9 +177,16 @@ Each entry is symptom → likely cause → recovery → source of truth. If a sy
 
 **Recovery — flipping to docker.**
 
-1. **Confirm the supervisor has access to a Docker socket.** Either bind-mount `/var/run/docker.sock` into the supervisor container, or run the supervisor on a host with a Docker socket available. `docker info` from within the supervisor process must work.
-2. **Ensure CAP_CHOWN** (or run the supervisor as root inside its container). The docker driver chowns the workspace to uid 1001 before `docker run`; without CAP_CHOWN the build will surface EACCES. See [`docs/03-infrastructure/22-runner-images.md`](22-runner-images.md) § "Workspace ownership (host side)".
-3. **Set the env.** Add to the supervisor's environment:
+If you're starting from a fresh box rather than retrofitting an existing deploy, follow the [Deploy to AWS EC2 (Amazon Linux 2023)](#deploy-ec2) recipe instead — it covers the same ground end-to-end including the trusted-org gate and the host-side workspace dir.
+
+1. **Confirm the supervisor can talk to a Docker socket.** Both `docker-compose.prod.yml` and `docker-compose.full.yml` now bind-mount `/var/run/docker.sock` into the `runner` service and the runner image ships the `docker` CLI plus a GID-aligning entrypoint (#828 / #829 / #830). If you're running the supervisor as a host process (not in compose), make sure the runner user is in the docker group.
+2. **Pre-create the workspace dir** on the host (one-time):
+   ```sh
+   sudo mkdir -p /var/mergecrew/work
+   sudo chown 1000:1000 /var/mergecrew/work
+   ```
+   Compose bind-mounts this at the same path inside the runner container so the sandbox `-v workspacePath:/workspace` source side is resolvable by the host daemon. Owner uid 1000 matches the `node` user that runs the supervisor.
+3. **Set the env.** Add to `.env`:
 
    ```sh
    RUNNER_SANDBOX=docker
@@ -185,10 +194,13 @@ Each entry is symptom → likely cause → recovery → source of truth. If a sy
    RUNNER_DEFAULT_IMAGE=ghcr.io/mergecrew/runner-node:20
    RUNNER_OCI_RUNTIME=runsc           # gVisor; default 'runc' is fine for most
    RUNNER_DOCKER_BIN=podman           # for rootless/podman setups
+   RUNNER_DOCKER_GID=988              # override the entrypoint's socket-GID stat (rare)
    ```
 
-4. **Restart the supervisor.** Startup log now shows `sandboxDriver: 'docker'` and the unsandboxed banner is gone.
+4. **Restart the supervisor.** Startup log now shows `sandbox driver: docker (per-run container isolation enabled)` and the unsandboxed banner is gone. The orphan-sandbox sweeper (#831) also runs once on this restart, removing any `mergecrew-*` containers left behind by the previous process.
 5. **Run a smoke step.** The first per-tenant build run pulls the stock image (or the `runner.image` from `mergecrew.yaml`). First-time cold pull adds ~10s; subsequent runs reuse the cached image.
+
+> **Hardening.** Mounting `/var/run/docker.sock` into the supervisor gives that container root-equivalent access to the host. This is acceptable because the supervisor runs first-party code (no untrusted user code executes in-process), but read [Docker socket security](37-runner-docker-sock-security.md) for the threat model and opt-in mitigations (socket proxy, rootless docker, gVisor).
 
 **Verification.** Inside the running container during a build step:
 
@@ -303,6 +315,143 @@ A standalone `docs/03-infrastructure/34-runner-agent.md` lands with [#766](https
 ---
 
 ## Recipes
+
+### Deploy to AWS EC2 (Amazon Linux 2023)
+<a id="deploy-ec2"></a>
+
+Reference deployment for a single-operator self-host: one AL2023 EC2 box runs the full mergecrew stack via `docker compose`, and the operator's own org is the only one allowed to use the host's docker daemon for sandbox isolation. Other people who sign up land on `runner_profile.kind = 'none'` and have to BYO via `runner-agent` or `fargate-byo`.
+
+**1. Provision the box.** `t3.medium` minimum (2 vCPU, 4 GB RAM). Security group: open 22 (SSH from your IP), 80/443 (the reverse proxy). EBS gp3 ≥ 30 GB — the runner image plus per-stack sandbox images and per-run workspaces add up.
+
+**2. Install Docker + the compose plugin.**
+
+AL2023 ships docker in the default `dnf` repo; the compose plugin is a separate install. The docker group's GID is **non-deterministic** on AL2023 — the package's post-install picks the next available system GID — but the runner image's entrypoint (#829) detects the host socket's GID at boot, so you don't need to pin it.
+
+```sh
+sudo dnf install -y docker
+sudo systemctl enable --now docker
+sudo usermod -aG docker ec2-user
+
+# Compose plugin
+sudo mkdir -p /usr/local/lib/docker/cli-plugins
+sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose
+sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+# Log out + back in so ec2-user's docker group membership takes effect.
+```
+
+SELinux is **permissive** by default on AL2023, so the compose bind mounts work without `:z` / `:Z` flags.
+
+**3. Pre-create the workspace dir.** The supervisor and the host daemon must see the same path for sandbox `-v` flags to resolve:
+
+```sh
+sudo mkdir -p /var/mergecrew/work
+sudo chown 1000:1000 /var/mergecrew/work    # uid 1000 = `node` inside the runner image
+```
+
+**4. Clone + configure.**
+
+```sh
+git clone https://github.com/mergecrew/mergecrew.git
+cd mergecrew
+cp .env.example .env
+# Edit .env. Minimum to set:
+#
+#   MERGECREW_OWNER_ORG_SLUG=<your slug>   # your org gets kind=instance_builtin
+#   MERGECREW_TRUSTED_ORG_SLUGS=           # leave empty for single-tenant
+#   RUNNER_SANDBOX=docker
+#   KMS_MASTER_KEY=base64:<32 bytes>       # `openssl rand -base64 32`
+#   MERGECREW_INTERNAL_TOKEN=<32+ chars>   # `openssl rand -hex 32`
+#   GITHUB_APP_* …                         # see the GitHub App setup doc
+```
+
+> **Slug ownership.** `MERGECREW_OWNER_ORG_SLUG` is trust-by-string. Whoever creates an org with that exact slug becomes the trusted org. Pre-create your org via the seed script (or pick a non-obvious slug) before opening signups, otherwise the first stranger with the right slug inherits your trust.
+
+**5. Boot.**
+
+```sh
+docker compose -f docker-compose.prod.yml up -d
+```
+
+**6. Verify.**
+
+| Check | Command | Expected |
+|---|---|---|
+| All services healthy | `docker compose -f docker-compose.prod.yml ps` | every row `healthy` or `running` |
+| DooD wiring works | `docker exec mergecrew-runner docker ps` | lists at least `mergecrew-runner` itself |
+| Sandbox driver active | `docker logs mergecrew-runner \| grep -i sandbox` | `sandbox driver: docker (per-run container isolation enabled)` — **not** the multi-line `UNSANDBOXED RUNNER MODE` banner |
+| Orphan sweep ran | same logs | `orphan sweep complete` info entry (zero candidates on a fresh box) |
+| Per-step sandbox lands | trigger a run, then `docker ps` on the host | a `mergecrew-<runId>-<8 hex>` container appears for the duration of the step |
+
+**7. Multi-tenancy gate (already shipped — [ADR-0006](../adrs/0006-trusted-org-gating.md)).**
+
+When someone else signs up and creates an org:
+
+- If their slug matches `MERGECREW_OWNER_ORG_SLUG` or appears in `MERGECREW_TRUSTED_ORG_SLUGS`, they get `runner_profile.kind = 'instance_builtin'` — their runs share your host's docker daemon.
+- Otherwise they get `runner_profile.kind = 'none'` and **cannot start runs** until they configure a BYO profile from the Settings → Runner page. The API enforces this in three layers: defaulted at signup, blocked on profile update, blocked at run-start. See [Trust an org for the instance-builtin runner profile](#trusted-orgs).
+
+To onboard the BYO agent path for non-trusted orgs, see [`34-runner-agent.md`](34-runner-agent.md).
+
+**8. Hardening.**
+
+The supervisor with a mounted `/var/run/docker.sock` is root-equivalent on the host **if it gets compromised**. For typical single-operator self-hosts, this is fine (the supervisor is first-party code, no untrusted code runs in-process). For multi-operator or regulated deployments, opt into one or more mitigations covered in [Docker socket security](37-runner-docker-sock-security.md):
+
+- Front the socket with `tecnativa/docker-socket-proxy` (allowlist only the daemon endpoints the driver actually uses).
+- Run **rootless docker** on the host (socket-RCE only gets attacker-equivalent privileges, not root).
+- Set `RUNNER_OCI_RUNTIME=runsc` (gVisor) or `sysbox-runc` so per-step sandboxes are double-isolated.
+
+**Source.** EPIC [#828](https://github.com/mergecrew/mergecrew/issues/828). `infra/docker/Dockerfile.runner` + `runner-entrypoint.sh` (#829), `docker-compose.prod.yml` runner service (#830).
+
+---
+
+### Optional: container-namespace egress enforcement
+<a id="egress-namespace"></a>
+
+Mergecrew enforces project egress allowlists at **two** layers when configured:
+
+1. **Skill layer** (always on). `packages/skills/src/egress-policy.ts` checks every HTTP-bound skill call against the project's `runner.egress.allow` and blocks pre-flight. This is the load-bearing piece for v1; sufficient for most deployments.
+2. **Container namespace + DNS layer** (opt-in). The sandbox container joins a docker network whose nftables ruleset default-drops outbound traffic except to the allowlist, and a per-run DNS resolver returns NXDOMAIN for hostnames outside the project's list. Closes the "build script bypasses skills + connects by IP" path.
+
+Enable the second layer when you don't trust step code to stay inside the skill API (e.g. you run arbitrary `npm install` / `pip install` from untrusted lockfiles).
+
+**1. Provision the network + nftables ruleset (one-time, host-side):**
+
+```sh
+sudo bash scripts/provision-egress-network.sh
+```
+
+Creates the `mergecrew-egress` docker bridge network and writes `/etc/nftables.d/mergecrew-egress.conf` with a default-drop ruleset whose `allowlist_v4` set the operator populates from project configs. See [`23-runner-network-policy.md`](23-runner-network-policy.md) for the rule mechanics.
+
+**2. Uncomment the opt-in blocks in `docker-compose.prod.yml`:**
+
+- The `runner-dns` service block (builds `infra/docker/Dockerfile.runner-dns`).
+- The `egress` external network at the bottom.
+
+Then:
+
+```sh
+docker compose -f docker-compose.prod.yml up -d runner-dns
+RESOLVER_IP=$(docker inspect mergecrew-runner-dns | jq -r '.[].NetworkSettings.Networks["mergecrew-egress"].IPAddress')
+echo "RUNNER_EGRESS_NETWORK=mergecrew-egress" >> .env
+echo "RUNNER_DNS_RESOLVER=$RESOLVER_IP"       >> .env
+docker compose -f docker-compose.prod.yml up -d runner
+```
+
+**3. Verify:**
+
+```sh
+# Trigger a run with `runner.egress.allow` set in the project's mergecrew.yaml.
+docker exec <sandbox-id> nslookup api.github.com   # resolves
+docker exec <sandbox-id> nslookup evil.com         # NXDOMAIN
+sudo nft -j list counters table inet mergecrew     # blocked-outbound counter ticks up
+```
+
+**Rollback.** Comment the two compose blocks again and unset `RUNNER_EGRESS_NETWORK` / `RUNNER_DNS_RESOLVER` in `.env`. The driver falls back to `--network none` for projects that declare an allowlist, which is a safe baseline (the skill layer still enforces).
+
+**Source.** EPIC [#828](https://github.com/mergecrew/mergecrew/issues/828) / [#834](https://github.com/mergecrew/mergecrew/issues/834). Mechanics: [`23-runner-network-policy.md`](23-runner-network-policy.md). DNS service: `apps/runner-dns/`.
+
+---
 
 ### Rotate KMS_MASTER_KEY
 <a id="rotate-kms"></a>
