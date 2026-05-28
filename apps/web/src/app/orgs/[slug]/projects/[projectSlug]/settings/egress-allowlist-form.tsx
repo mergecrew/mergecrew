@@ -4,7 +4,7 @@
  * Per-project egress allowlist editor (#10 / #576 surface).
  *
  * The list is stored on the Project row (\`egress_allowlist\` jsonb).
- * Skills check it before every HTTP call; the docker/k8s/fargate/e2b
+ * Skills check it before every HTTP call; the docker/k8s/fargate
  * drivers also push it through to the per-run network namespace + DNS
  * resolver so the sandbox can't reach hosts outside the list.
  *
@@ -100,7 +100,7 @@ export function EgressAllowlistForm({
           <span className="block text-ink-2">
             When off, skills + sandboxes reach any public host (back-compat default). When on, only
             the hosts you list below are reachable; everything else is blocked at the skill layer
-            and (for docker / k8s / fargate / e2b drivers) at the per-run network namespace.
+            and (for docker / k8s / fargate drivers) at the per-run network namespace.
           </span>
         </span>
       </label>

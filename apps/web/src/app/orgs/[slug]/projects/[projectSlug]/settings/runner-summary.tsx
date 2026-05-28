@@ -62,7 +62,7 @@ const EXAMPLES: Array<{ title: string; description: string; yaml: string }> = [
   {
     title: 'Hostname egress allowlist',
     description:
-      'Per-project hostname allowlist. Used by HTTP-bound skills and (when the docker/k8s/fargate/e2b driver is configured) by the per-run network namespace + DNS resolver. `*.example.com` matches strict subdomains; `*` is explicit allow-all.',
+      'Per-project hostname allowlist. Used by HTTP-bound skills and (when the docker/k8s/fargate driver is configured) by the per-run network namespace + DNS resolver. `*.example.com` matches strict subdomains; `*` is explicit allow-all.',
     yaml: `runner:\n  egress:\n    allow:\n      - api.github.com\n      - "*.npmjs.org"\n      - "*.pypi.org"`,
   },
 ];
