@@ -20,7 +20,14 @@ RUN pnpm --filter @mergecrew/runner... build
 
 FROM node:${NODE_VERSION} AS runtime
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+# `docker.io` ships the docker CLI used by the DockerDriver when
+# RUNNER_SANDBOX=docker is selected (docker-out-of-docker against a
+# bind-mounted /var/run/docker.sock — see runner-entrypoint.sh for
+# the host-GID alignment). `gosu` drops privileges to `node` after
+# the entrypoint's group-fixup step. EPIC #828.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git ca-certificates docker.io gosu \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build /repo/node_modules /app/node_modules
 COPY --from=build /repo/apps/runner/node_modules /app/apps/runner/node_modules
 COPY --from=build /repo/apps/runner/dist /app/apps/runner/dist
@@ -28,6 +35,11 @@ COPY --from=build /repo/apps/runner/package.json /app/apps/runner/package.json
 COPY --from=build /repo/packages /app/packages
 RUN mkdir -p /var/mergecrew/work /var/mergecrew/transcripts && chown -R node:node /var/mergecrew
 RUN chown -R node:node /app
-USER node
+COPY infra/docker/runner-entrypoint.sh /usr/local/bin/runner-entrypoint.sh
+RUN chmod +x /usr/local/bin/runner-entrypoint.sh
+# Entrypoint runs as root so it can adjust group membership against
+# the bind-mounted docker socket's GID, then drops to `node` via
+# `gosu` before exec()ing the runner. The CMD stays the same.
 WORKDIR /app/apps/runner
+ENTRYPOINT ["/usr/local/bin/runner-entrypoint.sh"]
 CMD ["node", "dist/main.js"]
