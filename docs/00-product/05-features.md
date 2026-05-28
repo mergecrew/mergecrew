@@ -165,7 +165,7 @@ Each skill carries a JSON-schema input/output definition, capability requirement
 
 | Feature | Persona | Status |
 |---|---|---|
-| Per-run OCI sandbox (rootless docker driver, env scrub, workspace isolation) | Platform | Implemented (V1.x EPIC #555). Selected via `RUNNER_SANDBOX={process,docker,k8s,fargate,e2b}` on the supervisor. |
+| Per-run OCI sandbox (rootless docker driver, env scrub, workspace isolation) | Platform | Implemented (V1.x EPIC #555). Selected via `RUNNER_SANDBOX={process,docker,k8s,fargate}` on the supervisor. |
 | Polyglot stock images (`runner-node`, `runner-python`, `runner-java`, `runner-go`, `runner-polyglot`) auto-detected from lockfiles | All | Implemented. See [`03-infrastructure/22-runner-images.md`](../03-infrastructure/22-runner-images.md). |
 | `.devcontainer/devcontainer.json` honored when present | Mira | Implemented |
 | BYO image ref + private-registry pull credentials | Mira | Implemented |

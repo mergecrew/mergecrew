@@ -1,8 +1,19 @@
 # Decision: E2B (self-hosted) over rolling our own Firecracker stack
 
-**Status:** accepted (#579, 2026-05-19)
+**Status:** reversed (#773, 2026-05-27) — original status: accepted (#579, 2026-05-19)
 **Drivers:** mergecrew maintainers
 **Replaces:** —
+
+> **Reversed by #773.** After V2.af (#759) shipped the BYO `runner-agent`,
+> the dedicated `e2b` driver became redundant: an operator who wants
+> Firecracker-microVM isolation can run `mergecrew/runner-agent` inside
+> an E2B sandbox themselves and select `runner_profile.kind = 'agent'`.
+> The `e2b-driver.ts` / `e2b-api-client.ts` files and `RUNNER_SANDBOX=e2b`
+> support have been removed; the `e2b` SDK is no longer a dependency.
+> Migration path: see [BYO runner agent](../03-infrastructure/34-runner-agent.md).
+>
+> The body below is preserved as the historical record of the original
+> Phase 5 decision.
 
 ## Context
 

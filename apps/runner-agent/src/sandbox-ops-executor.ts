@@ -124,7 +124,7 @@ export async function runSandboxOpsLoop(deps: SandboxOpsLoopDeps): Promise<void>
 
 async function buildLocalDriver(cfg: AgentConfig): Promise<SandboxDriver> {
   // Reuse the supervisor's driver factory. The agent only supports
-  // `process` and `docker` for v1 — k8s / fargate / e2b on the agent
+  // `process` and `docker` for v1 — k8s / fargate on the agent
   // side would defeat the purpose (the agent IS the sandbox host).
   if (cfg.driver !== 'process' && cfg.driver !== 'docker') {
     throw new Error(`unsupported agent driver: ${cfg.driver}`);

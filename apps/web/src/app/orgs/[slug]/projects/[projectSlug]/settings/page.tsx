@@ -374,7 +374,7 @@ export default async function ProjectSettings({
           id="egress"
           anchor="09 · EGRESS"
           title="Egress allowlist"
-          desc="Per-project hostname allowlist. Enforced on every HTTP-bound skill, and (when the supervisor runs a docker / kubernetes / fargate / e2b sandbox driver) on the per-run network namespace + DNS resolver. Blocked attempts surface on each run's Network section."
+          desc="Per-project hostname allowlist. Enforced on every HTTP-bound skill, and (when the supervisor runs a docker / kubernetes / fargate sandbox driver) on the per-run network namespace + DNS resolver. Blocked attempts surface on each run's Network section."
         >
           <EgressAllowlistForm
             slug={slug}
