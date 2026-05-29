@@ -30,10 +30,10 @@ on:
 
 jobs:
   smoke:
-    # GitHub-hosted: runs on every push/PR (incl. forks); needs clean isolation.
-    # The self-hosted pool shares $HOME / tool-cache / pnpm store across
-    # concurrent jobs, which corrupts the pnpm install mid-run. Deploy/publish
-    # workflows (push/dispatch only) use self-hosted.
+    # Stays GitHub-hosted: the self-hosted ARM runner image lacks the Docker
+    # Compose v2 plugin (`docker compose` → "unknown shorthand flag: 'f'"),
+    # which this job's `docker compose -f ... up --build` needs. Move it to
+    # self-hosted once the runner image ships docker-compose-plugin + buildx.
     runs-on: ubuntu-latest
     # Cold-cache buildx (5 images × ~4min sequential pnpm install) can
     # touch ~20min; warm cache lands in ~3min. 25 is the headroom for
