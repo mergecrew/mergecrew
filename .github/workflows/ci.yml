@@ -32,12 +32,13 @@ jobs:
       KMS_MASTER_KEY: base64:0000000000000000000000000000000000000000000=
     steps:
       - uses: actions/checkout@v6
-      # Three self-hosted runners share one host. Pin pnpm's home (its global
-      # bin) under the per-runner RUNNER_TEMP so concurrent jobs can't clobber a
-      # shared install. Set here, not in job-level env, because the `runner`
-      # context isn't valid there. Harmless on GitHub-hosted runners too.
-      - run: echo "PNPM_HOME=$RUNNER_TEMP/pnpm-home" >> "$GITHUB_ENV"
+      # Three self-hosted runners share one host. Install pnpm and its content
+      # store under the per-runner RUNNER_TEMP so concurrent jobs can't clobber
+      # a shared install (action default is ~/setup-pnpm) or race the store.
+      # Harmless on GitHub-hosted runners too.
       - uses: pnpm/action-setup@v6
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
