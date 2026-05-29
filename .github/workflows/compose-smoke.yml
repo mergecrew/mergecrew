@@ -36,13 +36,13 @@ jobs:
     # the cold case + the ~6min smoke that follows; warm runs leave
     # most of it on the floor.
     timeout-minutes: 25
-    env:
-      # Three self-hosted runners share one host. Pin pnpm's home and content
-      # store under the per-runner RUNNER_TEMP so concurrent jobs can't clobber
-      # a shared install or race the store. Harmless on GitHub-hosted too.
-      PNPM_HOME: ${{ runner.temp }}/pnpm-home
     steps:
       - uses: actions/checkout@v6
+      # Three self-hosted runners share one host. Pin pnpm's home under the
+      # per-runner RUNNER_TEMP so concurrent jobs can't clobber a shared
+      # install. Set here, not in job-level env, because the `runner` context
+      # isn't valid there. Harmless on GitHub-hosted runners too.
+      - run: echo "PNPM_HOME=$RUNNER_TEMP/pnpm-home" >> "$GITHUB_ENV"
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
@@ -50,7 +50,7 @@ jobs:
       # No setup-node `cache: pnpm`: it resolves the store via a shared host
       # path that races across the co-located runners. The per-runner store
       # below sits on the same volume as the workspace, so linking is fast.
-      - run: pnpm install --frozen-lockfile=false --store-dir ${{ runner.temp }}/pnpm-store
+      - run: pnpm install --frozen-lockfile=false --store-dir "$RUNNER_TEMP/pnpm-store"
       - name: Free up runner disk
         # docker compose build for five mergecrew images + base layers
         # routinely needs ~6GB. GitHub-hosted ubuntu runners ship with

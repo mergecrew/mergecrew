@@ -30,13 +30,13 @@ jobs:
       DATABASE_MIGRATE_URL: postgresql://mergecrew:mergecrew@localhost:5432/mergecrew?schema=public
       REDIS_URL: redis://localhost:6379
       KMS_MASTER_KEY: base64:0000000000000000000000000000000000000000000=
-      # Three self-hosted runners share one host. Pin pnpm's home (its global
-      # bin) and content store under the per-runner RUNNER_TEMP so concurrent
-      # jobs can't clobber a shared install or race the store. Harmless on
-      # GitHub-hosted runners too.
-      PNPM_HOME: ${{ runner.temp }}/pnpm-home
     steps:
       - uses: actions/checkout@v6
+      # Three self-hosted runners share one host. Pin pnpm's home (its global
+      # bin) under the per-runner RUNNER_TEMP so concurrent jobs can't clobber a
+      # shared install. Set here, not in job-level env, because the `runner`
+      # context isn't valid there. Harmless on GitHub-hosted runners too.
+      - run: echo "PNPM_HOME=$RUNNER_TEMP/pnpm-home" >> "$GITHUB_ENV"
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
@@ -44,7 +44,7 @@ jobs:
       # No setup-node `cache: pnpm`: it resolves the store via a shared host
       # path that races across the co-located runners. The per-runner store
       # below sits on the same volume as the workspace, so linking is fast.
-      - run: pnpm install --frozen-lockfile=false --store-dir ${{ runner.temp }}/pnpm-store
+      - run: pnpm install --frozen-lockfile=false --store-dir "$RUNNER_TEMP/pnpm-store"
       - name: Bootstrap Postgres roles + extensions
         # Run psql from a container so the step doesn't depend on the runner
         # image shipping postgresql-client. --network host reaches the service
