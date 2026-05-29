@@ -30,24 +30,27 @@ on:
 
 jobs:
   smoke:
-    # GitHub-hosted: runs on every push/PR (incl. forks); needs clean isolation.
-    # The self-hosted pool shares $HOME / tool-cache / pnpm store across
-    # concurrent jobs, which corrupts the pnpm install mid-run. Deploy/publish
-    # workflows (push/dispatch only) use self-hosted.
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     # Cold-cache buildx (5 images × ~4min sequential pnpm install) can
     # touch ~20min; warm cache lands in ~3min. 25 is the headroom for
     # the cold case + the ~6min smoke that follows; warm runs leave
     # most of it on the floor.
     timeout-minutes: 25
+    env:
+      # Three self-hosted runners share one host. Pin pnpm's home and content
+      # store under the per-runner RUNNER_TEMP so concurrent jobs can't clobber
+      # a shared install or race the store. Harmless on GitHub-hosted too.
+      PNPM_HOME: ${{ runner.temp }}/pnpm-home
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-          cache: 'pnpm'
-      - run: pnpm install --frozen-lockfile=false
+      # No setup-node `cache: pnpm`: it resolves the store via a shared host
+      # path that races across the co-located runners. The per-runner store
+      # below sits on the same volume as the workspace, so linking is fast.
+      - run: pnpm install --frozen-lockfile=false --store-dir ${{ runner.temp }}/pnpm-store
       - name: Free up runner disk
         # docker compose build for five mergecrew images + base layers
         # routinely needs ~6GB. GitHub-hosted ubuntu runners ship with

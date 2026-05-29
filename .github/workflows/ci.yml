@@ -8,11 +8,7 @@ on:
 
 jobs:
   build:
-    # GitHub-hosted: this job runs on every push/PR (incl. forks) and needs a
-    # clean, isolated, single-tenant environment. The self-hosted pool shares
-    # $HOME / tool-cache / pnpm store across concurrent jobs, which races the
-    # pnpm setup. Deploy/publish workflows (push/dispatch only) use self-hosted.
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -34,18 +30,31 @@ jobs:
       DATABASE_MIGRATE_URL: postgresql://mergecrew:mergecrew@localhost:5432/mergecrew?schema=public
       REDIS_URL: redis://localhost:6379
       KMS_MASTER_KEY: base64:0000000000000000000000000000000000000000000=
+      # Three self-hosted runners share one host. Pin pnpm's home (its global
+      # bin) and content store under the per-runner RUNNER_TEMP so concurrent
+      # jobs can't clobber a shared install or race the store. Harmless on
+      # GitHub-hosted runners too.
+      PNPM_HOME: ${{ runner.temp }}/pnpm-home
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-          cache: 'pnpm'
-      - run: pnpm install --frozen-lockfile=false
+      # No setup-node `cache: pnpm`: it resolves the store via a shared host
+      # path that races across the co-located runners. The per-runner store
+      # below sits on the same volume as the workspace, so linking is fast.
+      - run: pnpm install --frozen-lockfile=false --store-dir ${{ runner.temp }}/pnpm-store
       - name: Bootstrap Postgres roles + extensions
-        env:
-          PGPASSWORD: mergecrew
-        run: psql -h localhost -U mergecrew -d mergecrew -f infra/sql/init/00-roles.sql
+        # Run psql from a container so the step doesn't depend on the runner
+        # image shipping postgresql-client. --network host reaches the service
+        # container's mapped 5432 the same way `localhost` does on the host.
+        run: |
+          docker run --rm --network host \
+            -e PGPASSWORD=mergecrew \
+            -v "$PWD/infra/sql/init:/sql:ro" \
+            postgres:16-alpine \
+            psql -h localhost -U mergecrew -d mergecrew -f /sql/00-roles.sql
       - run: pnpm --filter @mergecrew/db generate
       - run: pnpm --filter @mergecrew/db migrate
       - run: pnpm typecheck
