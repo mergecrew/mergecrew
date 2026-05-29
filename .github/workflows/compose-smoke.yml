@@ -30,7 +30,11 @@ on:
 
 jobs:
   smoke:
-    runs-on: self-hosted
+    # GitHub-hosted: runs on every push/PR (incl. forks); needs clean isolation.
+    # The self-hosted pool shares $HOME / tool-cache / pnpm store across
+    # concurrent jobs, which corrupts the pnpm install mid-run. Deploy/publish
+    # workflows (push/dispatch only) use self-hosted.
+    runs-on: ubuntu-latest
     # Cold-cache buildx (5 images × ~4min sequential pnpm install) can
     # touch ~20min; warm cache lands in ~3min. 25 is the headroom for
     # the cold case + the ~6min smoke that follows; warm runs leave
