@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     # Required Vercel secrets (configure in repo settings):
     #   VERCEL_TOKEN       — personal/team token from vercel.com/account/tokens
     #   VERCEL_ORG_ID      — `vc whoami` or "Settings → General" in the Vercel dashboard
