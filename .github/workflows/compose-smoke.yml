@@ -30,11 +30,7 @@ on:
 
 jobs:
   smoke:
-    # Stays GitHub-hosted: the self-hosted ARM runner image lacks the Docker
-    # Compose v2 plugin (`docker compose` → "unknown shorthand flag: 'f'"),
-    # which this job's `docker compose -f ... up --build` needs. Move it to
-    # self-hosted once the runner image ships docker-compose-plugin + buildx.
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     # Cold-cache buildx (5 images × ~4min sequential pnpm install) can
     # touch ~20min; warm cache lands in ~3min. 25 is the headroom for
     # the cold case + the ~6min smoke that follows; warm runs leave
@@ -42,12 +38,20 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
+      # Three self-hosted runners share one host. Install pnpm and its content
+      # store under the per-runner RUNNER_TEMP so concurrent jobs can't clobber
+      # a shared install (action default is ~/setup-pnpm) or race the store.
+      # Harmless on GitHub-hosted runners too.
       - uses: pnpm/action-setup@v6
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-          cache: 'pnpm'
-      - run: pnpm install --frozen-lockfile=false
+      # No setup-node `cache: pnpm`: it resolves the store via a shared host
+      # path that races across the co-located runners. The per-runner store
+      # below sits on the same volume as the workspace, so linking is fast.
+      - run: pnpm install --frozen-lockfile=false --store-dir "$RUNNER_TEMP/pnpm-store"
       - name: Free up runner disk
         # docker compose build for five mergecrew images + base layers
         # routinely needs ~6GB. GitHub-hosted ubuntu runners ship with
