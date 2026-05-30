@@ -30,10 +30,12 @@ on:
 
 jobs:
   smoke:
-    # Stays GitHub-hosted: the self-hosted ARM runner image lacks the Docker
-    # Compose v2 plugin (`docker compose` → "unknown shorthand flag: 'f'"),
-    # which this job's `docker compose -f ... up --build` needs. Move it to
-    # self-hosted once the runner image ships docker-compose-plugin + buildx.
+    # Stays GitHub-hosted. The self-hosted ARM pool is three runner processes
+    # on one shared spot host; this job's 5-image *parallel* `docker compose
+    # up --build` starves it (the runner loses communication with the server
+    # mid-build) — verified in #839. The Compose v2 plugin is present on the
+    # host, so the blocker is capacity, not tooling. Moving it self-hosted
+    # needs a dedicated/larger runner or capped build parallelism first.
     runs-on: ubuntu-latest
     # Cold-cache buildx (5 images × ~4min sequential pnpm install) can
     # touch ~20min; warm cache lands in ~3min. 25 is the headroom for
