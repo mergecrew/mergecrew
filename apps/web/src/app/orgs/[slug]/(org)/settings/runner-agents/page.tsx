@@ -3,7 +3,7 @@ import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { hasRole } from '@/lib/role';
 import { Card, Button } from '@/components/ui';
-import { CreatedSecretCallout } from '@/components/created-secret-callout';
+import { RunnerAgentSetupCallout } from '@/components/runner-agent-setup-callout';
 
 interface RunnerAgentSummary {
   id: string;
@@ -101,9 +101,14 @@ export default async function RunnerAgentsPage({
       </header>
 
       {justIssued && (
-        <CreatedSecretCallout
-          secret={justIssued.token!}
-          label={`Runner-agent token for "${justIssued.a.name}"`}
+        <RunnerAgentSetupCallout
+          token={justIssued.token!}
+          agentName={justIssued.a.name}
+          apiUrl={
+            process.env.MERGECREW_API_BASE_URL ??
+            process.env.API_BASE_URL ??
+            '<your-mergecrew-host>'
+          }
         />
       )}
 
