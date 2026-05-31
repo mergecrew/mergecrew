@@ -293,7 +293,80 @@ export default async function RunnerProfilePage({
                 );
               })}
             </div>
-            <details className="text-xs text-zinc-500">
+            <details open={profile.kind === 'agent'} className="text-xs text-zinc-500">
+              <summary className="cursor-pointer">
+                BYO agent setup (required for the <code>agent</code> kind)
+              </summary>
+              <div className="mt-2 space-y-3">
+                <p>
+                  Run the <code>mergecrew/runner-agent</code> container on any host with
+                  Docker and outbound HTTPS — AWS EC2, GCP / Hetzner / Linode / DO VM,
+                  on-prem, homelab, or even an existing GitHub Actions self-hosted runner
+                  box. The agent pulls jobs over long-poll and executes them locally; the
+                  deployment opens <strong>no inbound connection</strong> to your host.
+                </p>
+                <ol className="list-decimal space-y-2 pl-4">
+                  <li>
+                    Pick <strong>BYO agent</strong> above and click <strong>Save</strong>.
+                  </li>
+                  <li>
+                    Go to{' '}
+                    <Link
+                      href={`/orgs/${slug}/settings/runner-agents`}
+                      className="text-accent underline-offset-[3px] hover:underline"
+                    >
+                      Settings → Runner agents
+                    </Link>
+                    , click <strong>Enrol agent</strong>, give it a host-recognisable
+                    name (e.g. <code>ec2-runner-1</code>), and copy the token. It looks
+                    like <code className="font-mono">mca_{slug}_…</code> and is shown{' '}
+                    <strong>exactly once</strong>.
+                  </li>
+                  <li>
+                    On the host (your EC2 box, your GHA VM, whatever has docker), run:
+                    <pre className="mt-2 overflow-auto rounded bg-zinc-50 p-3 text-[11px] text-ink dark:bg-zinc-900 dark:text-zinc-200">
+{`docker run -d --restart unless-stopped \\
+  --name mergecrew-agent \\
+  -v /var/run/docker.sock:/var/run/docker.sock \\
+  ghcr.io/mergecrew/runner-agent:latest \\
+    --token mca_${slug}_<paste-from-step-2> \\
+    --api-url ${process.env.MERGECREW_API_BASE_URL ?? process.env.API_BASE_URL ?? '<your-mergecrew-host>'} \\
+    --name ec2-runner-1 \\
+    --driver docker \\
+    --concurrency 2`}
+                    </pre>
+                  </li>
+                  <li>
+                    Within ~30 seconds the agent shows up under <strong>Enrolled agents</strong>{' '}
+                    below with an <em>online</em> badge. New runs for this org will dispatch to it.
+                  </li>
+                </ol>
+                <p>
+                  <strong>Where can it run?</strong> Anywhere reachable by outbound HTTPS to{' '}
+                  this deployment&apos;s API. Concretely: any AWS EC2 / Lightsail box, any GCP / Azure /
+                  Hetzner / DO / Linode VM, a Raspberry Pi at home, or a long-running container
+                  on Fly / Render. The host needs docker for the <code>--driver docker</code>{' '}
+                  isolation; the <code>--driver process</code> alternative skips that (faster,
+                  no sandbox isolation — only for trusted setups).
+                </p>
+                <p>
+                  <strong>Multi-org</strong> (#774): a single agent process can serve multiple orgs
+                  by repeating <code>--token</code>. Useful if you want one homelab box to back
+                  several orgs you administer.
+                </p>
+                <p>
+                  Full reference:{' '}
+                  <Link
+                    href="https://github.com/mergecrew/mergecrew/blob/main/docs/03-infrastructure/34-runner-agent.md"
+                    className="text-accent underline-offset-[3px] hover:underline"
+                  >
+                    34-runner-agent.md
+                  </Link>{' '}
+                  (network posture, troubleshooting, systemd unit).
+                </p>
+              </div>
+            </details>
+            <details open={profile.kind === 'fargate_byo'} className="text-xs text-zinc-500">
               <summary className="cursor-pointer">
                 Fargate-BYO configuration (required for the <code>fargate_byo</code> kind)
               </summary>
@@ -385,7 +458,7 @@ export default async function RunnerProfilePage({
                 </p>
               </div>
             </details>
-            <details className="text-xs text-zinc-500">
+            <details open={profile.kind === 'github_actions'} className="text-xs text-zinc-500">
               <summary className="cursor-pointer">
                 GitHub Actions configuration (required for the <code>github_actions</code> kind)
               </summary>
