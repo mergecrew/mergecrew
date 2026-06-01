@@ -2,6 +2,7 @@ import { revalidatePath } from 'next/cache';
 import { api } from '@/lib/api';
 import { requireSession } from '@/lib/session';
 import { hasRole } from '@/lib/role';
+import Link from 'next/link';
 import { Card, Button } from '@/components/ui';
 import { RunnerAgentSetupCallout } from '@/components/runner-agent-setup-callout';
 
@@ -78,10 +79,13 @@ export default async function RunnerAgentsPage({
   const session = await requireSession();
   const canEdit = await hasRole(slug, session, 'admin');
 
-  const list = await api<{ items: RunnerAgentSummary[] }>(
-    `/v1/orgs/${slug}/runner-agents`,
-    { session },
-  );
+  const [list, profile] = await Promise.all([
+    api<{ items: RunnerAgentSummary[] }>(`/v1/orgs/${slug}/runner-agents`, { session }),
+    api<{ kind: string }>(`/v1/orgs/${slug}/runner-profile`, { session }).catch(() => ({
+      kind: 'none' as string,
+    })),
+  ]);
+  const onAgentKind = profile.kind === 'agent';
 
   const { cookies } = await import('next/headers');
   const ck = await cookies();
@@ -92,13 +96,33 @@ export default async function RunnerAgentsPage({
   return (
     <main className="mx-auto max-w-3xl space-y-4 p-6">
       <header>
-        <h1 className="text-xl font-semibold">Runner agents</h1>
+        <h1 className="text-xl font-semibold">Agent tokens</h1>
         <p className="text-sm text-zinc-500">
           Enrol the <code>mergecrew/runner-agent</code> container to execute this org&apos;s steps
           on your own machine or cloud account. Tokens look like{' '}
           <code>mca_{slug}_…</code> and are shown <strong>exactly once</strong> at creation.
         </p>
       </header>
+
+      {!onAgentKind && (
+        <div className="rounded border border-warn bg-warn/15 p-3 text-sm text-ink">
+          <p className="m-0">
+            <strong>This page only applies when your runner profile is BYO agent.</strong>{' '}
+            Your org is currently on{' '}
+            <code className="font-mono text-[12px]">{profile.kind}</code>. Switch to{' '}
+            <em>BYO agent</em> on the{' '}
+            <Link
+              href={`/orgs/${slug}/settings/runner`}
+              className="text-accent underline-offset-[3px] hover:underline"
+            >
+              Runner profile page
+            </Link>{' '}
+            before enrolling tokens — otherwise any agents you start will sit idle,
+            since runs for this org route to the <code className="font-mono text-[12px]">{profile.kind}</code>{' '}
+            substrate instead.
+          </p>
+        </div>
+      )}
 
       {justIssued && (
         <RunnerAgentSetupCallout

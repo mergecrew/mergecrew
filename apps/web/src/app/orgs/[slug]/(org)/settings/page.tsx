@@ -154,6 +154,14 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
       () => ({ items: [] }) as AlertRoutesResponse,
     ),
   ]);
+  // Runner profile kind drives sidebar + section visibility (#844).
+  // Agent tokens (mca_…) only apply when kind=agent; hiding the nav
+  // for the other kinds removes the "what is this even for?" papercut.
+  const runnerProfile = await api<{ kind: string }>(
+    `/v1/orgs/${slug}/runner-profile`,
+    { session },
+  ).catch(() => ({ kind: 'none' as string }));
+  const showAgentTokens = runnerProfile.kind === 'agent';
   const monthlyPct =
     spendCap.monthlySpendCapUsd && spendCap.monthlySpendCapUsd > 0
       ? Math.min(100, (spendCap.monthToDateUsd / spendCap.monthlySpendCapUsd) * 100)
@@ -192,8 +200,10 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
         { id: 'slack', label: 'Slack notifications' },
         { id: 'alert-routes', label: 'Alert routing' },
         { id: 'api-keys', label: 'API keys' },
-        { id: 'runner-profile', label: 'Runner' },
-        { id: 'runner-agents', label: 'Runner agents' },
+        { id: 'runner-profile', label: 'Runner profile' },
+        ...(showAgentTokens
+          ? [{ id: 'runner-agents', label: 'Agent tokens' }]
+          : []),
         { id: 'audit-log', label: 'Audit log' },
       ],
     },
@@ -792,7 +802,7 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
         <Section
           id="runner-profile"
           anchor="OPS · 012"
-          title="Runner"
+          title="Runner profile"
           desc={
             <>
               Pick which substrate runs this org&apos;s steps:{' '}
@@ -827,42 +837,44 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
           </Card>
         </Section>
 
-        <Section
-          id="runner-agents"
-          anchor="OPS · 013"
-          title="Runner agents"
-          desc={
-            <>
-              BYO runner agents (
-              <code className="font-mono text-[12px] text-ink">mca_…</code> tokens) for orgs whose
-              runner profile is <code className="font-mono text-[12px] text-ink">agent</code>.
-              Manage enrollment + revoke from here.
-            </>
-          }
-        >
-          <Card className="p-5">
-            <div className="flex items-baseline justify-between gap-3">
-              <p className="m-0 text-[13.5px] text-ink-2">
-                Enrol a new agent or rotate existing tokens.{' '}
-                <a
-                  href="https://github.com/mergecrew/mergecrew/blob/main/docs/03-infrastructure/34-runner-agent.md"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline decoration-dotted underline-offset-2 hover:text-ink"
+        {showAgentTokens && (
+          <Section
+            id="runner-agents"
+            anchor="OPS · 013"
+            title="Agent tokens"
+            desc={
+              <>
+                BYO runner-agent tokens (
+                <code className="font-mono text-[12px] text-ink">mca_…</code>) — one per
+                host running <code className="font-mono text-[12px] text-ink">mergecrew/runner-agent</code>.
+                Manage enrollment + revoke from here.
+              </>
+            }
+          >
+            <Card className="p-5">
+              <div className="flex items-baseline justify-between gap-3">
+                <p className="m-0 text-[13.5px] text-ink-2">
+                  Enrol a new agent or rotate existing tokens.{' '}
+                  <a
+                    href="https://github.com/mergecrew/mergecrew/blob/main/docs/03-infrastructure/34-runner-agent.md"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline decoration-dotted underline-offset-2 hover:text-ink"
+                  >
+                    Docs ↗
+                  </a>
+                </p>
+                <LinkButton
+                  href={`/orgs/${slug}/settings/runner-agents`}
+                  variant="ghost"
+                  size="sm"
                 >
-                  Docs ↗
-                </a>
-              </p>
-              <LinkButton
-                href={`/orgs/${slug}/settings/runner-agents`}
-                variant="ghost"
-                size="sm"
-              >
-                Manage →
-              </LinkButton>
-            </div>
-          </Card>
-        </Section>
+                  Manage →
+                </LinkButton>
+              </div>
+            </Card>
+          </Section>
+        )}
 
         <Section
           id="audit-log"
