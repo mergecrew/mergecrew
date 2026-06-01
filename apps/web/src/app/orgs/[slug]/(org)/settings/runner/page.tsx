@@ -197,7 +197,7 @@ export default async function RunnerProfilePage({
   return (
     <main className="mx-auto max-w-3xl space-y-4 p-6">
       <header>
-        <h1 className="text-xl font-semibold">Runner</h1>
+        <h1 className="text-xl font-semibold">Runner profile</h1>
         <p className="text-sm text-zinc-500">
           Which execution substrate runs this org&apos;s steps. Required for{' '}
           <Link href={`/orgs/${slug}`} className="text-accent underline-offset-[3px] hover:underline">
@@ -315,7 +315,7 @@ export default async function RunnerProfilePage({
                       href={`/orgs/${slug}/settings/runner-agents`}
                       className="text-accent underline-offset-[3px] hover:underline"
                     >
-                      Settings → Runner agents
+                      Settings → Agent tokens
                     </Link>
                     , click <strong>Enrol agent</strong>, give it a host-recognisable
                     name (e.g. <code>ec2-runner-1</code>), and copy the token. It looks
@@ -535,7 +535,7 @@ export default async function RunnerProfilePage({
                 href={`/orgs/${slug}/settings/runner-agents`}
                 className="text-accent underline-offset-[3px] hover:underline"
               >
-                Settings → Runner agents
+                Settings → Agent tokens
               </Link>{' '}
               to enrol one.
             </p>
