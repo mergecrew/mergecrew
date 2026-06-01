@@ -131,7 +131,7 @@ export function OrgSetupCard({
               href={nextPending?.actionUrl ?? `/orgs/${orgSlug}/onboarding`}
               className="inline-flex items-center justify-center rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-sky-700"
             >
-              {nextPending ? `Continue → ${nextPending.label}` : 'Continue setup →'}
+              {nextPending ? `Continue setup → ${nextPending.label}` : 'Continue setup →'}
             </Link>
             {demoProjectSlug && (
               <Link
