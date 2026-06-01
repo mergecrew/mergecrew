@@ -686,6 +686,7 @@ export class OrgService {
     steps: Array<{
       key:
         | 'llm_provider'
+        | 'runner_profile'
         | 'first_project'
         | 'connected_repo'
         | 'deploy_target'
@@ -699,6 +700,18 @@ export class OrgService {
     const t = this.tenant.require();
     const data = await this.prisma.withTenant(t.organizationId, async (tx) => {
       const llm = await tx.llmProvider.count({ where: { organizationId: t.organizationId } });
+      // Runner profile lives in the system schema (cross-tenant table
+      // with RLS). Anything other than 'none' counts as "configured" —
+      // the operator picked a substrate. Per-kind connection state
+      // (agent online, fargate role validated, etc.) is intentionally
+      // not part of this gate yet — keep the checklist row simple and
+      // let operators land on /settings/runner to finish.
+      const runnerProfile = await tx.runnerProfile.findUnique({
+        where: { organizationId: t.organizationId },
+        select: { kind: true },
+      });
+      const runnerConfigured =
+        runnerProfile && runnerProfile.kind !== 'none' ? true : false;
       // Order projects by createdAt asc, then pick the first non-demo.
       // The seeded demo (#437) ships either pre-wired (MERGECREW_DEMO_MODE)
       // or read-only (per-org createOrg seed); leaving it in would mark
@@ -715,7 +728,7 @@ export class OrgService {
         },
         take: 1,
       });
-      return { llm, project: projects[0] ?? null };
+      return { llm, runnerConfigured, project: projects[0] ?? null };
     });
 
     const projectPath = data.project ? `/orgs/${orgSlug}/projects/${data.project.slug}` : null;
@@ -725,6 +738,12 @@ export class OrgService {
         label: 'Add an LLM provider',
         status: data.llm > 0 ? ('complete' as const) : ('pending' as const),
         actionUrl: `/orgs/${orgSlug}/settings/llm-providers`,
+      },
+      {
+        key: 'runner_profile' as const,
+        label: 'Configure a runner profile',
+        status: data.runnerConfigured ? ('complete' as const) : ('pending' as const),
+        actionUrl: `/orgs/${orgSlug}/settings/runner`,
       },
       {
         key: 'first_project' as const,
