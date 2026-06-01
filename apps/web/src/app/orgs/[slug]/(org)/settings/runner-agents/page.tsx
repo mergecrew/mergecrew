@@ -5,6 +5,7 @@ import { hasRole } from '@/lib/role';
 import Link from 'next/link';
 import { Card, Button } from '@/components/ui';
 import { RunnerAgentSetupCallout } from '@/components/runner-agent-setup-callout';
+import { publicBaseUrl } from '@/lib/public-url';
 
 interface RunnerAgentSummary {
   id: string;
@@ -79,11 +80,12 @@ export default async function RunnerAgentsPage({
   const session = await requireSession();
   const canEdit = await hasRole(slug, session, 'admin');
 
-  const [list, profile] = await Promise.all([
+  const [list, profile, apiUrl] = await Promise.all([
     api<{ items: RunnerAgentSummary[] }>(`/v1/orgs/${slug}/runner-agents`, { session }),
     api<{ kind: string }>(`/v1/orgs/${slug}/runner-profile`, { session }).catch(() => ({
       kind: 'none' as string,
     })),
+    publicBaseUrl(),
   ]);
   const onAgentKind = profile.kind === 'agent';
 
@@ -128,11 +130,7 @@ export default async function RunnerAgentsPage({
         <RunnerAgentSetupCallout
           token={justIssued.token!}
           agentName={justIssued.a.name}
-          apiUrl={
-            process.env.MERGECREW_API_BASE_URL ??
-            process.env.API_BASE_URL ??
-            '<your-mergecrew-host>'
-          }
+          apiUrl={apiUrl}
         />
       )}
 
@@ -163,6 +161,14 @@ export default async function RunnerAgentsPage({
 
       <Card>
         <h2 className="font-medium">Active agents</h2>
+        {list.items.length > 0 && (
+          <p className="mt-1 text-xs text-zinc-500">
+            The full <code>docker run</code> command + token are shown <strong>only once</strong>{' '}
+            at issuance (we hash the secret and discard the plaintext immediately). The{' '}
+            <code className="font-mono">mca_…</code> prefix below is for identification only —
+            it&apos;s not enough to run the agent. To get a fresh setup command, revoke + enrol again.
+          </p>
+        )}
         {list.items.length === 0 ? (
           <p className="mt-2 text-sm text-zinc-500">No agents enrolled yet.</p>
         ) : (
