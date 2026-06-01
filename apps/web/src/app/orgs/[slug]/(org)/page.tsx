@@ -85,7 +85,12 @@ export default async function OrgHomePage({
       ),
       safe(() =>
         api<{
-          steps: Array<{ status: 'complete' | 'pending' }>;
+          steps: Array<{
+            key: string;
+            label: string;
+            status: 'complete' | 'pending';
+            actionUrl: string;
+          }>;
           complete: boolean;
         }>(`/v1/orgs/${slug}/onboarding`, { session }),
       ),
@@ -187,8 +192,7 @@ export default async function OrgHomePage({
         <div className="mb-6">
           <OrgSetupCard
             orgSlug={slug}
-            totalSteps={onboardingRes.steps.length}
-            pendingSteps={onboardingRes.steps.filter((s) => s.status === 'pending').length}
+            steps={onboardingRes.steps}
             demoProjectSlug={projects.find((p) => p.demo)?.slug ?? null}
           />
         </div>

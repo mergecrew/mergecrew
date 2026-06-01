@@ -18,6 +18,7 @@ import {
 } from '../projects/[projectSlug]/settings/promotion-strategy-form';
 type StepKey =
   | 'llm_provider'
+  | 'runner_profile'
   | 'first_project'
   | 'connected_repo'
   | 'deploy_target'
@@ -40,6 +41,8 @@ interface OnboardingState {
 const STEP_HELP: Record<StepKey, string> = {
   llm_provider:
     'Pick a provider (Anthropic, OpenAI, AWS Bedrock, or Ollama) and paste an API key. Without one, agent steps fail with "no LLM profile configured".',
+  runner_profile:
+    'Pick the substrate that executes this org\'s steps — instance-builtin (the deployment\'s docker daemon), BYO agent (a container you run yourself), AWS Fargate-BYO, or GitHub Actions. Until this is set, runs are blocked.',
   first_project:
     'A project is the unit a daily run targets. Each project has its own repo, deploy target, lifecycle, and changeset list.',
   connected_repo:
@@ -285,6 +288,25 @@ export default async function OnboardingPage({
               switch (step.key) {
                 case 'llm_provider':
                   body = <InlineLlmStep orgSlug={slug} action={addLlmProviderAction} />;
+                  break;
+                case 'runner_profile':
+                  // No inline form — the runner profile picker has its
+                  // own dedicated page with reactive panels (#846). Just
+                  // surface a Continue link so the wizard hands off cleanly.
+                  body = (
+                    <div className="space-y-2 text-sm">
+                      <p className="m-0 text-zinc-600 dark:text-zinc-300">
+                        The runner picker has its own page with substrate-specific setup
+                        guidance (BYO agent, AWS Fargate-BYO, GitHub Actions, instance-builtin).
+                      </p>
+                      <Link
+                        href={`/orgs/${slug}/settings/runner`}
+                        className="inline-flex items-center justify-center rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-sky-700"
+                      >
+                        Open Runner profile →
+                      </Link>
+                    </div>
+                  );
                   break;
                 case 'first_project':
                   body = (
