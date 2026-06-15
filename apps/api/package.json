@@ -12,7 +12,7 @@
     "test": "jest --passWithNoTests"
   },
   "dependencies": {
-    "@langchain/core": "^1.1.48",
+    "@langchain/core": "^1.1.49",
     "@mergecrew/adapters-comms": "workspace:*",
     "@mergecrew/adapters-deploy": "workspace:*",
     "@mergecrew/adapters-tracker": "workspace:*",
