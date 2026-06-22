@@ -41,7 +41,7 @@ jobs:
       matrix:
         service: [api, orchestrator, runner, worker-cron]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Compute image tag
         id: tag
