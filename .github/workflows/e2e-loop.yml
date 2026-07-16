@@ -41,7 +41,7 @@ jobs:
             echo "skip=0" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.gate.outputs.skip != '1'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - if: steps.gate.outputs.skip != '1'
         uses: pnpm/action-setup@v6
       - if: steps.gate.outputs.skip != '1'
