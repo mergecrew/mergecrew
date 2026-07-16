@@ -32,15 +32,16 @@ env:
 jobs:
   build-and-push:
     if: ${{ vars.VM_DEPLOY_ENABLED == 'true' || github.event_name == 'workflow_dispatch' }}
-    # Defaults to the org's self-hosted runners. The target VM is AWS
-    # Graviton (linux/arm64); if the self-hosted runner is amd64, QEMU
-    # (set up below) handles the arm64 cross-build. Adopters can override
-    # via repo variables:
-    #   VM_BUILD_RUNNER   = ubuntu-latest | ubuntu-24.04-arm | <any label>
+    # The target VM is AWS Graviton (linux/arm64), so default to a native
+    # arm runner; set the org RUNNER_ARM variable to `self-hosted` to route
+    # back to the runner VM when it's up. If runner arch and platform ever
+    # differ, QEMU (set up below) handles the cross-build. Adopters can
+    # override via repo variables:
+    #   RUNNER_ARM        = self-hosted | <any label>
     #   VM_BUILD_PLATFORM = linux/amd64                 (single arch)
     #                     | linux/amd64,linux/arm64    (multi-arch; needs QEMU,
     #                                                   which is set up below)
-    runs-on: ${{ vars.VM_BUILD_RUNNER || 'self-hosted' }}
+    runs-on: ${{ vars.RUNNER_ARM || 'ubuntu-24.04-arm' }}
     strategy:
       fail-fast: false
       matrix:
@@ -84,7 +85,7 @@ jobs:
   deploy:
     needs: build-and-push
     if: ${{ vars.VM_DEPLOY_ENABLED == 'true' || github.event_name == 'workflow_dispatch' }}
-    runs-on: self-hosted
+    runs-on: ${{ vars.RUNNER_DEFAULT || 'ubuntu-latest' }}
     steps:
       - name: Compute image tag
         id: tag

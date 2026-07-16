@@ -54,7 +54,7 @@ permissions:
 
 jobs:
   publish:
-    runs-on: self-hosted
+    runs-on: ${{ vars.RUNNER_DEFAULT || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -131,6 +131,12 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Multi-arch build (amd64 + arm64): QEMU covers the non-native half.
+      # The old runner VM had binfmt preinstalled; hosted runners don't.
+      - if: steps.gate.outputs.run == '1'
+        name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
 
       - if: steps.gate.outputs.run == '1'
         name: Set up Docker Buildx
