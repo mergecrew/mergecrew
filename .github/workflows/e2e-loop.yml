@@ -27,7 +27,7 @@ on:
 
 jobs:
   e2e:
-    runs-on: self-hosted
+    runs-on: ${{ vars.RUNNER_DEFAULT || 'ubuntu-latest' }}
     steps:
       - name: Detect missing secrets
         id: gate
