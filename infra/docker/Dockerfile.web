@@ -21,12 +21,12 @@ RUN pnpm --filter @mergecrew/web... build
 
 FROM node:${NODE_VERSION} AS runtime
 WORKDIR /app
-COPY --from=build /repo/apps/web/.next/standalone /app
-COPY --from=build /repo/apps/web/.next/static /app/apps/web/.next/static
+COPY --from=build --chown=node:node /repo/apps/web/.next/standalone /app
+COPY --from=build --chown=node:node /repo/apps/web/.next/static /app/apps/web/.next/static
 # Static assets served at /<path> (#642 added the landing screenshots
 # at /landing/*.png). Without this COPY the standalone bundle serves
 # the page but every public asset 404s.
-COPY --from=build /repo/apps/web/public /app/apps/web/public
+COPY --from=build --chown=node:node /repo/apps/web/public /app/apps/web/public
 EXPOSE 3000
 USER node
 CMD ["node", "apps/web/server.js"]
