@@ -32,6 +32,12 @@ COPY --from=build /repo/node_modules /app/node_modules
 COPY --from=build /repo/apps/runner-agent/node_modules /app/apps/runner-agent/node_modules
 COPY --from=build /repo/apps/runner-agent/dist /app/apps/runner-agent/dist
 COPY --from=build /repo/apps/runner-agent/package.json /app/apps/runner-agent/package.json
+# runner-agent depends on the @mergecrew/sandbox-driver workspace package.
+# apps/runner-agent/node_modules/@mergecrew/sandbox-driver is a pnpm symlink
+# to ../../../../packages/sandbox-driver (resolving to /app/packages/...), so
+# the package's built dist must be present or the agent crashes at startup
+# with "Cannot find module '@mergecrew/sandbox-driver'".
+COPY --from=build /repo/packages/sandbox-driver /app/packages/sandbox-driver
 USER node
 WORKDIR /app/apps/runner-agent
 ENTRYPOINT ["node", "dist/main.js"]
