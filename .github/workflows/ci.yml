@@ -79,7 +79,7 @@ jobs:
             echo "::error::packages/sdk-ts/src/generated.ts is stale. Run 'pnpm --filter @mergecrew/sdk generate' and commit the result."
             exit 1
           }
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Python SDK tests
