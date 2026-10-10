@@ -31,7 +31,7 @@ jobs:
       REDIS_URL: redis://localhost:6379
       KMS_MASTER_KEY: base64:0000000000000000000000000000000000000000000=
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # Three self-hosted runners share one host. Install pnpm and its content
       # store under the per-runner RUNNER_TEMP so concurrent jobs can't clobber
       # a shared install (action default is ~/setup-pnpm) or race the store.
