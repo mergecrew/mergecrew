@@ -24,6 +24,7 @@
     "@langchain/openai": "^1.4.7",
     "@mergecrew/db": "workspace:*",
     "@mergecrew/domain": "workspace:*",
+    "@mergecrew/net": "workspace:*",
     "@prisma/client": "^7.8.0"
   },
   "devDependencies": {

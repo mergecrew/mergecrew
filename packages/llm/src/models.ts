@@ -5,13 +5,28 @@ import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatOpenAI, OpenAIEmbeddings } from '@langchain/openai';
 import { ChatBedrockConverse, BedrockEmbeddings } from '@langchain/aws';
 import { ChatOllama, OllamaEmbeddings } from '@langchain/ollama';
+import { ProviderUnavailableError } from '@mergecrew/domain';
+import { createSafeFetch } from '@mergecrew/net';
+
+/** Explicit, tenant-owned AWS credentials for a Bedrock provider. */
+export interface AwsProviderCredentials {
+  accessKeyId: string;
+  secretAccessKey: string;
+  sessionToken?: string;
+}
 
 export interface ProviderConfig {
   id: string;
   kind: ProviderKind;
   apiKey?: string;
   endpoint?: string;
+  /**
+   * Bedrock only. Region and credentials come from the provider row —
+   * never from the deployment's environment or the host's ambient
+   * credential chain (instance role, ~/.aws, env keys).
+   */
   awsRegion?: string;
+  awsCredentials?: AwsProviderCredentials;
   models: string[];
   capabilityOverrides?: Record<string, ModelCapability>;
 }
@@ -21,6 +36,49 @@ export interface BuildModelOptions {
   maxTokens?: number;
   thinkingBudgetTokens?: number;
   abortSignal?: AbortSignal;
+}
+
+/**
+ * Tenant-supplied Ollama endpoints are untrusted destinations: every
+ * request goes through `@mergecrew/net`'s safe fetch (DNS vetted, socket
+ * pinned, redirects re-checked). Private/loopback endpoints require the
+ * operator opt-in (`MERGECREW_ALLOW_PRIVATE_EGRESS=1`, or the host listed
+ * in `MERGECREW_PRIVATE_EGRESS_ALLOW_HOSTS`). Generations stream for a
+ * long time, so only the caller's abort signal bounds them.
+ */
+const ollamaFetch = createSafeFetch({ timeoutMs: null, maxResponseBytes: 64 * 1024 * 1024 });
+
+function requireOllamaEndpoint(cfg: ProviderConfig): string {
+  if (!cfg.endpoint) {
+    throw new ProviderUnavailableError('ollama', `Ollama provider ${cfg.id} has no endpoint configured`);
+  }
+  return cfg.endpoint;
+}
+
+/**
+ * Bedrock fails closed: without per-provider credentials *and* region we
+ * refuse to build a client rather than let the AWS SDK fall back to the
+ * host's default credential chain (which would bill the deployment).
+ */
+export function requireBedrockAuth(cfg: ProviderConfig): {
+  region: string;
+  credentials: AwsProviderCredentials;
+} {
+  const c = cfg.awsCredentials;
+  if (!c?.accessKeyId || !c.secretAccessKey || !cfg.awsRegion) {
+    throw new ProviderUnavailableError(
+      'bedrock',
+      'Bedrock provider has no AWS credentials configured. Add an access key ID, secret access key and region to the provider.',
+    );
+  }
+  return {
+    region: cfg.awsRegion,
+    credentials: {
+      accessKeyId: c.accessKeyId,
+      secretAccessKey: c.secretAccessKey,
+      ...(c.sessionToken ? { sessionToken: c.sessionToken } : {}),
+    },
+  };
 }
 
 /**
@@ -51,16 +109,20 @@ export function buildChatModel(
         temperature: opts.temperature ?? 0.2,
         maxTokens: opts.maxTokens ?? 4096,
       });
-    case 'bedrock':
+    case 'bedrock': {
+      const { region, credentials } = requireBedrockAuth(cfg);
       return new ChatBedrockConverse({
-        region: cfg.awsRegion ?? 'us-east-1',
+        region,
+        credentials,
         model: modelId,
         temperature: opts.temperature ?? 0.2,
         maxTokens: opts.maxTokens ?? 4096,
       });
+    }
     case 'ollama':
       return new ChatOllama({
-        baseUrl: cfg.endpoint ?? 'http://localhost:11434',
+        baseUrl: requireOllamaEndpoint(cfg),
+        fetch: ollamaFetch,
         model: modelId,
         temperature: opts.temperature ?? 0.2,
         numPredict: opts.maxTokens ?? 4096,
@@ -83,14 +145,14 @@ export function buildEmbeddingsModel(
         apiKey: cfg.apiKey,
         model: modelId,
       });
-    case 'bedrock':
-      return new BedrockEmbeddings({
-        region: cfg.awsRegion ?? 'us-east-1',
-        model: modelId,
-      });
+    case 'bedrock': {
+      const { region, credentials } = requireBedrockAuth(cfg);
+      return new BedrockEmbeddings({ region, credentials, model: modelId });
+    }
     case 'ollama':
       return new OllamaEmbeddings({
-        baseUrl: cfg.endpoint ?? 'http://localhost:11434',
+        baseUrl: requireOllamaEndpoint(cfg),
+        fetch: ollamaFetch,
         model: modelId,
       });
     case 'anthropic':

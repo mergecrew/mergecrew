@@ -7,7 +7,10 @@ import {
   chat,
   probeOllama,
   capabilitiesFor,
+  encodeBedrockCredential,
+  providerConfigFromRow,
 } from '@mergecrew/llm';
+import { assertSafeUrl, describeEgressError, SafeFetchError, UnsafeEgressError } from '@mergecrew/net';
 import type { ModelCapability } from '@mergecrew/domain';
 import { NotFoundError, ValidationError } from '@mergecrew/domain';
 import { PrismaService } from '../../common/prisma.service.js';
@@ -44,6 +47,67 @@ function defaultModelsForKind(kind: string): string[] {
   return [];
 }
 
+type ProviderKindInput = 'anthropic' | 'openai' | 'bedrock' | 'ollama';
+
+export interface AwsCredentialInput {
+  awsAccessKeyId?: string;
+  awsSecretAccessKey?: string;
+  awsSessionToken?: string;
+  awsRegion?: string;
+}
+
+function hasAwsInput(input: AwsCredentialInput): boolean {
+  return Boolean(input.awsAccessKeyId || input.awsSecretAccessKey || input.awsSessionToken || input.awsRegion);
+}
+
+const ENDPOINT_NOT_ALLOWED =
+  'Endpoint is not allowed or could not be resolved. Use a publicly reachable http(s) URL.';
+
+/**
+ * Tenant-supplied Ollama endpoints are fetched server-side (probe, test,
+ * runner), so they're vetted at write time as well as on every request.
+ * Private/loopback endpoints need the operator opt-in
+ * (`MERGECREW_ALLOW_PRIVATE_EGRESS=1` or `MERGECREW_PRIVATE_EGRESS_ALLOW_HOSTS`).
+ */
+async function vetEndpoint(endpoint: string): Promise<void> {
+  try {
+    await assertSafeUrl(endpoint);
+  } catch {
+    throw new ValidationError(ENDPOINT_NOT_ALLOWED);
+  }
+}
+
+function encodeBedrockOrThrow(input: AwsCredentialInput): string {
+  try {
+    return encodeBedrockCredential({
+      accessKeyId: input.awsAccessKeyId,
+      secretAccessKey: input.awsSecretAccessKey,
+      sessionToken: input.awsSessionToken,
+      region: input.awsRegion,
+    });
+  } catch (e) {
+    throw new ValidationError((e as Error).message);
+  }
+}
+
+/**
+ * Reduce a provider-call failure to something safe to show the admin.
+ * Ollama endpoints are tenant-chosen, so nothing upstream-derived (status
+ * text, body, URL) is echoed for them; hosted-API providers talk to fixed
+ * vendor endpoints and their SDK messages ("invalid x-api-key") are kept,
+ * truncated.
+ */
+function describeProviderError(kind: string, e: unknown, timedOut: boolean): string {
+  if (timedOut) return 'timeout after 5s';
+  const chain: unknown[] = [];
+  for (let cur: unknown = e, i = 0; cur && i < 5; cur = (cur as { cause?: unknown }).cause, i++) chain.push(cur);
+  const egress = chain.find((c) => c instanceof UnsafeEgressError || c instanceof SafeFetchError);
+  if (egress) return describeEgressError(egress);
+  if (kind === 'ollama') return 'Request to the Ollama endpoint failed.';
+  const msg = String((e as { message?: unknown })?.message ?? e);
+  return msg.length > 300 ? `${msg.slice(0, 300)}…` : msg;
+}
+
 @Injectable()
 export class LlmService {
   constructor(
@@ -72,17 +136,37 @@ export class LlmService {
     }));
   }
 
-  async createProvider(input: {
-    kind: 'anthropic' | 'openai' | 'bedrock' | 'ollama';
-    label: string;
-    apiKey?: string;
-    endpoint?: string;
-    capabilityOverrides?: Record<string, unknown>;
-  }) {
+  async createProvider(
+    input: {
+      kind: ProviderKindInput;
+      label: string;
+      apiKey?: string;
+      endpoint?: string;
+      capabilityOverrides?: Record<string, unknown>;
+    } & AwsCredentialInput,
+  ) {
     const t = this.tenant.require();
     if (!['anthropic', 'openai', 'bedrock', 'ollama'].includes(input.kind))
       throw new ValidationError('unknown provider kind');
-    const ciphertext = input.apiKey ? this.crypto.encrypt(input.apiKey) : null;
+
+    let ciphertext: Uint8Array<ArrayBuffer> | null = null;
+    if (input.kind === 'bedrock') {
+      // Bedrock is authorised with the tenant's own AWS credentials, never
+      // the deployment's. Require them up front.
+      if (input.apiKey) {
+        throw new ValidationError(
+          'Bedrock providers take an AWS access key ID, secret access key and region, not an API key.',
+        );
+      }
+      ciphertext = this.crypto.encrypt(encodeBedrockOrThrow(input));
+    } else {
+      if (hasAwsInput(input)) throw new ValidationError('AWS credentials are only valid for Bedrock providers.');
+      ciphertext = input.apiKey ? this.crypto.encrypt(input.apiKey) : null;
+    }
+    if (input.kind === 'ollama') {
+      if (!input.endpoint) throw new ValidationError('Ollama providers require an endpoint URL.');
+      await vetEndpoint(input.endpoint);
+    }
     let overrides = (input.capabilityOverrides ?? null) as Record<string, unknown> | null;
 
     // Auto-populate models when admin didn't provide any. Explicit user
@@ -155,14 +239,33 @@ export class LlmService {
       endpoint?: string | null;
       apiKey?: string | null;
       capabilityOverrides?: Record<string, unknown> | null;
-    },
+    } & AwsCredentialInput,
   ) {
     const t = this.tenant.require();
+    const row = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.llmProvider.findFirst({ where: { id, organizationId: t.organizationId } }),
+    );
+    if (!row) throw new NotFoundError();
     const data: Record<string, unknown> = {};
     if (input.label !== undefined) data.label = input.label;
-    if (input.endpoint !== undefined) data.endpoint = input.endpoint;
-    if (input.apiKey !== undefined) {
-      data.credentialCiphertext = input.apiKey === null ? null : this.crypto.encrypt(input.apiKey);
+    if (input.endpoint !== undefined) {
+      if (row.kind === 'ollama' && input.endpoint) await vetEndpoint(input.endpoint);
+      data.endpoint = input.endpoint;
+    }
+    if (row.kind === 'bedrock') {
+      if (input.apiKey) {
+        throw new ValidationError(
+          'Bedrock providers take an AWS access key ID, secret access key and region, not an API key.',
+        );
+      }
+      // Credentials are replaced as a set (key id + secret + region);
+      // omitting them keeps the stored set.
+      if (hasAwsInput(input)) data.credentialCiphertext = this.crypto.encrypt(encodeBedrockOrThrow(input));
+    } else {
+      if (hasAwsInput(input)) throw new ValidationError('AWS credentials are only valid for Bedrock providers.');
+      if (input.apiKey !== undefined) {
+        data.credentialCiphertext = input.apiKey === null ? null : this.crypto.encrypt(input.apiKey);
+      }
     }
     if (input.capabilityOverrides !== undefined) {
       data.capabilityOverrides = input.capabilityOverrides as any;
@@ -194,7 +297,7 @@ export class LlmService {
     );
     if (!row) throw new NotFoundError();
     if (row.kind !== 'ollama') {
-      return { ok: false, error: `probe is only supported for ollama providers (got ${row.kind})` };
+      return { ok: false, error: 'Probe is only supported for Ollama providers.' };
     }
     if (!row.endpoint) {
       return { ok: false, error: 'provider has no endpoint configured' };
@@ -241,15 +344,10 @@ export class LlmService {
       };
     }
 
+    // Credentials (and, for Bedrock, region) come from the row only — no
+    // deployment-level AWS fallback.
     const registry = new ProviderRegistry([
-      {
-        id: row.id,
-        kind: row.kind as any,
-        apiKey: row.credentialCiphertext ? this.crypto.decrypt(row.credentialCiphertext) : '',
-        endpoint: row.endpoint ?? undefined,
-        awsRegion: process.env.BEDROCK_REGION ?? process.env.AWS_REGION ?? 'us-east-1',
-        models: declared,
-      },
+      { ...providerConfigFromRow(row, (b) => this.crypto.decrypt(b)), models: declared, capabilityOverrides: undefined },
     ]);
 
     const ac = new AbortController();
@@ -270,10 +368,8 @@ export class LlmService {
         latencyMs: r.latencyMs,
         reply: r.content.slice(0, 240),
       };
-    } catch (e: any) {
-      const msg = String(e?.message ?? e);
-      const reason = ac.signal.aborted ? 'timeout after 5s' : msg;
-      return { ok: false, error: reason };
+    } catch (e: unknown) {
+      return { ok: false, error: describeProviderError(row.kind, e, ac.signal.aborted) };
     } finally {
       clearTimeout(timeout);
     }
@@ -339,14 +435,7 @@ export class LlmService {
     const providers = await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.llmProvider.findMany({ where: { organizationId: t.organizationId } }),
     );
-    const configs = providers.map((p) => ({
-      id: p.id,
-      kind: p.kind as any,
-      apiKey: p.credentialCiphertext ? this.crypto.decrypt(p.credentialCiphertext) : '',
-      endpoint: p.endpoint ?? undefined,
-      models: ((p.capabilityOverrides as any)?.models ?? []) as string[],
-      capabilityOverrides: p.capabilityOverrides as Record<string, Record<string, unknown>> | undefined,
-    }));
+    const configs = providers.map((p) => providerConfigFromRow(p, (b) => this.crypto.decrypt(b)));
     const registry = new ProviderRegistry(configs);
     const router = new CapabilityRouter(registry, new CircuitBreaker());
     const profiles = await this.listProfiles();

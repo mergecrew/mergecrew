@@ -33,6 +33,7 @@ import {
   chat as chatLlm,
   estimateUsd,
   priceFor,
+  providerConfigFromRow,
   type LlmProfile,
 } from '@mergecrew/llm';
 import {
@@ -232,14 +233,13 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     tx.llmProfile.findMany({ where: { organizationId } }),
   );
 
+  // Credentials — and for Bedrock the region — come from the tenant's
+  // provider row only. A Bedrock provider without stored credentials fails
+  // closed instead of using this host's ambient AWS credentials.
   const registry = new ProviderRegistry(
     llmProviders.map((p) => ({
-      id: p.id,
-      kind: p.kind as any,
-      apiKey: p.credentialCiphertext ? decryptDevOnly(p.credentialCiphertext) : undefined,
-      endpoint: p.endpoint ?? undefined,
-      awsRegion: process.env.BEDROCK_REGION ?? process.env.AWS_REGION ?? 'us-east-1',
-      models: ((p.capabilityOverrides as any)?.models ?? []) as string[],
+      ...providerConfigFromRow(p, decryptDevOnly),
+      capabilityOverrides: undefined,
     })),
   );
   const router = new CapabilityRouter(registry, new CircuitBreaker());

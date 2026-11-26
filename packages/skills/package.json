@@ -24,6 +24,7 @@
     "@mergecrew/adapters-vcs": "workspace:*",
     "@mergecrew/db": "workspace:*",
     "@mergecrew/domain": "workspace:*",
+    "@mergecrew/net": "workspace:*",
     "@mergecrew/llm": "workspace:*",
     "@mergecrew/sandbox-driver": "workspace:*",
     "@prisma/client": "^5.22.0",

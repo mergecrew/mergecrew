@@ -38,19 +38,34 @@ interface TestResult {
   error?: string;
 }
 
+/** Bedrock only: the tenant's own AWS credentials (stored encrypted). */
+export interface AwsCredentialFields {
+  awsAccessKeyId: string;
+  awsSecretAccessKey: string;
+  awsRegion: string;
+}
+
 interface Props {
   providers: Provider[];
   canEdit: boolean;
-  onCreate: (input: {
-    kind: Kind;
-    label: string;
-    apiKey: string;
-    endpoint: string;
-    models: string[];
-  }) => Promise<SaveResult>;
+  onCreate: (
+    input: {
+      kind: Kind;
+      label: string;
+      apiKey: string;
+      endpoint: string;
+      models: string[];
+    } & Partial<AwsCredentialFields>,
+  ) => Promise<SaveResult>;
+  /** `apiKey` / AWS fields omitted = keep the stored credential. */
   onUpdate: (
     id: string,
-    input: { label: string; endpoint: string | null; apiKey: string | null; models: string[] | null },
+    input: {
+      label: string;
+      endpoint: string | null;
+      apiKey?: string;
+      models: string[] | null;
+    } & Partial<AwsCredentialFields>,
   ) => Promise<SaveResult>;
   onDelete: (id: string) => Promise<SaveResult>;
   onTest: (id: string) => Promise<TestResult>;
@@ -150,7 +165,9 @@ export function LlmProvidersCard({
                     const r = await onUpdate(p.id, {
                       label: v.label,
                       endpoint: v.endpoint || null,
-                      apiKey: v.apiKey === '' ? null : v.apiKey,
+                      // Empty = keep the current credential (as the form says).
+                      ...(v.apiKey !== '' ? { apiKey: v.apiKey } : {}),
+                      ...(awsFieldsOf(v) ?? {}),
                       models,
                     });
                     if (r.ok) setEditing(null);
@@ -166,7 +183,13 @@ export function LlmProvidersCard({
                   <div className="text-xs text-zinc-500">
                     {p.kind}
                     {p.endpoint ? ` · ${p.endpoint}` : ''}
-                    {p.hasCredential ? ' · key set' : ' · no key'}
+                    {p.kind === 'bedrock'
+                      ? p.hasCredential
+                        ? ' · AWS credentials set'
+                        : ' · no AWS credentials'
+                      : p.hasCredential
+                        ? ' · key set'
+                        : ' · no key'}
                   </div>
                   {modelsOf(p).length > 0 && (
                     <div className="mt-1 flex flex-wrap gap-1">
@@ -284,6 +307,20 @@ interface FormValues {
   apiKey: string;
   endpoint: string;
   models: string[];
+  awsAccessKeyId: string;
+  awsSecretAccessKey: string;
+  awsRegion: string;
+}
+
+/** AWS fields to send, or null when the form left them blank (keep current). */
+function awsFieldsOf(v: FormValues): AwsCredentialFields | null {
+  if (v.kind !== 'bedrock') return null;
+  if (!v.awsAccessKeyId && !v.awsSecretAccessKey) return null;
+  return {
+    awsAccessKeyId: v.awsAccessKeyId,
+    awsSecretAccessKey: v.awsSecretAccessKey,
+    awsRegion: v.awsRegion,
+  };
 }
 
 function ProviderForm({
@@ -304,13 +341,33 @@ function ProviderForm({
   const [apiKey, setApiKey] = useState('');
   const [endpoint, setEndpoint] = useState(initial?.endpoint ?? '');
   const [modelsCsv, setModelsCsv] = useState(modelsOf(initial ?? ({} as Provider)).join(', '));
+  const [awsAccessKeyId, setAwsAccessKeyId] = useState('');
+  const [awsSecretAccessKey, setAwsSecretAccessKey] = useState('');
+  const [awsRegion, setAwsRegion] = useState('us-east-1');
+
+  // Bedrock: on create all three AWS fields are required; on edit they are
+  // optional as a set (blank = keep the stored credentials).
+  const awsPartial = awsAccessKeyId.trim() !== '' || awsSecretAccessKey.trim() !== '';
+  const awsComplete =
+    awsAccessKeyId.trim() !== '' && awsSecretAccessKey.trim() !== '' && awsRegion.trim() !== '';
+  const awsOk = kind !== 'bedrock' || awsComplete || (mode === 'edit' && !awsPartial);
+  const endpointOk = kind !== 'ollama' || endpoint.trim() !== '';
 
   const submit = () => {
     const models = modelsCsv
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
-    onSubmit({ kind, label: label.trim(), apiKey, endpoint: endpoint.trim(), models });
+    onSubmit({
+      kind,
+      label: label.trim(),
+      apiKey: kind === 'bedrock' ? '' : apiKey,
+      endpoint: endpoint.trim(),
+      models,
+      awsAccessKeyId: awsAccessKeyId.trim(),
+      awsSecretAccessKey: awsSecretAccessKey.trim(),
+      awsRegion: awsRegion.trim(),
+    });
   };
 
   return (
@@ -357,12 +414,56 @@ function ProviderForm({
           />
         </label>
       )}
+      {kind === 'bedrock' && (
+        <div className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className="block text-sm">
+              <span className="block text-zinc-600 dark:text-zinc-400">AWS access key ID</span>
+              <input
+                className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+                value={awsAccessKeyId}
+                onChange={(e) => setAwsAccessKeyId(e.target.value)}
+                placeholder="AKIA…"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="block text-zinc-600 dark:text-zinc-400">AWS secret access key</span>
+              <input
+                type="password"
+                className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+                value={awsSecretAccessKey}
+                onChange={(e) => setAwsSecretAccessKey(e.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="block text-zinc-600 dark:text-zinc-400">AWS region</span>
+              <input
+                className="mt-1 w-full rounded border px-2 py-1 font-mono dark:bg-zinc-900 dark:border-zinc-700"
+                value={awsRegion}
+                onChange={(e) => setAwsRegion(e.target.value)}
+                placeholder="us-east-1"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </label>
+          </div>
+          <p className="text-xs text-zinc-500">
+            Model calls are authorised by and billed to this AWS account. Use an IAM user scoped to{' '}
+            <code>bedrock:InvokeModel*</code>.
+            {mode === 'edit' && ' Leave the key fields empty to keep the stored credentials.'}
+          </p>
+        </div>
+      )}
       {(kind === 'ollama' || kind === 'openai') && (
         <label className="block text-sm">
           <span className="block text-zinc-600 dark:text-zinc-400">
             Endpoint{' '}
             <span className="text-xs text-zinc-400">
-              ({kind === 'ollama' ? 'e.g. http://localhost:11434' : 'optional override'})
+              ({kind === 'ollama' ? 'e.g. https://ollama.example.com' : 'optional override'})
             </span>
           </span>
           <input
@@ -387,7 +488,11 @@ function ProviderForm({
         <Button variant="secondary" onClick={onCancel} disabled={pending}>
           Cancel
         </Button>
-        <Button variant="primary" onClick={submit} disabled={pending || !label.trim()}>
+        <Button
+          variant="primary"
+          onClick={submit}
+          disabled={pending || !label.trim() || !awsOk || !endpointOk}
+        >
           Save
         </Button>
       </div>

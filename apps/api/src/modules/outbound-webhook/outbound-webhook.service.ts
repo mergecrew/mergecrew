@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { assertSafeUrl } from '@mergecrew/net';
 import { PrismaService } from '../../common/prisma.service.js';
 import { QueueService } from '../../common/queue.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
@@ -34,6 +35,21 @@ export interface DeliveryRow {
   errorMessage: string | null;
 }
 
+/**
+ * Registration-time destination check. The delivery worker re-checks and
+ * pins on every attempt (DNS can change); this is the fail-fast path so
+ * an admin learns immediately that an internal URL won't be accepted.
+ */
+export async function vetWebhookUrl(url: string): Promise<void> {
+  try {
+    await assertSafeUrl(url);
+  } catch {
+    throw new BadRequestException(
+      'Webhook URL is not allowed or could not be resolved. Use a publicly reachable http(s) endpoint.',
+    );
+  }
+}
+
 @Injectable()
 export class OutboundWebhookService {
   constructor(
@@ -44,6 +60,7 @@ export class OutboundWebhookService {
 
   async create(input: { url: string; events?: string[] }): Promise<IssuedWebhook> {
     const t = this.tenant.require();
+    await vetWebhookUrl(input.url);
     const secret = randomBytes(32).toString('base64url');
 
     const created = await this.prisma.withTenant(t.organizationId, (tx) =>
@@ -108,6 +125,7 @@ export class OutboundWebhookService {
       tx.outboundWebhook.findFirst({ where: { id, organizationId: t.organizationId } }),
     );
     if (!found) throw new NotFoundException();
+    if (input.url !== undefined) await vetWebhookUrl(input.url);
 
     const updated = await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.outboundWebhook.update({

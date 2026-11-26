@@ -21,6 +21,11 @@ export class LlmController {
       apiKey?: string;
       endpoint?: string;
       capabilityOverrides?: Record<string, unknown>;
+      /** Bedrock only — stored encrypted alongside the region. */
+      awsAccessKeyId?: string;
+      awsSecretAccessKey?: string;
+      awsSessionToken?: string;
+      awsRegion?: string;
     },
   ) {
     return this.llm.createProvider(body);
@@ -36,6 +41,10 @@ export class LlmController {
       endpoint?: string | null;
       apiKey?: string | null;
       capabilityOverrides?: Record<string, unknown> | null;
+      awsAccessKeyId?: string;
+      awsSecretAccessKey?: string;
+      awsSessionToken?: string;
+      awsRegion?: string;
     },
   ) {
     return this.llm.updateProvider(providerId, body);

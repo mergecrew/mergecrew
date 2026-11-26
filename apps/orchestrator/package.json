@@ -17,6 +17,7 @@
     "@mergecrew/config-yaml": "workspace:*",
     "@mergecrew/db": "workspace:*",
     "@mergecrew/domain": "workspace:*",
+    "@mergecrew/net": "workspace:*",
     "@mergecrew/eventlog": "workspace:*",
     "@mergecrew/telemetry": "workspace:*",
     "@prisma/client": "^7.8.0",

@@ -1,6 +1,7 @@
 import type { CustomSkillDef } from '@mergecrew/domain';
 import type { AnySkill } from './types.js';
-import { recordAndAssertEgress } from './egress-policy.js';
+import { readBodyLimited } from '@mergecrew/net';
+import { skillFetch } from './egress-policy.js';
 
 /**
  * Build a runnable skill from a `CustomSkillDef` declared in `mergecrew.yaml`.
@@ -28,7 +29,6 @@ export function buildHttpSkill(name: string, def: CustomSkillDef): AnySkill {
           `custom skill "${name}" has no endpoint configured in mergecrew.yaml`,
         );
       }
-      await recordAndAssertEgress(def.endpoint, ctx, name);
       const headers: Record<string, string> = {
         'content-type': 'application/json',
         'x-mergecrew-org-id': ctx.organizationId,
@@ -36,19 +36,33 @@ export function buildHttpSkill(name: string, def: CustomSkillDef): AnySkill {
       };
       if (ctx.runId) headers['x-mergecrew-run-id'] = ctx.runId;
 
-      const r = await fetch(def.endpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ input }),
-        signal: ctx.abortSignal,
-      });
+      // Allowlist + private/metadata address checks on every hop, socket
+      // pinned to the vetted address (see egress-policy.ts).
+      const r = await skillFetch(
+        def.endpoint,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ input }),
+          signal: ctx.abortSignal,
+        },
+        ctx,
+        name,
+        { timeoutMs: 30_000 },
+      );
+      const { buffer, truncated } = await readBodyLimited(r, 2_000_000);
       if (!r.ok) {
-        const body = await r.text().catch(() => '');
-        throw new Error(
-          `custom skill "${name}" returned HTTP ${r.status}: ${body.slice(0, 500)}`,
-        );
+        throw new Error(`custom skill "${name}" returned HTTP ${r.status}`);
       }
-      const output: unknown = await r.json().catch(() => ({}));
+      if (truncated) {
+        throw new Error(`custom skill "${name}" response exceeded 2 MB`);
+      }
+      let output: unknown;
+      try {
+        output = JSON.parse(buffer.toString('utf8'));
+      } catch {
+        output = {};
+      }
       return { output, brief: `${name} (HTTP ${r.status})` };
     },
   };

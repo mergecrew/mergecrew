@@ -1,5 +1,14 @@
+import { describeEgressError, discardBody, readBodyLimited } from '@mergecrew/net';
 import type { AnySkill } from '../types.js';
-import { recordAndAssertEgress } from '../egress-policy.js';
+import { EgressBlocked, recordAndAssertEgress, skillFetch } from '../egress-policy.js';
+
+/**
+ * Every outbound request in this file goes through `skillFetch`: the
+ * project allowlist and the private/metadata address rules are applied
+ * to the initial URL and to each redirect hop, and the socket is pinned
+ * to the vetted address. The headless-browser skill proxies every
+ * browser request through the same path.
+ */
 
 const webFetchUrl: AnySkill = {
   name: 'web.fetch_url',
@@ -18,33 +27,22 @@ const webFetchUrl: AnySkill = {
   capabilities: ['net.outbound'],
   timeoutMs: 30_000,
   async execute(input: any, ctx) {
-    await recordAndAssertEgress(input.url, ctx, 'web.fetch_url');
     ctx.logger.info('web.fetch_url', { url: input.url });
-    const r = await fetch(input.url, { headers: input.headers, signal: ctx.abortSignal });
-    const max = input.max_bytes ?? 200_000;
-    const reader = r.body?.getReader();
-    let bytes = 0;
-    const chunks: Uint8Array[] = [];
-    if (reader) {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        if (!value) continue;
-        bytes += value.byteLength;
-        if (bytes > max) {
-          chunks.push(value.subarray(0, value.byteLength - (bytes - max)));
-          break;
-        }
-        chunks.push(value);
-      }
-    }
-    const buf = Buffer.concat(chunks.map((c) => Buffer.from(c)));
+    const max = Math.max(1, Math.min(Number(input.max_bytes ?? 200_000), 5_000_000));
+    const r = await skillFetch(
+      input.url,
+      { headers: input.headers, signal: ctx.abortSignal },
+      ctx,
+      'web.fetch_url',
+      { timeoutMs: 25_000 },
+    );
+    const { buffer: buf, truncated } = await readBodyLimited(r, max);
     const ct = r.headers.get('content-type') ?? '';
     const text = ct.includes('text') || ct.includes('json') || ct.includes('xml')
       ? buf.toString('utf8')
       : `[binary, ${buf.length} bytes]`;
     return {
-      output: { status: r.status, contentType: ct, body: text, truncated: bytes > max },
+      output: { status: r.status, contentType: ct, body: text, truncated },
       brief: `${r.status} ${input.url}`,
     };
   },
@@ -78,7 +76,47 @@ const webScreenshotUrl: AnySkill = {
     try {
       const ctxBrowser = await browser.newContext({
         viewport: { width: input.width ?? 1280, height: input.height ?? 800 },
+        serviceWorkers: 'block',
       });
+      // The browser would otherwise do its own DNS and follow redirects /
+      // load subresources without our checks. Proxy every request through
+      // skillFetch (redirects are handed back to the browser, which issues
+      // a new — again intercepted — request for the next hop). The entry
+      // URL was audited above; per-request checks skip the audit emit to
+      // keep the egress log readable but enforce the same rules.
+      const quietCtx = { egressAllowlist: ctx.egressAllowlist, egressResolver: (ctx as any).egressResolver };
+      await ctxBrowser.route('**/*', async (route: any) => {
+        const req = route.request();
+        const url: string = req.url();
+        try {
+          const headers: Record<string, string> = { ...(await req.allHeaders()) };
+          for (const h of ['host', 'connection', 'content-length', 'accept-encoding']) delete headers[h];
+          const r = await skillFetch(
+            url,
+            {
+              method: req.method(),
+              headers,
+              body: req.postDataBuffer() ?? undefined,
+              redirect: 'manual',
+              signal: ctx.abortSignal,
+            },
+            quietCtx,
+            'web.screenshot_url',
+            { timeoutMs: 20_000, maxResponseBytes: 20 * 1024 * 1024 },
+          );
+          const body = Buffer.from(await r.arrayBuffer());
+          const outHeaders: Record<string, string> = {};
+          r.headers.forEach((v, k) => {
+            outHeaders[k] = v;
+          });
+          await route.fulfill({ status: r.status, headers: outHeaders, body });
+        } catch {
+          await route.abort('blockedbyclient').catch(() => undefined);
+        }
+      });
+      if (typeof ctxBrowser.routeWebSocket === 'function') {
+        await ctxBrowser.routeWebSocket(/.*/, (ws: any) => ws.close());
+      }
       const page = await ctxBrowser.newPage();
       await page.goto(input.url, { waitUntil: 'networkidle', timeout: 30_000 });
       const png = await page.screenshot({ type: 'png', fullPage: true });
@@ -107,12 +145,14 @@ const webLighthouse: AnySkill = {
   capabilities: ['net.outbound'],
   timeoutMs: 90_000,
   async execute(input: any, ctx) {
-    await recordAndAssertEgress(input.url, ctx, 'web.lighthouse');
     // V1 placeholder: a real Lighthouse integration is V1.x.
     // We surface load timings + key headers as a useful approximation.
     const start = Date.now();
-    const r = await fetch(input.url);
+    const r = await skillFetch(input.url, { signal: ctx.abortSignal }, ctx, 'web.lighthouse', {
+      timeoutMs: 60_000,
+    });
     const elapsed = Date.now() - start;
+    await discardBody(r);
     return {
       output: {
         url: input.url,
@@ -154,8 +194,7 @@ const webSmokeCheck: AnySkill = {
   timeoutMs: 60_000,
   async execute(input: any, ctx) {
     const url = String(input.url);
-    await recordAndAssertEgress(url, ctx, 'web.smoke_check');
-    const timeoutMs = Number(input.timeoutMs ?? 15_000);
+    const timeoutMs = Math.max(1, Math.min(Number(input.timeoutMs ?? 15_000), 55_000));
     const mustContain: string[] = Array.isArray(input.mustContain) ? input.mustContain : [];
     const mustNotContain: string[] = Array.isArray(input.mustNotContain) ? input.mustNotContain : [];
 
@@ -167,14 +206,16 @@ const webSmokeCheck: AnySkill = {
 
     const failures: string[] = [];
     let status = 0;
-    let elapsedMs = 0;
+    let elapsedMs: number;
     let body = '';
     const start = Date.now();
     try {
-      const r = await fetch(url, { signal: controller.signal, redirect: 'follow' });
+      const r = await skillFetch(url, { signal: controller.signal, redirect: 'follow' }, ctx, 'web.smoke_check', {
+        timeoutMs: null,
+      });
       elapsedMs = Date.now() - start;
       status = r.status;
-      body = await r.text();
+      body = (await readBodyLimited(r, 2_000_000)).buffer.toString('utf8');
       if (status < 200 || status >= 300) failures.push(`status ${status}`);
       for (const needle of mustContain) {
         if (!body.includes(needle)) failures.push(`missing "${truncate(needle, 60)}"`);
@@ -183,8 +224,12 @@ const webSmokeCheck: AnySkill = {
         if (body.includes(needle)) failures.push(`contains forbidden "${truncate(needle, 60)}"`);
       }
     } catch (err) {
+      if (err instanceof EgressBlocked) throw err;
       elapsedMs = Date.now() - start;
-      const msg = (err as Error)?.name === 'AbortError' ? `timeout after ${timeoutMs}ms` : String((err as Error)?.message ?? err);
+      const msg =
+        (err as Error)?.name === 'AbortError'
+          ? `timeout after ${timeoutMs}ms`
+          : describeEgressError(err);
       failures.push(`fetch failed: ${msg}`);
     } finally {
       clearTimeout(timer);
