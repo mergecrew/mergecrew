@@ -2,12 +2,17 @@ import { Controller, ForbiddenException, Headers, Post, Req } from '@nestjs/comm
 import type { Request } from 'express';
 import { GitHubProvider, getGitHubAppCredentials } from '@mergecrew/adapters-vcs';
 import { QueueService } from '../../common/queue.service.js';
+import { GitHubInstallationService } from '../integration/github-installation.service.js';
+import { requireRawBody, requireWebhookSecret, verifyGitHubSignature } from './signature.js';
 
 @Controller('v1/webhooks/github')
 export class GitHubWebhookController {
   private _gh: GitHubProvider | null = null;
 
-  constructor(private queue: QueueService) {}
+  constructor(
+    private queue: QueueService,
+    private installations: GitHubInstallationService,
+  ) {}
 
   private gh(): GitHubProvider {
     if (this._gh) return this._gh;
@@ -21,13 +26,15 @@ export class GitHubWebhookController {
 
   @Post()
   async receive(@Headers() headers: Record<string, string>, @Req() req: Request) {
-    const body: Buffer = (req as any).body;
-    if (!Buffer.isBuffer(body)) throw new ForbiddenException('expected raw body');
-    const secret = process.env.GITHUB_APP_WEBHOOK_SECRET ?? '';
-    const gh = this.gh();
-    const ok = await gh.verifyWebhookSignature(headers, body, secret);
-    if (!ok) throw new ForbiddenException('invalid signature');
-    const event = gh.parseWebhookEvent(headers, body);
+    const body = requireRawBody((req as any).body);
+    const secret = requireWebhookSecret('GITHUB_APP_WEBHOOK_SECRET', 'github');
+    if (!verifyGitHubSignature(headers, body, secret)) throw new ForbiddenException('invalid signature');
+    const event = this.gh().parseWebhookEvent(headers, body);
+    // Keep org ↔ installation bindings in sync with GitHub: an
+    // uninstalled or suspended installation must stop being usable.
+    if (headers['x-github-event'] === 'installation' && event.kind === 'installation') {
+      await this.installations.handleInstallationEvent(event.action, event.installationId);
+    }
     await this.queue.get('webhook.inbound').add(
       'github',
       { event },

@@ -1,7 +1,12 @@
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import type { Logger } from 'pino';
-import { effectiveBaseBranch, withTenant } from '@mergecrew/db';
+import {
+  assertInstallationBoundToOrg,
+  effectiveBaseBranch,
+  isInstallationBoundToOrg,
+  withTenant,
+} from '@mergecrew/db';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import {
@@ -358,7 +363,16 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   const ghCreds = getGitHubAppCredentials();
   let vcs: VcsProvider | undefined;
   if (ghCreds) {
-    vcs = new GitHubProvider(ghCreds);
+    // Every installation-token mint (clone, push, PR, tracker, deploy)
+    // goes through this check: refuse installations not bound to the
+    // run's org in org_github_installations.
+    vcs = new GitHubProvider({
+      ...ghCreds,
+      authorizeInstallation: (installationId) =>
+        withTenant(organizationId, (tx) =>
+          assertInstallationBoundToOrg(tx, organizationId, installationId),
+        ),
+    });
   }
 
   // Workspace bootstrap (idempotent, runs once per dailyRun). The first
@@ -497,7 +511,13 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     // the configured URL. Always selectable; needs no env (#467).
     deploy = new ExternalCiProvider();
   } else if (dt?.adapterId === 'github-actions' && ghCreds) {
-    deploy = new GitHubActionsProvider(ghCreds);
+    // The deploy target carries its own installationId; same binding rule.
+    const dtInstallationId = String((dt.config as { installationId?: unknown } | null)?.installationId ?? '');
+    if (await withTenant(organizationId, (tx) => isInstallationBoundToOrg(tx, organizationId, dtInstallationId))) {
+      deploy = new GitHubActionsProvider(ghCreds);
+    } else {
+      logger.warn({ deployTargetId: dt.id }, 'github-actions deploy target installation is not bound to this org; deploy disabled');
+    }
   } else if (dt?.adapterId === 'vercel' && process.env.VERCEL_TOKEN) {
     deploy = new VercelProvider({ token: process.env.VERCEL_TOKEN });
   } else if (dt?.adapterId === 'netlify' && process.env.NETLIFY_TOKEN) {

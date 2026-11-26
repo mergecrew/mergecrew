@@ -235,6 +235,16 @@ describe('GiteaProvider — conformance (webhooks)', () => {
     expect(ok).toBe(false);
   });
 
+  it('verifyWebhookSignature fails closed when the secret is empty', async () => {
+    const body = Buffer.from('{"hello":"world"}');
+    const ok = await provider.verifyWebhookSignature(
+      { 'x-gitea-signature': sign(body, '') },
+      body,
+      '',
+    );
+    expect(ok).toBe(false);
+  });
+
   it('parseWebhookEvent extracts pull_request shape', () => {
     const body = Buffer.from(
       JSON.stringify({

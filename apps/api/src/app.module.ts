@@ -1,7 +1,7 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
-import json from 'express';
+import { applyBodyParsers } from './common/body-parsers.js';
 import { CommonModule } from './common/common.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { OrgModule } from './modules/org/org.module.js';
@@ -59,12 +59,9 @@ import { EvalModule } from './modules/eval/eval.module.js';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    // JSON parser everywhere except webhooks (which need raw bodies for signature verification).
-    consumer
-      .apply(json.json({ limit: '5mb' }))
-      .exclude({ path: 'v1/webhooks/*path', method: 0 } as any)
-      .forRoutes('*');
-    consumer.apply(json.raw({ type: '*/*', limit: '5mb' })).forRoutes('v1/webhooks/*path');
+    // JSON parser everywhere except webhooks (which need raw bodies for
+    // signature verification, for every HTTP method).
+    applyBodyParsers(consumer);
     // TenantMiddleware is registered as plain Express middleware in main.ts to
     // sidestep NestJS forRoutes glob quirks.
   }

@@ -1,7 +1,7 @@
 import { Controller, ForbiddenException, Headers, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
-import crypto from 'node:crypto';
 import { QueueService } from '../../common/queue.service.js';
+import { requireRawBody, requireWebhookSecret, verifySentrySignature } from './signature.js';
 
 @Controller('v1/webhooks/sentry')
 export class SentryWebhookController {
@@ -9,19 +9,12 @@ export class SentryWebhookController {
 
   @Post()
   async receive(@Headers() headers: Record<string, string>, @Req() req: Request) {
-    const body = (req as any).body as Buffer;
-    if (!Buffer.isBuffer(body)) throw new ForbiddenException('expected raw body');
-
-    const secret = process.env.SENTRY_CLIENT_SECRET;
-    if (!secret) throw new ForbiddenException('sentry client secret not configured');
+    const body = requireRawBody((req as any).body);
+    const secret = requireWebhookSecret('SENTRY_CLIENT_SECRET', 'sentry');
 
     // Sentry sends sha256 HMAC in `sentry-hook-signature` (lowercase header).
-    const sig = headers['sentry-hook-signature'];
-    if (!sig) throw new ForbiddenException('missing sentry-hook-signature');
-    const expected = crypto.createHmac('sha256', secret).update(body).digest('hex');
-    const a = Buffer.from(expected);
-    const b = Buffer.from(sig);
-    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    if (!headers['sentry-hook-signature']) throw new ForbiddenException('missing sentry-hook-signature');
+    if (!verifySentrySignature(headers, body, secret)) {
       throw new ForbiddenException('invalid sentry signature');
     }
 

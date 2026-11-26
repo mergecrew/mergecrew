@@ -2025,6 +2025,20 @@
         ]
       }
     },
+    "/v1/orgs/{slug}/github/installations/confirm": {
+      "post": {
+        "operationId": "GitHubInstallationController_confirm",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "GitHubInstallation"
+        ]
+      }
+    },
     "/v1/webhooks/github": {
       "post": {
         "operationId": "GitHubWebhookController_receive",

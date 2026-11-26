@@ -34,6 +34,13 @@ interface GitHubProviderConfig {
    * github.com and GHES, so no other plumbing changes.
    */
   baseUrl?: string;
+  /**
+   * Called before every installation-token mint (clone, push, PR, API
+   * calls, `getInstallationToken`). Must throw when the installation is
+   * not allowed for the caller — the runner uses it to refuse
+   * installations that aren't bound to the repo's org.
+   */
+  authorizeInstallation?: (installationId: string) => Promise<void>;
 }
 
 export class GitHubProvider implements VcsProvider {
@@ -43,9 +50,11 @@ export class GitHubProvider implements VcsProvider {
   private privateKey: string;
   private apiUrl: string;
   private host: string;
+  private authorizeInstallation?: (installationId: string) => Promise<void>;
 
   constructor(cfg: GitHubProviderConfig) {
     this.appId = cfg.appId;
+    this.authorizeInstallation = cfg.authorizeInstallation;
     this.privateKey = cfg.privateKey;
     const { apiUrl, host } = resolveBaseUrls(cfg.baseUrl);
     this.apiUrl = apiUrl;
@@ -66,6 +75,7 @@ export class GitHubProvider implements VcsProvider {
   // ─── tokens ─────────────────────────────────────────────────────────────
 
   private async tokenFor(installationId: string): Promise<string> {
+    if (this.authorizeInstallation) await this.authorizeInstallation(installationId);
     const r: any = await this.auth({ type: 'installation', installationId: Number(installationId) });
     return r.token;
   }
@@ -422,6 +432,8 @@ export class GitHubProvider implements VcsProvider {
     body: Buffer,
     secret: string,
   ): Promise<boolean> {
+    // Fail closed: an empty key would let anyone compute a valid HMAC.
+    if (!secret) return false;
     const sig = headers['x-hub-signature-256'] ?? headers['X-Hub-Signature-256'];
     if (!sig || !sig.startsWith('sha256=')) return false;
     const expected = crypto
