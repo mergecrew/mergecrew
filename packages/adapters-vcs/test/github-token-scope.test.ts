@@ -86,6 +86,41 @@ describe('GitHubProvider token scoping', () => {
     expect(authCalls[0]).toMatchObject({ repositoryIds: [1234], permissions: { issues: 'read' } });
   });
 
+  it('authorizeInstallation runs before every scoped mint and blocks it when unbound', async () => {
+    const seen: string[] = [];
+    const bound = new GitHubProvider({
+      appId: '1',
+      privateKey: 'k',
+      authorizeInstallation: async (id) => {
+        seen.push(id);
+      },
+    });
+    await bound.cloneIntoWorkspace(repo, 'main', '/tmp/ws');
+    await bound.push('/tmp/ws', 'mergecrew/run-1', repo);
+    await bound.openPullRequest(repo, { head: 'mergecrew/x', base: 'main', title: 't', body: 'b' });
+    await bound.getInstallationToken('42', { repoId: '1234', permissions: { issues: 'write' } });
+    expect(seen).toEqual(['42', '42', '42', '42']);
+    expect(authCalls).toHaveLength(4);
+
+    authCalls.length = 0;
+    const unbound = new GitHubProvider({
+      appId: '1',
+      privateKey: 'k',
+      authorizeInstallation: async () => {
+        throw new Error('installation not bound to org');
+      },
+    });
+    await expect(unbound.cloneIntoWorkspace(repo, 'main', '/tmp/ws')).rejects.toThrow(/not bound/);
+    await expect(unbound.push('/tmp/ws', 'mergecrew/run-1', repo)).rejects.toThrow(/not bound/);
+    await expect(
+      unbound.openPullRequest(repo, { head: 'mergecrew/x', base: 'main', title: 't', body: 'b' }),
+    ).rejects.toThrow(/not bound/);
+    await expect(unbound.getInstallationToken('42', { repoId: '1234' })).rejects.toThrow(/not bound/);
+    await expect(unbound.listInstallationRepos('42')).rejects.toThrow(/not bound/);
+    expect(authCalls).toHaveLength(0);
+    expect(safeGit.gitClone).toHaveBeenCalledTimes(1); // only the bound clone
+  });
+
   it('rejects repo names that could alter the remote URL', async () => {
     await expect(gh().cloneIntoWorkspace({ ...repo, repoFullName: 'evil.com@acme/web' }, 'main', '/tmp/ws')).rejects.toThrow(/invalid repoFullName/);
     await expect(gh().cloneIntoWorkspace({ ...repo, repoFullName: 'acme/../x' }, 'main', '/tmp/ws')).rejects.toThrow(/invalid repoFullName/);
