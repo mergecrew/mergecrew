@@ -35,7 +35,6 @@ export async function api<T>(
   const headers = new Headers(init.headers);
   if (init.session) {
     headers.set('authorization', `Bearer ${init.session.jwt}`);
-    headers.set('x-mergecrew-user-id', init.session.userId);
   }
   if (!headers.has('content-type') && init.body) {
     headers.set('content-type', 'application/json');

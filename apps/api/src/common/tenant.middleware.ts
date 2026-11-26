@@ -25,14 +25,12 @@ export class TenantMiddleware implements NestMiddleware {
         const decoded = this.jwt.verify<{ sub: string }>(auth.slice(7));
         userId = decoded.sub;
       } catch {
-        // fall through; BFF may identify via header
+        // fall through to 401
       }
     }
-    const cookieUid = req.headers['x-mergecrew-user-id'];
-    if (!userId && typeof cookieUid === 'string') userId = cookieUid;
     if (!userId) throw new UnauthorizedException();
 
-    // Validate the JWT/header sub still references a real user. Without
+    // Validate the JWT sub still references a real user. Without
     // this check, a JWT minted before a `docker compose down -v` (signed
     // with the same dev-secret but naming a now-deleted user) would fall
     // through to a downstream Prisma P2003 — e.g. memberships_user_id_fkey

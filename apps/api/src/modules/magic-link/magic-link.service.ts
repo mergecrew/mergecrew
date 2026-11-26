@@ -12,6 +12,20 @@ function hashToken(t: string): string {
   return createHash('sha256').update(t).digest('hex');
 }
 
+/**
+ * Where the emailed sign-in link points. Always derived from server config,
+ * never from the request: a client-chosen callback let anyone mail a victim
+ * a genuine link whose token landed on an attacker's host.
+ */
+function magicLinkCallbackUrl(): string {
+  const base = process.env.WEB_BASE_URL ?? 'http://localhost:3000';
+  return `${base.replace(/\/+$/, '')}/api/auth/magic-link`;
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
 @Injectable()
 export class MagicLinkService {
   private email: EmailClient;
@@ -32,7 +46,7 @@ export class MagicLinkService {
    * (the BFF's /api/auth/magic-link route). The token is appended as a
    * query parameter.
    */
-  async request(input: { email: string; callbackUrl: string }): Promise<void> {
+  async request(input: { email: string }): Promise<void> {
     const email = input.email.trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       throw new ValidationError('invalid email');
@@ -49,8 +63,7 @@ export class MagicLinkService {
       });
     });
 
-    const sep = input.callbackUrl.includes('?') ? '&' : '?';
-    const link = `${input.callbackUrl}${sep}token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
+    const link = `${magicLinkCallbackUrl()}?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
     const subject = 'Your Mergecrew sign-in link';
     const html = renderMagicLinkEmail({ link, ttlMinutes: Math.floor(TOKEN_TTL_MS / 60_000) });
     await this.email.send([email], subject, html);
@@ -99,14 +112,15 @@ export class MagicLinkService {
 }
 
 function renderMagicLinkEmail(opts: { link: string; ttlMinutes: number }): string {
+  const link = escapeHtml(opts.link);
   return `<!doctype html>
 <html><body style="font-family:system-ui,sans-serif;max-width:520px;margin:32px auto;color:#111">
   <h2 style="margin-bottom:8px">Sign in to Mergecrew</h2>
   <p>Click the link below to finish signing in. The link expires in ${opts.ttlMinutes} minutes and works once.</p>
   <p style="margin:24px 0">
-    <a href="${opts.link}" style="background:#111;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;display:inline-block">Sign in</a>
+    <a href="${link}" style="background:#111;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;display:inline-block">Sign in</a>
   </p>
   <p style="font-size:12px;color:#666">If you didn't request this, ignore this email — no action will be taken.</p>
-  <p style="font-size:11px;color:#999;word-break:break-all">${opts.link}</p>
+  <p style="font-size:11px;color:#999;word-break:break-all">${link}</p>
 </body></html>`;
 }

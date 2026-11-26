@@ -1,5 +1,5 @@
 import { Body, Controller, HttpCode, Post } from '@nestjs/common';
-import { IsString, IsEmail, IsUrl, MaxLength } from 'class-validator';
+import { IsString, IsEmail, IsOptional, MaxLength } from 'class-validator';
 import { MagicLinkService } from './magic-link.service.js';
 
 class RequestDto {
@@ -7,9 +7,11 @@ class RequestDto {
   @MaxLength(254)
   email!: string;
 
-  @IsUrl({ require_protocol: true, require_tld: false })
+  /** Ignored — kept so older web builds that still send it don't 400. */
+  @IsOptional()
+  @IsString()
   @MaxLength(2048)
-  callbackUrl!: string;
+  callbackUrl?: string;
 }
 
 class VerifyDto {
@@ -35,7 +37,7 @@ export class MagicLinkController {
   @Post('request')
   @HttpCode(200)
   async request(@Body() body: RequestDto) {
-    await this.magicLink.request(body);
+    await this.magicLink.request({ email: body.email });
     // Always 200 — never reveal whether an account exists.
     return { ok: true };
   }
