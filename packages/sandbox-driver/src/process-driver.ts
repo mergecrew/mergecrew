@@ -9,6 +9,7 @@ import type {
   SandboxStartOpts,
 } from './types.js';
 import { buildScrubbedEnv, classifySensitiveKey } from './env.js';
+import { assertTextuallyInside, safeReadWorkspaceFile, safeWriteWorkspaceFile } from './safe-fs.js';
 
 export interface ProcessDriverOpts {
   logger?: {
@@ -92,14 +93,13 @@ export class ProcessDriver implements SandboxDriver {
   }
 
   async readFile(handle: SandboxHandle, relPath: string): Promise<Buffer> {
-    const abs = resolveInside(handle.workspacePath, relPath);
-    return fs.readFile(abs);
+    resolveInside(handle.workspacePath, relPath);
+    return safeReadWorkspaceFile(handle.workspacePath, relPath);
   }
 
   async writeFile(handle: SandboxHandle, relPath: string, data: Buffer | string): Promise<void> {
-    const abs = resolveInside(handle.workspacePath, relPath);
-    await fs.mkdir(path.dirname(abs), { recursive: true });
-    await fs.writeFile(abs, data);
+    resolveInside(handle.workspacePath, relPath);
+    await safeWriteWorkspaceFile(handle.workspacePath, relPath, data);
   }
 
   async kill(_handle: SandboxHandle, _signal?: NodeJS.Signals): Promise<void> {
@@ -123,14 +123,8 @@ function resolveCwd(workspace: string, cwd: string | undefined): string {
  * filesystem with everything else — this is the foundation that
  * `skills/src/workspace.ts` (#580) will lean on.
  */
-function resolveInside(workspace: string, relPath: string): string {
-  if (path.isAbsolute(relPath)) {
-    throw new Error(`absolute paths are not allowed in sandbox file I/O: ${relPath}`);
-  }
-  const abs = path.resolve(workspace, relPath);
-  const rel = path.relative(workspace, abs);
-  if (rel.startsWith('..') || path.isAbsolute(rel)) {
-    throw new Error(`path escapes the sandbox workspace: ${relPath}`);
-  }
-  return abs;
+function resolveInside(workspace: string, relPath: string): void {
+  // Textual pre-check (historical error messages) + git-metadata deny;
+  // the symlink-safe open happens in safe-fs.
+  assertTextuallyInside(workspace, relPath);
 }

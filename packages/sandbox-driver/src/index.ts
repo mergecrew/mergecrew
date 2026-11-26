@@ -23,6 +23,18 @@ export {
 } from './docker-driver.js';
 export { chownWorkspaceForSandbox, type ChownLogger } from './workspace-prep.js';
 export {
+  WorkspacePathError,
+  SAFE_FS_PINNED_FDS,
+  isGitMetadataPath,
+  resolveTextual,
+  safeReadWorkspaceFile,
+  safeResolveWorkspaceDir,
+  safeWriteWorkspaceFile,
+  walkWorkspaceFiles,
+  type SafeReadOpts,
+  type WalkOpts,
+} from './safe-fs.js';
+export {
   buildSandboxDriver,
   buildSandboxDriverAsync,
   type SandboxFactoryOpts,
