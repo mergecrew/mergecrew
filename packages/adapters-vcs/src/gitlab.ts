@@ -1,8 +1,21 @@
-import { execa } from 'execa';
 import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import {
+  assertRepoFullName,
+  basicAuth,
+  gitClone,
+  gitCommitAll,
+  gitCreateBranch,
+  gitFetch,
+  gitPush,
+  gitRevertToBranch,
+  type GitHttpAuth,
+} from './safe-git.js';
 import type {
+  CommitOpts,
+  PushOpts,
   ConnectedRepoRef,
   DispatchWorkflowOpts,
   FileChangeStatus,
@@ -83,11 +96,15 @@ export class GitLabProvider implements VcsProvider {
     return JSON.parse(text) as T;
   }
 
+  /** Credential-free clone URL; auth travels per invocation. */
   private cloneUrl(repoFullName: string): string {
-    // GitLab supports both `oauth2:<token>@host` and the older
-    // `gitlab-ci-token:<token>@host` form. The oauth2 form works for
-    // PATs and project access tokens uniformly.
-    return `https://oauth2:${this.token}@${this.host}/${repoFullName}.git`;
+    assertRepoFullName(repoFullName, { allowNested: true });
+    return `https://${this.host}/${repoFullName}.git`;
+  }
+
+  /** GitLab accepts `oauth2:<token>` basic auth for PATs and project tokens. */
+  private gitAuth(): GitHttpAuth {
+    return basicAuth(`https://${this.host}`, 'oauth2', this.token);
   }
 
   private projectPath(repoFullName: string): string {
@@ -106,50 +123,31 @@ export class GitLabProvider implements VcsProvider {
     );
   }
 
+  // Workspace git goes through `safe-git`: minimal env, hooks /
+  // fsmonitor / filters disabled, repo config validated, and the token
+  // sent per invocation (never written to `.git/config` or a URL).
+
   async cloneIntoWorkspace(repo: ConnectedRepoRef, ref: string, dest: string): Promise<void> {
-    await fs.mkdir(path.dirname(dest), { recursive: true });
-    const url = this.cloneUrl(repo.repoFullName);
-    await execa(
-      'git',
-      ['clone', '--depth', '50', '--filter=blob:none', '--branch', ref, url, dest],
-      { stdio: 'inherit', env: gitEnv() },
-    );
+    await gitClone({ cleanUrl: this.cloneUrl(repo.repoFullName), ref, dest, auth: this.gitAuth() });
   }
 
-  async fetchUpdate(workspace: string, ref: string): Promise<void> {
-    await execa('git', ['fetch', 'origin', ref], { cwd: workspace, env: gitEnv() });
+  async fetchUpdate(workspace: string, ref: string, repo: ConnectedRepoRef): Promise<void> {
+    await gitFetch(workspace, this.cloneUrl(repo.repoFullName), ref, this.gitAuth());
   }
 
   async createBranch(workspace: string, name: string, fromRef: string): Promise<void> {
-    if (fromRef && fromRef !== 'HEAD') {
-      await execa('git', ['checkout', fromRef], { cwd: workspace, env: gitEnv() });
-    }
-    await execa('git', ['checkout', '-b', name], { cwd: workspace, env: gitEnv() });
+    await gitCreateBranch(workspace, name, fromRef);
   }
 
-  async commit(
-    workspace: string,
-    opts: { message: string; authorName: string; authorEmail: string; signoff?: boolean },
-  ): Promise<string> {
-    await execa('git', ['add', '-A'], { cwd: workspace, env: gitEnv() });
-    const args = ['commit', '-m', opts.message];
-    if (opts.signoff) args.push('--signoff');
-    await execa('git', args, {
-      cwd: workspace,
-      env: {
-        ...gitEnv(),
-        GIT_AUTHOR_NAME: opts.authorName,
-        GIT_AUTHOR_EMAIL: opts.authorEmail,
-        GIT_COMMITTER_NAME: opts.authorName,
-        GIT_COMMITTER_EMAIL: opts.authorEmail,
-      },
+  async commit(workspace: string, opts: CommitOpts): Promise<string> {
+    return gitCommitAll(workspace, opts);
+  }
+
+  async push(workspace: string, branch: string, repo: ConnectedRepoRef, opts: PushOpts = {}): Promise<void> {
+    await gitPush(workspace, this.cloneUrl(repo.repoFullName), branch, this.gitAuth(), {
+      ...opts,
+      protectedBranches: [...(opts.protectedBranches ?? []), repo.defaultBranch],
     });
-    const r = await execa('git', ['rev-parse', 'HEAD'], { cwd: workspace, env: gitEnv() });
-    return r.stdout.trim();
-  }
-
-  async push(workspace: string, branch: string): Promise<void> {
-    await execa('git', ['push', '-u', 'origin', branch], { cwd: workspace, env: gitEnv() });
   }
 
   // ─── MR operations ──────────────────────────────────────────────────────
@@ -243,15 +241,16 @@ export class GitLabProvider implements VcsProvider {
     if (!mergeSha) throw new Error(`MR !${prNumber} not merged`);
     const branch = `mergecrew/revert-${prNumber}-${shortSha(mergeSha)}`;
 
-    const tmp = await fs.mkdtemp(path.join(process.env.TMPDIR ?? '/tmp', 'mergecrew-revert-'));
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mergecrew-revert-'));
     try {
-      const url = this.cloneUrl(repo.repoFullName);
-      await execa('git', ['clone', '--depth', '50', url, tmp], { env: gitEnv() });
-      await execa('git', ['fetch', 'origin', repo.defaultBranch], { cwd: tmp, env: gitEnv() });
-      await execa('git', ['checkout', repo.defaultBranch], { cwd: tmp, env: gitEnv() });
-      await execa('git', ['checkout', '-b', branch], { cwd: tmp, env: gitEnv() });
-      await execa('git', ['revert', '--no-edit', '-m', '1', mergeSha], { cwd: tmp, env: gitEnv() });
-      await execa('git', ['push', '-u', 'origin', branch], { cwd: tmp, env: gitEnv() });
+      await gitRevertToBranch({
+        dir: path.join(tmp, 'repo'),
+        cleanUrl: this.cloneUrl(repo.repoFullName),
+        auth: this.gitAuth(),
+        baseBranch: repo.defaultBranch,
+        branch,
+        mergeSha,
+      });
 
       const r = await this.api<any>(`/projects/${proj}/merge_requests`, {
         method: 'POST',
@@ -404,14 +403,6 @@ export class GitLabProvider implements VcsProvider {
   }
 }
 
-function gitEnv(): NodeJS.ProcessEnv {
-  return {
-    ...process.env,
-    GIT_TERMINAL_PROMPT: '0',
-    GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_SYSTEM: '/dev/null',
-  };
-}
 
 function shortSha(sha: string): string {
   return sha.slice(0, 7);

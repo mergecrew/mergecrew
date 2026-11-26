@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { Logger } from 'pino';
 import type { SandboxDriver, SandboxHandle } from '@mergecrew/sandbox-driver';
+import { readWorkspaceFile, writeWorkspaceFile } from '@mergecrew/skills';
 
 /**
  * Workspace tool-version bootstrap (#568).
@@ -48,9 +49,8 @@ export async function maybeRunMiseInstall(
   if (!versionsFile) {
     return { kind: 'skipped', reason: 'no_versions_file' };
   }
-  const fileHash = await hashFile(path.join(workspacePath, versionsFile));
-  const sentinelPath = path.join(workspacePath, SENTINEL);
-  const cachedHash = await readSentinel(sentinelPath);
+  const fileHash = await hashFile(workspacePath, versionsFile);
+  const cachedHash = await readSentinel(workspacePath);
   if (cachedHash === fileHash) {
     return { kind: 'skipped', reason: 'cached' };
   }
@@ -91,7 +91,8 @@ export async function maybeRunMiseInstall(
     return { kind: 'failed', durationMs, exitCode: result.exitCode, stderr: result.stderr };
   }
 
-  await fs.writeFile(sentinelPath, fileHash, 'utf8');
+  // Symlink-safe: a planted sentinel symlink must not redirect this write.
+  await writeWorkspaceFile(workspacePath, SENTINEL, fileHash);
   logger.info(
     { workspacePath, versionsFile, durationMs },
     'mise install: ok',
@@ -111,14 +112,14 @@ async function pickVersionsFile(workspacePath: string): Promise<string | null> {
   return null;
 }
 
-async function hashFile(file: string): Promise<string> {
-  const buf = await fs.readFile(file);
+async function hashFile(workspacePath: string, rel: string): Promise<string> {
+  const buf = await readWorkspaceFile(workspacePath, rel);
   return createHash('sha256').update(buf).digest('hex');
 }
 
-async function readSentinel(file: string): Promise<string | null> {
+async function readSentinel(workspacePath: string): Promise<string | null> {
   try {
-    const buf = await fs.readFile(file, 'utf8');
+    const buf = (await readWorkspaceFile(workspacePath, SENTINEL)).toString('utf8');
     return buf.trim() || null;
   } catch {
     return null;

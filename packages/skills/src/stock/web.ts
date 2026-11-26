@@ -10,6 +10,11 @@ import { EgressBlocked, recordAndAssertEgress, skillFetch } from '../egress-poli
  * browser request through the same path.
  */
 
+// Every web.* skill sends agent-chosen data (URL, query string, headers)
+// to an external host, so they are classed `write_external`, not `read`:
+// read-only agent kinds don't get them by default, and their inputs go
+// through the executor's outbound secret scan.
+
 const webFetchUrl: AnySkill = {
   name: 'web.fetch_url',
   description: 'Fetch a URL and return its body (truncated). Logged for audit.',
@@ -23,7 +28,7 @@ const webFetchUrl: AnySkill = {
     required: ['url'],
     additionalProperties: false,
   },
-  sideEffectClass: 'read',
+  sideEffectClass: 'write_external',
   capabilities: ['net.outbound'],
   timeoutMs: 30_000,
   async execute(input: any, ctx) {
@@ -61,7 +66,7 @@ const webScreenshotUrl: AnySkill = {
     required: ['url'],
     additionalProperties: false,
   },
-  sideEffectClass: 'read',
+  sideEffectClass: 'write_external',
   capabilities: ['net.outbound'],
   timeoutMs: 60_000,
   async execute(input: any, ctx) {
@@ -141,7 +146,7 @@ const webLighthouse: AnySkill = {
     required: ['url'],
     additionalProperties: false,
   },
-  sideEffectClass: 'read',
+  sideEffectClass: 'write_external',
   capabilities: ['net.outbound'],
   timeoutMs: 90_000,
   async execute(input: any, ctx) {
@@ -189,7 +194,7 @@ const webSmokeCheck: AnySkill = {
     required: ['url'],
     additionalProperties: false,
   },
-  sideEffectClass: 'read',
+  sideEffectClass: 'write_external',
   capabilities: ['net.outbound'],
   timeoutMs: 60_000,
   async execute(input: any, ctx) {

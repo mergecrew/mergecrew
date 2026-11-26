@@ -106,7 +106,20 @@ export class SmokeTestService {
         authorName: 'Mergecrew Smoke',
         authorEmail: 'smoke@mergecrew.dev',
       });
-      await vcs.push(workspace, branch);
+      // Code-generated branch name (not agent-chosen), so the
+      // `mergecrew/` namespace requirement is waived; the base branch is
+      // still refused.
+      await vcs.push(
+        workspace,
+        branch,
+        {
+          installationId: repo.installationId,
+          repoId: repo.repoId ?? undefined,
+          repoFullName: repo.repoFullName,
+          defaultBranch: baseBranch,
+        },
+        { allowAnyBranchPrefix: true, protectedBranches: [baseBranch] },
+      );
       const pr = await vcs.openPullRequest(
         {
           installationId: repo.installationId,

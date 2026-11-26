@@ -35,20 +35,37 @@ import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
 import { ForbiddenError } from '@mergecrew/domain';
 
 /**
- * Skills whose side effects are hard to reverse: a push, a deploy, a
- * production change. These require a signed call-token.
+ * Skills whose side effects are hard to reverse: commits that get
+ * pushed, PRs, reverts, deploys. These require a signed call-token, and
+ * are refused outright when no policy engine is configured in
+ * production (see `SkillExecutor`). Any skill whose `sideEffectClass`
+ * is `irreversible` is treated as high-impact as well (`isHighImpactSkill`).
  *
- * To extend: add the skill name here AND ensure the runner signs the
- * call before dispatch. Keep this list small — every entry is a place
- * an operator may need to debug a "callToken missing" rejection.
+ * Every entry must be a real registered skill name — the stock-skill
+ * test asserts that. To extend: add the name here AND ensure the runner
+ * signs the call before dispatch.
  */
 export const HIGH_IMPACT_SKILLS: ReadonlySet<string> = new Set([
   'repo.git.commit',
-  'repo.git.push',
-  'deploy.deploy_changeset',
-  'deploy.run',
-  'deploy.kick_workflow',
+  'repo.git.open_pr',
+  'repo.git.revert_pr',
+  'deploy.dev',
+  'deploy.prod',
 ]);
+
+/** High-impact by name or by `irreversible` side-effect class. */
+export function isHighImpactSkill(skill: { name: string; sideEffectClass?: string }): boolean {
+  return HIGH_IMPACT_SKILLS.has(skill.name) || skill.sideEffectClass === 'irreversible';
+}
+
+/**
+ * True when the process runs in production. Production must not run
+ * with the high-impact gate disabled: without `SKILL_SIGNING_KEY` the
+ * executor refuses high-impact skills instead of failing open.
+ */
+export function isProductionEnv(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.NODE_ENV === 'production' || env.MERGECREW_ENV === 'production';
+}
 
 export interface SignedCall {
   stepId: string;
@@ -167,10 +184,10 @@ export class HmacPolicyEngine implements PolicyEngine {
 
 /**
  * Convenience: build a policy engine from `process.env.SKILL_SIGNING_KEY`.
- * Returns `null` when the env var is unset — the supervisor logs a
- * warning and skips signing in that case, which is fine for the V0
- * `process` driver where the LLM has no path to the executor anyway.
- * Production deployments set the key in their secrets store.
+ * Returns `null` when the env var is unset. Outside production the
+ * executor then skips the gates (dev / tests); in production
+ * (`isProductionEnv`) the executor fails closed and refuses every
+ * high-impact skill until the key is configured.
  */
 export function buildPolicyEngineFromEnv(env: NodeJS.ProcessEnv = process.env): HmacPolicyEngine | null {
   const raw = env.SKILL_SIGNING_KEY;

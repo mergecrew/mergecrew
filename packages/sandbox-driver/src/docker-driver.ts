@@ -1,7 +1,7 @@
 import { execa, type ExecaChildProcess } from 'execa';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import { promises as fs } from 'node:fs';
+import { promises as fs, lstatSync } from 'node:fs';
 
 import type {
   ExecOpts,
@@ -12,6 +12,7 @@ import type {
 } from './types.js';
 import { classifySensitiveKey } from './env.js';
 import { chownWorkspaceForSandbox } from './workspace-prep.js';
+import { assertTextuallyInside, safeReadWorkspaceFile, safeWriteWorkspaceFile } from './safe-fs.js';
 
 export { CONTAINER_WORKSPACE, SANDBOX_UID, SANDBOX_GID } from './docker-driver-constants.js';
 import { CONTAINER_WORKSPACE, SANDBOX_UID, SANDBOX_GID } from './docker-driver-constants.js';
@@ -234,13 +235,16 @@ export class DockerDriver implements SandboxDriver {
   }
 
   async readFile(handle: SandboxHandle, relPath: string): Promise<Buffer> {
-    return fs.readFile(this.resolveHost(handle, relPath));
+    const host = this.resolveHost(handle, relPath);
+    // Symlink-safe, realpath-confined read (O_NOFOLLOW, git metadata
+    // denied). The textual check in resolveHost keeps the historical
+    // error messages for the common cases.
+    return safeReadWorkspaceFile(host, relPath);
   }
 
   async writeFile(handle: SandboxHandle, relPath: string, data: Buffer | string): Promise<void> {
     const host = this.resolveHost(handle, relPath);
-    await fs.mkdir(path.dirname(host), { recursive: true });
-    await fs.writeFile(host, data);
+    await safeWriteWorkspaceFile(host, relPath, data);
   }
 
   async kill(handle: SandboxHandle, _signal?: NodeJS.Signals): Promise<void> {
@@ -357,6 +361,23 @@ export class DockerDriver implements SandboxDriver {
     args.push('--tmpfs', '/tmp:rw,size=512m,mode=1777');
     args.push('--tmpfs', `/home/mergecrew:rw,size=512m,uid=${SANDBOX_UID},gid=${SANDBOX_GID}`);
     args.push('--volume', `${opts.workspacePath}:${CONTAINER_WORKSPACE}:rw`);
+    // Git metadata is read-only inside the sandbox. The supervisor runs
+    // git (add / commit / push) against this directory, so sandboxed
+    // build and test processes must not be able to plant hooks, config
+    // (fsmonitor, filters, includes, credential helpers) or alternates
+    // there. Only mounted when `.git` is a real directory — a symlink or
+    // gitfile would make docker resolve it outside the workspace.
+    const gitDir = path.join(opts.workspacePath, '.git');
+    const gitStat = (() => {
+      try {
+        return lstatSync(gitDir);
+      } catch {
+        return null;
+      }
+    })();
+    if (gitStat?.isDirectory()) {
+      args.push('--volume', `${gitDir}:${CONTAINER_WORKSPACE}/.git:ro`);
+    }
     // Per-project cache mounts (#572). Listed after the workspace so a
     // misconfigured cache.paths can't shadow `/workspace`.
     for (const cache of opts.cacheMounts ?? []) {
@@ -404,17 +425,17 @@ export class DockerDriver implements SandboxDriver {
     return args;
   }
 
+  /**
+   * Textual pre-check for sandbox file I/O. Returns the host workspace
+   * ROOT (not the joined path): the actual open goes through
+   * `safeReadWorkspaceFile` / `safeWriteWorkspaceFile`, which realpath
+   * every component, refuse symlinks in the final component
+   * (`O_NOFOLLOW`), and deny `.git/**`, `.gitmodules`, `.gitattributes`.
+   */
   private resolveHost(handle: SandboxHandle, relPath: string): string {
     const host = this.workspaces.get(handle.id);
     if (!host) throw new Error(`unknown sandbox handle: ${handle.id}`);
-    if (path.isAbsolute(relPath)) {
-      throw new Error(`absolute paths are not allowed in sandbox file I/O: ${relPath}`);
-    }
-    const abs = path.resolve(host, relPath);
-    const rel = path.relative(host, abs);
-    if (rel.startsWith('..') || path.isAbsolute(rel)) {
-      throw new Error(`path escapes the sandbox workspace: ${relPath}`);
-    }
-    return abs;
+    assertTextuallyInside(host, relPath);
+    return host;
   }
 }

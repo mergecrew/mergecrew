@@ -1,8 +1,7 @@
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { Logger } from 'pino';
 import type { SandboxDriver, SandboxHandle } from '@mergecrew/sandbox-driver';
+import { readWorkspaceFile, writeWorkspaceFile } from '@mergecrew/skills';
 
 /**
  * Per-workspace setup commands (#572). The project's `runner.setup`
@@ -37,9 +36,8 @@ export async function maybeRunSetup(args: MaybeRunSetupArgs): Promise<SetupOutco
   const { workspacePath, driver, sandbox, setup, logger, abortSignal } = args;
   if (!setup || setup.length === 0) return { kind: 'no_setup' };
 
-  const sentinelPath = path.join(workspacePath, SENTINEL);
   const setupHash = hashSetup(setup);
-  const cachedHash = await readSentinel(sentinelPath);
+  const cachedHash = await readSentinel(workspacePath);
   if (cachedHash === setupHash) return { kind: 'cached' };
 
   const t0 = Date.now();
@@ -67,7 +65,8 @@ export async function maybeRunSetup(args: MaybeRunSetupArgs): Promise<SetupOutco
   }
 
   const durationMs = Date.now() - t0;
-  await fs.writeFile(sentinelPath, setupHash, 'utf8');
+  // Symlink-safe: a planted sentinel symlink must not redirect this write.
+  await writeWorkspaceFile(workspacePath, SENTINEL, setupHash);
   logger.info({ workspacePath, count: setup.length, durationMs }, 'runner.setup: ok');
   return { kind: 'ran', durationMs };
 }
@@ -76,9 +75,9 @@ function hashSetup(setup: string[]): string {
   return createHash('sha256').update(setup.join('\n')).digest('hex');
 }
 
-async function readSentinel(file: string): Promise<string | null> {
+async function readSentinel(workspacePath: string): Promise<string | null> {
   try {
-    const buf = await fs.readFile(file, 'utf8');
+    const buf = (await readWorkspaceFile(workspacePath, SENTINEL)).toString('utf8');
     return buf.trim() || null;
   } catch {
     return null;

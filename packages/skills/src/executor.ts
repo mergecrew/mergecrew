@@ -1,27 +1,53 @@
 import { ValidationError } from '@mergecrew/domain';
 import type { AnySkill, SkillDefinition, SkillExecutionContext, SkillResult } from './types.js';
 import {
-  HIGH_IMPACT_SKILLS,
   SkillNotAuthorizedError,
+  isHighImpactSkill,
+  isProductionEnv,
   type PolicyEngine,
 } from './policy-engine.js';
+import { assertNoSecretsInValue } from './secret-scanner.js';
 
 export interface SkillExecutorOpts {
   /**
    * Optional policy engine for the per-agent allowlist + signed
-   * call-tokens for high-impact skills (#581). When absent, both
-   * gates are bypassed (V0 / test contexts). Production code wires
+   * call-tokens for high-impact skills (#581). Production code wires
    * this with the HMAC engine built from SKILL_SIGNING_KEY.
    */
   policy?: PolicyEngine;
+  /**
+   * Refuse high-impact skills when no policy engine is configured
+   * (fail closed). Defaults to `isProductionEnv()`; dev / test contexts
+   * without a signing key keep working.
+   */
+  requirePolicyForHighImpact?: boolean;
+  /**
+   * Scan the input of outbound skills (`write_external` /
+   * `irreversible` / `net.outbound`) for secret material before
+   * executing. Default true.
+   */
+  scanOutbound?: boolean;
+}
+
+/** Skills whose input can leave the platform. */
+export function isOutboundSkill(skill: Pick<AnySkill, 'sideEffectClass' | 'capabilities'>): boolean {
+  return (
+    skill.sideEffectClass === 'write_external' ||
+    skill.sideEffectClass === 'irreversible' ||
+    (skill.capabilities ?? []).includes('net.outbound')
+  );
 }
 
 export class SkillExecutor {
   private skills = new Map<string, AnySkill>();
   private readonly policy: PolicyEngine | undefined;
+  private readonly requirePolicyForHighImpact: boolean;
+  private readonly scanOutbound: boolean;
 
   constructor(opts: SkillExecutorOpts = {}) {
     this.policy = opts.policy;
+    this.requirePolicyForHighImpact = opts.requirePolicyForHighImpact ?? isProductionEnv();
+    this.scanOutbound = opts.scanOutbound ?? true;
   }
 
   register(skill: AnySkill): void {
@@ -74,7 +100,16 @@ export class SkillExecutor {
     // skill must arrive with a verifiable call-token minted by the
     // runner — the LLM cannot mint one because it has no path to the
     // signing key.
-    if (this.policy && HIGH_IMPACT_SKILLS.has(name)) {
+    const highImpact = isHighImpactSkill(skill);
+    if (!this.policy && highImpact && this.requirePolicyForHighImpact) {
+      // Fail closed: production without SKILL_SIGNING_KEY must not run
+      // gated skills with the gate silently disabled.
+      throw new SkillNotAuthorizedError(
+        `high-impact skill "${name}" refused: skill policy engine is not configured (set SKILL_SIGNING_KEY)`,
+        { skill: name, code: 'policy_not_configured' },
+      );
+    }
+    if (this.policy && highImpact) {
       const stepId = ctx.agentStepId;
       if (!ctx.callToken || !stepId) {
         throw new SkillNotAuthorizedError(
@@ -88,6 +123,13 @@ export class SkillExecutor {
           { skill: name, code: 'call_token_invalid' },
         );
       }
+    }
+
+    // Outbound secret scan: anything this skill sends (PR / review /
+    // comment text, commit messages, branch names, HTTP bodies and
+    // URLs) must not carry credentials or the supervisor's own secrets.
+    if (this.scanOutbound && isOutboundSkill(skill)) {
+      assertNoSecretsInValue(input, `skill ${name} input`);
     }
 
     const timeoutMs = skill.timeoutMs ?? 60_000;

@@ -6,6 +6,9 @@ import {
   SkillExecutor,
   SkillNotAuthorizedError,
   buildPolicyEngineFromEnv,
+  isHighImpactSkill,
+  isProductionEnv,
+  stockSkills,
   type AnySkill,
   type SkillExecutionContext,
 } from '../src/index.js';
@@ -205,16 +208,81 @@ describe('SkillExecutor with policy engine', () => {
 
 describe('HIGH_IMPACT_SKILLS list', () => {
   it('includes the git + deploy skills', () => {
-    expect(HIGH_IMPACT_SKILLS.has('repo.git.commit')).toBe(true);
-    expect(HIGH_IMPACT_SKILLS.has('repo.git.push')).toBe(true);
-    expect(HIGH_IMPACT_SKILLS.has('deploy.deploy_changeset')).toBe(true);
-    expect(HIGH_IMPACT_SKILLS.has('deploy.run')).toBe(true);
-    expect(HIGH_IMPACT_SKILLS.has('deploy.kick_workflow')).toBe(true);
+    for (const s of ['repo.git.commit', 'repo.git.open_pr', 'repo.git.revert_pr', 'deploy.dev', 'deploy.prod']) {
+      expect(HIGH_IMPACT_SKILLS.has(s), s).toBe(true);
+    }
+  });
+
+  it('every entry is a real stock skill (no phantom names)', () => {
+    const names = new Set(stockSkills.map((s) => s.name));
+    for (const s of HIGH_IMPACT_SKILLS) expect(names.has(s), s).toBe(true);
+  });
+
+  it('every irreversible stock skill is high-impact', () => {
+    for (const s of stockSkills.filter((x) => x.sideEffectClass === 'irreversible')) {
+      expect(isHighImpactSkill(s), s.name).toBe(true);
+      expect(HIGH_IMPACT_SKILLS.has(s.name), s.name).toBe(true);
+    }
   });
 
   it('does NOT include read-only skills', () => {
     expect(HIGH_IMPACT_SKILLS.has('repo.read_file')).toBe(false);
     expect(HIGH_IMPACT_SKILLS.has('repo.list_paths')).toBe(false);
     expect(HIGH_IMPACT_SKILLS.has('web.fetch_url')).toBe(false);
+  });
+});
+
+describe('fail closed without SKILL_SIGNING_KEY in production', () => {
+  const irreversible: AnySkill = {
+    name: 'custom.irreversible',
+    description: 'noop',
+    inputSchema: {},
+    sideEffectClass: 'irreversible',
+    capabilities: [],
+    async execute() {
+      return { output: 'ok', brief: 'done' };
+    },
+  };
+
+  it('isProductionEnv honours NODE_ENV / MERGECREW_ENV', () => {
+    expect(isProductionEnv({ NODE_ENV: 'production' } as any)).toBe(true);
+    expect(isProductionEnv({ MERGECREW_ENV: 'production' } as any)).toBe(true);
+    expect(isProductionEnv({ NODE_ENV: 'test' } as any)).toBe(false);
+  });
+
+  it('refuses high-impact skills when no policy engine is configured and the env is production', async () => {
+    const prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      const ex = new SkillExecutor(); // buildPolicyEngineFromEnv() → null
+      ex.register(commitSkill);
+      ex.register(echoSkill);
+      await expect(ex.execute('repo.git.commit', {}, buildCtx({ agentStepId: 's' }))).rejects.toMatchObject({
+        details: { code: 'policy_not_configured' },
+      });
+      // Read skills keep working.
+      await expect(ex.execute('repo.read_file', {}, buildCtx())).resolves.toMatchObject({ brief: 'ok' });
+    } finally {
+      process.env.NODE_ENV = prev;
+    }
+  });
+
+  it('explicit requirePolicyForHighImpact also gates irreversible skills by class', async () => {
+    const ex = new SkillExecutor({ requirePolicyForHighImpact: true });
+    ex.register(irreversible);
+    await expect(ex.execute('custom.irreversible', {}, buildCtx())).rejects.toBeInstanceOf(SkillNotAuthorizedError);
+  });
+
+  it('irreversible skills need a call-token when a policy engine is configured', async () => {
+    const policy = new HmacPolicyEngine({ signingKey: KEY });
+    const ex = new SkillExecutor({ policy });
+    ex.register(irreversible);
+    await expect(ex.execute('custom.irreversible', {}, buildCtx({ agentStepId: 's' }))).rejects.toMatchObject({
+      details: { code: 'call_token_missing' },
+    });
+    const token = policy.mintCallToken({ stepId: 's', skill: 'custom.irreversible' });
+    await expect(
+      ex.execute('custom.irreversible', {}, buildCtx({ agentStepId: 's', callToken: token })),
+    ).resolves.toMatchObject({ brief: 'done' });
   });
 });

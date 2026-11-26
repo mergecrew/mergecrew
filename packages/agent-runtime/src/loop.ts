@@ -121,7 +121,11 @@ export async function runAgentStep(ctx: RunCtx): Promise<StepOutcome> {
     // of them, the model never sees the tool — it's filtered before
     // `bindTools`. The single source of truth is `READ_ONLY_AGENT_KINDS`
     // below.
-    if (READ_ONLY_AGENT_KINDS.has(agent.kind) && skill.sideEffectClass !== 'read') {
+    if (
+      READ_ONLY_AGENT_KINDS.has(agent.kind) &&
+      skill.sideEffectClass !== 'read' &&
+      !READ_ONLY_KIND_NETWORK_PROBES.has(skill.name)
+    ) {
       continue;
     }
     tools.push({ name: skill.name, description: skill.description, inputSchema: skill.inputSchema });
@@ -256,7 +260,9 @@ export async function runAgentStep(ctx: RunCtx): Promise<StepOutcome> {
       const skillName = wireToOriginal.get(tc.name) ?? tc.name;
       const input = tc.args ?? {};
 
-      const decision = ctx.policy.check(skillName, input);
+      // Async: for commits this evaluates the actually-staged diff, not
+      // the paths the agent claims to be committing.
+      const decision = await ctx.policy.checkCall(skillName, input);
       if (!decision.ok) {
         if (decision.hard) {
           return { outcome: { kind: 'gated_reject', reason: decision.detail ?? 'hard-blocked' } };
@@ -627,6 +633,20 @@ export const DOC_WRITER_AGENT_KIND = 'DocWriter';
  * files tracker issues. Engineers / SRE / DocWriter are NOT here —
  * they write to the workspace.
  */
+/**
+ * `web.*` skills are classed `write_external` (they send agent-chosen
+ * data to external hosts). The Observation / DesignReviewer kinds still
+ * need to probe the deployed URL, so these specific probes stay
+ * available to read-only kinds; their inputs are secret-scanned and
+ * egress-checked like every outbound skill. `web.fetch_url` (arbitrary
+ * URL + headers + body) is deliberately NOT on this list.
+ */
+export const READ_ONLY_KIND_NETWORK_PROBES = new Set<string>([
+  'web.smoke_check',
+  'web.screenshot_url',
+  'web.lighthouse',
+]);
+
 export const READ_ONLY_AGENT_KINDS = new Set<string>([
   PLANNER_AGENT_KIND,
   REVIEWER_AGENT_KIND,
