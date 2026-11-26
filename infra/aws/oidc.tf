@@ -21,7 +21,9 @@ data "aws_iam_policy_document" "github_assume" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repo}:*"]
+      # Only jobs running in the `prod` environment (restricted to `main` in
+      # repo settings) may assume the deploy role — not any branch, tag, or PR.
+      values   = ["repo:${var.github_repo}:environment:prod"]
     }
   }
 }
