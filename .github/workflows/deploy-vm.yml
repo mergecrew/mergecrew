@@ -23,7 +23,6 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
 
 env:
   REGISTRY: ghcr.io
@@ -31,7 +30,13 @@ env:
 
 jobs:
   build-and-push:
-    if: ${{ vars.VM_DEPLOY_ENABLED == 'true' || github.event_name == 'workflow_dispatch' }}
+    # main only (a manual dispatch from another branch must not ship it), and
+    # the `prod` environment gates secrets to deployments from main.
+    if: ${{ github.ref == 'refs/heads/main' && (vars.VM_DEPLOY_ENABLED == 'true' || github.event_name == 'workflow_dispatch') }}
+    environment: prod
+    permissions:
+      contents: read
+      packages: write # push images to GHCR
     # The target VM is AWS Graviton (linux/arm64), so default to a native
     # arm runner; set the org RUNNER_ARM variable to `self-hosted` to route
     # back to the runner VM when it's up. If runner arch and platform ever
@@ -47,14 +52,16 @@ jobs:
       matrix:
         service: [api, orchestrator, runner, worker-cron, web]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Compute image tag
         id: tag
         run: echo "image_tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -64,13 +71,13 @@ jobs:
       # native arch (e.g. amd64 runner producing an arm64 image, or any
       # multi-arch build). No-op when platforms == runner arch.
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build and push image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: infra/docker/Dockerfile.${{ matrix.service }}
@@ -84,7 +91,10 @@ jobs:
 
   deploy:
     needs: build-and-push
-    if: ${{ vars.VM_DEPLOY_ENABLED == 'true' || github.event_name == 'workflow_dispatch' }}
+    # main only (a manual dispatch from another branch must not ship it), and
+    # the `prod` environment gates secrets to deployments from main.
+    if: ${{ github.ref == 'refs/heads/main' && (vars.VM_DEPLOY_ENABLED == 'true' || github.event_name == 'workflow_dispatch') }}
+    environment: prod
     runs-on: ${{ vars.RUNNER_DEFAULT || 'ubuntu-latest' }}
     steps:
       - name: Compute image tag
@@ -96,28 +106,37 @@ jobs:
       # the working tree to the commit being shipped so docker-compose.prod.yml
       # and scripts/deploy-pull.sh on disk match the images we just pushed.
       - name: SSH deploy
-        uses: appleboy/ssh-action@v1
+        env:
+          VM_REPO_PATH: ${{ vars.VM_REPO_PATH || '/home/ec2-user/data/mergecrew' }}
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
-          envs: GITHUB_SHA
+          # Pin the server's host key so a hijacked DNS/IP can't receive the
+          # deploy key session. `ssh-keyscan -t ed25519 <host> | ssh-keygen -lf -`
+          fingerprint: ${{ secrets.DEPLOY_HOST_FINGERPRINT }}
+          envs: GITHUB_SHA,VM_REPO_PATH
           script: |
             set -euo pipefail
-            cd "${{ vars.VM_REPO_PATH || '/home/ec2-user/data/mergecrew' }}"
+            cd "$VM_REPO_PATH"
             git fetch --quiet origin main
             git checkout --quiet "$GITHUB_SHA"
             ./scripts/deploy-pull.sh "${GITHUB_SHA:0:12}"
 
       - name: Summarize
         if: always()
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
+          JOB_STATUS: ${{ job.status }}
         run: |
           {
             echo "### VM deploy"
             echo ""
-            echo "- branch: \`${{ github.ref_name }}\`"
-            echo "- commit: \`${{ github.sha }}\`"
-            echo "- tag pushed: \`${{ steps.tag.outputs.image_tag }}\`"
-            echo "- result: ${{ job.status }}"
+            echo "- branch: \`$REF_NAME\`"
+            echo "- commit: \`$GITHUB_SHA\`"
+            echo "- tag pushed: \`$IMAGE_TAG\`"
+            echo "- result: $JOB_STATUS"
           } >> "$GITHUB_STEP_SUMMARY"

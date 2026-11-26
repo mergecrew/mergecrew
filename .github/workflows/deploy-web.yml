@@ -22,6 +22,9 @@ concurrency:
   group: deploy-web
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ${{ vars.RUNNER_DEFAULT || 'ubuntu-latest' }}
@@ -31,40 +34,47 @@ jobs:
     #   VERCEL_PROJECT_ID  — Project Settings → General → Project ID
     # The runtime API_BASE_URL the BFF talks to is set as a Vercel
     # environment variable (Settings → Environment Variables), not here.
-    if: ${{ vars.VERCEL_DEPLOY_ENABLED == 'true' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.ref == 'refs/heads/main' && (vars.VERCEL_DEPLOY_ENABLED == 'true' || github.event_name == 'workflow_dispatch') }}
+    environment: prod
     env:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      # Read by the CLI from the environment, so the token never appears in argv.
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
+          persist-credentials: false
           fetch-depth: 2 # Vercel's ignoreCommand uses HEAD^..HEAD; we need both.
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: '22'
           cache: 'pnpm'
       - name: Install Vercel CLI
-        run: npm i -g vercel@latest
+        run: npm i -g vercel@67.0.0
       - name: Pull Vercel environment (production)
         working-directory: apps/web
-        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel pull --yes --environment=production
       - name: Build (prebuilt artifact)
         working-directory: apps/web
-        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel build --prod
       - name: Deploy
         working-directory: apps/web
         run: |
-          DEPLOY_URL=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          DEPLOY_URL=$(vercel deploy --prebuilt --prod)
           echo "Deployed: $DEPLOY_URL"
           echo "deploy_url=$DEPLOY_URL" >> "$GITHUB_OUTPUT"
         id: deploy
       - name: Summarize
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          DEPLOY_URL: ${{ steps.deploy.outputs.deploy_url }}
         run: |
           {
             echo "### Vercel deploy"
             echo ""
-            echo "- branch: \`${{ github.ref_name }}\`"
-            echo "- commit: \`${{ github.sha }}\`"
-            echo "- url: ${{ steps.deploy.outputs.deploy_url }}"
+            echo "- branch: \`$REF_NAME\`"
+            echo "- commit: \`$GITHUB_SHA\`"
+            echo "- url: $DEPLOY_URL"
           } >> "$GITHUB_STEP_SUMMARY"

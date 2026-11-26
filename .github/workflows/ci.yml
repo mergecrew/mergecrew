@@ -6,9 +6,15 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   build:
-    runs-on: ${{ vars.RUNNER_DEFAULT || 'ubuntu-latest' }}
+    # Pull requests (incl. forks of this public repo) always run on a
+    # GitHub-hosted runner; only trusted pushes to main may be routed to a
+    # runner chosen via RUNNER_DEFAULT. Never point PR jobs at self-hosted.
+    runs-on: ${{ github.event_name == 'push' && vars.RUNNER_DEFAULT || 'ubuntu-latest' }}
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -31,15 +37,17 @@ jobs:
       REDIS_URL: redis://localhost:6379
       KMS_MASTER_KEY: base64:0000000000000000000000000000000000000000000=
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
       # Three self-hosted runners share one host. Install pnpm and its content
       # store under the per-runner RUNNER_TEMP so concurrent jobs can't clobber
       # a shared install (action default is ~/setup-pnpm) or race the store.
       # Harmless on GitHub-hosted runners too.
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
           dest: ${{ runner.temp }}/setup-pnpm
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: '22'
       # No setup-node `cache: pnpm`: it resolves the store via a shared host
@@ -79,7 +87,7 @@ jobs:
             echo "::error::packages/sdk-ts/src/generated.ts is stale. Run 'pnpm --filter @mergecrew/sdk generate' and commit the result."
             exit 1
           }
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.11'
       - name: Python SDK tests
@@ -89,7 +97,7 @@ jobs:
           pip install -e ".[dev]"
           pytest
       - name: Install Helm
-        uses: azure/setup-helm@v5
+        uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
         with:
           version: v3.16.0
       - name: helm lint

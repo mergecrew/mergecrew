@@ -1,0 +1,6 @@
+# Changes to CI/CD, deploy scripts and infrastructure need maintainer review.
+/.github/            @thiagotigaz
+/infra/              @thiagotigaz
+/scripts/deploy*.sh  @thiagotigaz
+/docker-compose*.yml @thiagotigaz
+/SECURITY.md         @thiagotigaz
