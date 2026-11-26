@@ -1,5 +1,24 @@
 import { ValidationError } from '@mergecrew/domain';
+import { RUN_BRANCH_PREFIX, assertValidBranchName } from '@mergecrew/adapters-vcs';
 import type { AnySkill } from '../types.js';
+
+function validateDeployRef(value: unknown, pinned: string | undefined, label: string): string {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new ValidationError(`deploy.dev: ${label} required`);
+  }
+  if (pinned && value !== pinned) {
+    throw new ValidationError(`deploy.dev: ${label} must be the run's changeset branch`);
+  }
+  try {
+    assertValidBranchName(value);
+  } catch (err) {
+    throw new ValidationError(`deploy.dev: invalid ${label}: ${(err as Error).message}`);
+  }
+  if (!pinned && !value.startsWith(RUN_BRANCH_PREFIX)) {
+    throw new ValidationError(`deploy.dev: ${label} must be a ${RUN_BRANCH_PREFIX} branch`);
+  }
+  return value;
+}
 
 interface DeployTargetConfig {
   targetId: string;
@@ -26,8 +45,15 @@ const deployDevSkill: AnySkill = {
     if (!ctx.adapters.deploy) throw new ValidationError('deploy.dev: deploy adapter required');
     const cfg = (ctx.config?.devTarget ?? {}) as Partial<DeployTargetConfig>;
     if (!cfg.targetId) throw new ValidationError('deploy.dev: devTarget.targetId required');
-    const ref = input.ref ?? cfg.ref;
-    const branch = input.branch ?? cfg.branch;
+    // LLM-supplied refs are validated: only the run's own changeset
+    // branch (when the runner pinned one) or a `mergecrew/` branch, never
+    // the default branch or an arbitrary ref / option-looking string.
+    const branch = validateDeployRef(input.branch ?? cfg.branch, cfg.branch, 'branch');
+    const ref = validateDeployRef(input.ref ?? cfg.ref ?? branch, cfg.ref ?? cfg.branch, 'ref');
+    // Runner-provided gate (sensitive-path diff check: workflows, CI,
+    // Dockerfiles, IaC). Throws to refuse the deploy.
+    const guard = (ctx.config as { deployGuard?: (branch: string) => Promise<void> } | undefined)?.deployGuard;
+    if (typeof guard === 'function') await guard(branch);
     const correlationId = cfg.correlationId ?? crypto.randomUUID();
     const handle = await ctx.adapters.deploy.triggerDeploy(
       { id: cfg.targetId, kind: 'dev', adapterId: ctx.adapters.deploy.id, config: (ctx.config?.adapterConfig ?? {}) as Record<string, unknown> },

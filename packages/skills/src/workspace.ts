@@ -1,6 +1,14 @@
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { ValidationError } from '@mergecrew/domain';
+import {
+  WorkspacePathError,
+  isGitMetadataPath as coreIsGitMetadataPath,
+  safeReadWorkspaceFile,
+  safeResolveWorkspaceDir,
+  safeWriteWorkspaceFile,
+  walkWorkspaceFiles,
+} from '@mergecrew/sandbox-driver';
 
 /**
  * Resolve a user-supplied workspace-relative path to an absolute path inside
@@ -88,3 +96,59 @@ export async function resolveExistingWorkspacePath(
  * `resolveWorkspacePath` (matches the #580 acceptance criterion).
  */
 export const resolveInWorkspace = resolveWorkspacePath;
+
+// ─── symlink-safe workspace I/O (runner-isolation hardening) ────────────────
+//
+// Every agent-driven read / write / list / search of the workspace goes
+// through these helpers. The core lives in `@mergecrew/sandbox-driver`
+// (shared with the drivers' file bridge); this layer maps its errors to
+// `ValidationError` so the skill executor surfaces them as tool errors.
+//
+// Design note: file I/O for the stock repo skills still runs in the
+// supervisor process (moving it behind `driver.exec` would need a
+// per-driver binary-safe transport and a large refactor of every
+// driver). Instead every path is realpath-confined, the final component
+// is opened with O_NOFOLLOW, and on Linux the open goes through a pinned
+// directory fd that is re-verified via /proc/self/fd — race-free against
+// a sandbox process swapping directories for symlinks.
+
+/** True for `.git/**`, `.gitmodules`, `.gitattributes` (any depth). */
+export const isGitMetadataPath = coreIsGitMetadataPath;
+
+function toValidation(err: unknown): never {
+  if (err instanceof WorkspacePathError) throw new ValidationError(err.message, { code: err.code });
+  throw err;
+}
+
+/** Read a workspace file (symlink-safe, git metadata denied). */
+export async function readWorkspaceFile(
+  workspacePath: string,
+  rel: string,
+  opts: { maxBytes?: number } = {},
+): Promise<Buffer> {
+  return safeReadWorkspaceFile(workspacePath, rel, opts).catch(toValidation);
+}
+
+/** Write a workspace file (symlink-safe, git metadata denied). */
+export async function writeWorkspaceFile(
+  workspacePath: string,
+  rel: string,
+  data: string | Buffer,
+): Promise<void> {
+  return safeWriteWorkspaceFile(workspacePath, rel, data).catch(toValidation);
+}
+
+/**
+ * Walk regular files under `rel` (default the workspace root). Never
+ * follows symlinks; skips git metadata and `skipDirs`. `visit` gets the
+ * workspace-relative path; return false to stop.
+ */
+export async function walkWorkspace(
+  workspacePath: string,
+  rel: string,
+  visit: (rel: string) => Promise<boolean | void>,
+  opts: { skipDirs?: ReadonlySet<string> } = {},
+): Promise<void> {
+  const { root, dir } = await safeResolveWorkspaceDir(workspacePath, rel).catch(toValidation);
+  await walkWorkspaceFiles(root, dir, (_abs, relPath) => visit(relPath), opts);
+}

@@ -1,22 +1,54 @@
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
 import { ValidationError } from '@mergecrew/domain';
+import {
+  RUN_BRANCH_PREFIX,
+  assertValidBranchName,
+  gitCurrentBranch,
+  gitEnsureRunBranch,
+} from '@mergecrew/adapters-vcs';
 import type { AnySkill, SkillExecutionContext } from '../types.js';
-import { resolveInWorkspace } from '../workspace.js';
+import {
+  isGitMetadataPath,
+  readWorkspaceFile,
+  walkWorkspace,
+  writeWorkspaceFile,
+} from '../workspace.js';
+
+/** Directories never listed / searched. */
+const SKIP_DIRS: ReadonlySet<string> = new Set(['node_modules', '.next', 'dist']);
+
+/** Max bytes `repo.search` reads per file. */
+const SEARCH_MAX_FILE_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Branch the run's commits land on. The runner creates it right after
+ * the clone; the commit skill re-asserts it so agent commits can never
+ * land on the default branch.
+ */
+export function runBranchName(runId: string | undefined): string {
+  const id = (runId ?? '').replace(/[^A-Za-z0-9_-]/g, '-').replace(/^-+/, '').slice(0, 64) || 'run';
+  return `${RUN_BRANCH_PREFIX}${id}`;
+}
+
+/** Agent-chosen branch names are namespaced under `mergecrew/`. */
+export function normalizeAgentBranchName(name: unknown): string {
+  if (typeof name !== 'string' || name.trim().length === 0) {
+    throw new ValidationError('branch name must be a non-empty string');
+  }
+  const trimmed = name.trim();
+  const full = trimmed.startsWith(RUN_BRANCH_PREFIX) ? trimmed : `${RUN_BRANCH_PREFIX}${trimmed}`;
+  try {
+    assertValidBranchName(full);
+  } catch (err) {
+    throw new ValidationError((err as Error).message);
+  }
+  return full;
+}
 
 async function currentBranch(ctx: SkillExecutionContext): Promise<string | null> {
-  if (!ctx.driver || !ctx.sandbox) return null;
-  try {
-    const r = await ctx.driver.exec(ctx.sandbox, {
-      cmd: 'git',
-      args: ['rev-parse', '--abbrev-ref', 'HEAD'],
-      signal: ctx.abortSignal,
-    });
-    const s = (r.stdout ?? '').trim();
-    return s && s !== 'HEAD' ? s : null;
-  } catch {
-    return null;
-  }
+  if (!ctx.workspacePath) return null;
+  // Supervisor-side safe git, not the sandbox: the sandbox's answer is
+  // tenant-influenced and becomes the branch the runner pushes.
+  return gitCurrentBranch(ctx.workspacePath).catch(() => null);
 }
 
 const repoReadFile: AnySkill = {
@@ -32,8 +64,8 @@ const repoReadFile: AnySkill = {
   capabilities: ['fs.read'],
   async execute(input: any, ctx) {
     if (!ctx.workspacePath) throw new ValidationError('repo.read_file: workspacePath required');
-    const abs = resolveInWorkspace(ctx.workspacePath, input.path);
-    const buf = await fs.readFile(abs);
+    // Symlink-safe: realpath-confined, O_NOFOLLOW, git metadata denied.
+    const buf = await readWorkspaceFile(ctx.workspacePath, input.path);
     const content = buf.toString('utf8');
     return { output: { content }, brief: `read ${input.path} (${buf.length} bytes)` };
   },
@@ -55,9 +87,10 @@ const repoWriteFile: AnySkill = {
   capabilities: ['fs.write'],
   async execute(input: any, ctx) {
     if (!ctx.workspacePath) throw new ValidationError('repo.write_file: workspacePath required');
-    const abs = resolveInWorkspace(ctx.workspacePath, input.path);
-    await fs.mkdir(path.dirname(abs), { recursive: true });
-    await fs.writeFile(abs, input.content, 'utf8');
+    if (typeof input.content !== 'string') throw new ValidationError('repo.write_file: content must be a string');
+    // Symlink-safe: parent realpath-confined, final component O_NOFOLLOW,
+    // no hard links, git metadata denied.
+    await writeWorkspaceFile(ctx.workspacePath, input.path, input.content);
     return {
       output: { path: input.path, bytes: Buffer.byteLength(input.content, 'utf8') },
       brief: `wrote ${input.path}`,
@@ -77,21 +110,19 @@ const repoListPaths: AnySkill = {
   capabilities: ['fs.read'],
   async execute(input: any, ctx) {
     if (!ctx.workspacePath) throw new ValidationError('repo.list_paths: workspacePath required');
-    const root = resolveInWorkspace(ctx.workspacePath, input.dir ?? '.');
     const max = input.max ?? 500;
     const out: string[] = [];
-    async function walk(dir: string) {
-      if (out.length >= max) return;
-      const entries = await fs.readdir(dir, { withFileTypes: true });
-      for (const e of entries) {
-        if (e.name === 'node_modules' || e.name === '.git' || e.name === '.next' || e.name === 'dist') continue;
-        const full = path.join(dir, e.name);
-        if (e.isDirectory()) await walk(full);
-        else out.push(path.relative(ctx.workspacePath!, full));
-        if (out.length >= max) return;
-      }
-    }
-    await walk(root);
+    // Never follows symlinks (files or directories); skips git metadata.
+    await walkWorkspace(
+      ctx.workspacePath,
+      input.dir ?? '.',
+      async (rel) => {
+        if (out.length >= max) return false;
+        out.push(rel);
+        return out.length < max;
+      },
+      { skipDirs: SKIP_DIRS },
+    );
     return { output: { paths: out }, brief: `${out.length} paths` };
   },
 };
@@ -113,16 +144,24 @@ const repoSearch: AnySkill = {
   capabilities: ['fs.read'],
   async execute(input: any, ctx) {
     if (!ctx.workspacePath) throw new ValidationError('repo.search: workspacePath required');
+    const ws = ctx.workspacePath;
     const max = input.max ?? 200;
     const re = input.regex
       ? new RegExp(input.query, 'm')
       : new RegExp(escapeRegex(input.query), 'i');
     const matches: { path: string; line: number; preview: string }[] = [];
-    await walk(ctx.workspacePath, async (full) => {
-      if (matches.length >= max) return false;
-      const rel = path.relative(ctx.workspacePath!, full);
-      try {
-        const buf = await fs.readFile(full, 'utf8');
+    await walkWorkspace(
+      ws,
+      '.',
+      async (rel) => {
+        if (matches.length >= max) return false;
+        let buf: string;
+        try {
+          // Each file is re-opened through the symlink-safe reader.
+          buf = (await readWorkspaceFile(ws, rel, { maxBytes: SEARCH_MAX_FILE_BYTES })).toString('utf8');
+        } catch {
+          return true; /* binary, too large, unreadable or swapped */
+        }
         const lines = buf.split('\n');
         for (let i = 0; i < lines.length; i++) {
           if (re.test(lines[i] ?? '')) {
@@ -130,14 +169,30 @@ const repoSearch: AnySkill = {
             if (matches.length >= max) return false;
           }
         }
-      } catch {
-        /* binary or unreadable */
-      }
-      return true;
-    });
+        return true;
+      },
+      { skipDirs: SKIP_DIRS },
+    );
     return { output: { matches }, brief: `${matches.length} hits` };
   },
 };
+
+/**
+ * Staged-path guard applied inside the commit (after `git add -A`, before
+ * the commit object is written). Git metadata can never be committed;
+ * the runner adds its hard-block policy via `ctx.config.commitGuard`.
+ */
+function buildCommitGuard(ctx: SkillExecutionContext): (paths: string[]) => Promise<void> {
+  const extra = (ctx.config as { commitGuard?: (paths: string[]) => void | Promise<void> } | undefined)
+    ?.commitGuard;
+  return async (paths: string[]) => {
+    const meta = paths.filter((p) => isGitMetadataPath(p));
+    if (meta.length > 0) {
+      throw new ValidationError(`repo.git.commit: refusing to commit git metadata: ${meta.slice(0, 5).join(', ')}`);
+    }
+    if (typeof extra === 'function') await extra(paths);
+  };
+}
 
 const repoCommit: AnySkill = {
   name: 'repo.git.commit',
@@ -161,10 +216,14 @@ const repoCommit: AnySkill = {
     const subject = input.type
       ? `${input.type}${input.scope ? `(${input.scope})` : ''}: ${input.message}`
       : input.message;
+    // Never commit on the default branch / detached HEAD: make sure HEAD
+    // is on a runner-owned `mergecrew/` branch first.
+    await gitEnsureRunBranch(ctx.workspacePath, runBranchName(ctx.runId));
     const sha = await ctx.adapters.vcs.commit(ctx.workspacePath, {
       message: subject,
       authorName: 'Mergecrew Bot',
       authorEmail: `mergecrew@${ctx.organizationId}.mergecrew.dev`,
+      guardStagedPaths: buildCommitGuard(ctx),
     });
     const branch = await currentBranch(ctx);
     return {
@@ -176,7 +235,8 @@ const repoCommit: AnySkill = {
 
 const repoCreateBranch: AnySkill = {
   name: 'repo.git.create_branch',
-  description: 'Create a new branch from the current HEAD.',
+  description:
+    'Create a new branch (namespaced under mergecrew/) from the current HEAD, a local branch, or origin/<branch>.',
   inputSchema: {
     type: 'object',
     properties: { name: { type: 'string' }, from: { type: 'string' } },
@@ -188,8 +248,17 @@ const repoCreateBranch: AnySkill = {
   async execute(input: any, ctx) {
     if (!ctx.adapters.vcs || !ctx.workspacePath)
       throw new ValidationError('repo.git.create_branch: vcs adapter and workspace required');
-    await ctx.adapters.vcs.createBranch(ctx.workspacePath, input.name, input.from ?? 'HEAD');
-    return { output: { branch: input.name }, brief: `branch ${input.name}` };
+    const name = normalizeAgentBranchName(input.name);
+    // `from` is resolved against a ref allowlist inside the adapter
+    // (HEAD / local branch / origin/<branch>) and never reaches git as a
+    // raw argument.
+    try {
+      await ctx.adapters.vcs.createBranch(ctx.workspacePath, name, input.from ?? 'HEAD');
+    } catch (err: any) {
+      if (err?.name === 'GitRefError') throw new ValidationError(err.message);
+      throw err;
+    }
+    return { output: { branch: name }, brief: `branch ${name}` };
   },
 };
 
@@ -212,10 +281,18 @@ const repoOpenPr: AnySkill = {
     if (!ctx.adapters.vcs || !ctx.workspacePath)
       throw new ValidationError('repo.git.open_pr: vcs adapter and workspace required');
     const { connectedRepo, branch } = readWorkspaceMeta(ctx);
-    await ctx.adapters.vcs.push(ctx.workspacePath, branch);
+    const configuredBase = connectedRepo.basePrBranch ?? connectedRepo.defaultBranch;
+    const base = input.base ?? configuredBase;
+    if (base !== configuredBase && base !== connectedRepo.defaultBranch) {
+      throw new ValidationError(`repo.git.open_pr: base must be ${configuredBase}`);
+    }
+    // Refuses the base / default branch and anything outside mergecrew/.
+    await ctx.adapters.vcs.push(ctx.workspacePath, branch, connectedRepo, {
+      protectedBranches: [configuredBase, connectedRepo.defaultBranch],
+    });
     const pr = await ctx.adapters.vcs.openPullRequest(connectedRepo, {
       head: branch,
-      base: input.base ?? connectedRepo.basePrBranch ?? connectedRepo.defaultBranch,
+      base,
       title: input.title,
       body: input.body,
     });
@@ -293,26 +370,4 @@ function readWorkspaceMeta(ctx: any): {
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-async function walk(dir: string, visit: (full: string) => Promise<boolean>): Promise<void> {
-  const stack: string[] = [dir];
-  while (stack.length) {
-    const cur = stack.pop()!;
-    let entries;
-    try {
-      entries = await fs.readdir(cur, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const e of entries) {
-      if (e.name === 'node_modules' || e.name === '.git' || e.name === '.next' || e.name === 'dist') continue;
-      const full = path.join(cur, e.name);
-      if (e.isDirectory()) stack.push(full);
-      else {
-        const cont = await visit(full);
-        if (cont === false) return;
-      }
-    }
-  }
 }
