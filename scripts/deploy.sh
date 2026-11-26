@@ -14,6 +14,10 @@ fi
 
 COMPOSE="docker compose -f docker-compose.prod.yml"
 
+# Database role split (app / system / migrator) must be configured
+# before anything is built or started. See infra/sql/README.md.
+./scripts/check-prod-env.sh
+
 echo "==> Building images"
 $COMPOSE build
 
@@ -21,9 +25,8 @@ echo "==> Running prisma migrations"
 $COMPOSE --profile migrate run --rm migrate
 
 echo "==> Starting services"
-$COMPOSE up -d
+$COMPOSE up -d --wait --wait-timeout "${DEPLOY_WAIT_TIMEOUT:-180}"
 
-sleep 4
 $COMPOSE ps
 echo
 $COMPOSE logs --tail=20 api web orchestrator runner worker-cron

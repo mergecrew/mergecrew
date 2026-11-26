@@ -9,7 +9,7 @@ Deploys the five mergecrew workloads (api, orchestrator, runner, worker-cron, we
 #    raw secrets — they must come from an existing Secret reference.
 kubectl create secret generic mergecrew-secrets \
   --from-literal=DATABASE_URL='postgresql://...' \
-  --from-literal=DATABASE_MIGRATE_URL='postgresql://...' \
+  --from-literal=DATABASE_SYSTEM_URL='postgresql://...' \
   --from-literal=REDIS_URL='redis://...' \
   --from-literal=KMS_MASTER_KEY="base64:$(openssl rand -base64 32)" \
   --from-literal=JWT_SECRET="$(openssl rand -hex 32)" \
@@ -33,7 +33,7 @@ You'll need to wire an Ingress (not included in this chart yet) to expose the `m
 | Key | Required | Why |
 |---|---|---|
 | `DATABASE_URL` | yes | App connection (RLS-enabled) |
-| `DATABASE_MIGRATE_URL` | yes | Migration connection (BYPASSRLS) |
+| `DATABASE_SYSTEM_URL` | yes | Cross-tenant system queries: `mergecrew_system` role (BYPASSRLS, DML only, owns nothing). Pods refuse system queries without it when `NODE_ENV=production`. See [`infra/sql/README.md`](../../sql/README.md). |
 | `REDIS_URL` | yes | BullMQ queues + pubsub |
 | `KMS_MASTER_KEY` | yes | AES-GCM key for org-stored provider credentials |
 | `JWT_SECRET` | yes | JWT signing |
@@ -44,6 +44,8 @@ You'll need to wire an Ingress (not included in this chart yet) to expose the `m
 | `GITHUB_APP_PRIVATE_KEY` | no | Only if connecting GitHub repos |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | no | Bedrock / S3 transcript store |
 | `TRANSCRIPT_S3_BUCKET`, `S3_ENDPOINT_URL` | no | S3 transcript store |
+
+`DATABASE_MIGRATE_URL` (the `mergecrew_migrator` role, which owns the tables) is intentionally not injected into any pod. Run `prisma migrate deploy` out of band with it (a CI job, or a one-off pod from the api image with only that variable set).
 
 Missing optional secrets cause the chart to render `optional: true` on those `secretKeyRef`s — they're silently absent in the container env, which is what the runtime code already expects (BYOK is opt-in).
 
