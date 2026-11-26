@@ -17,6 +17,11 @@ export MERGECREW_TAG="$TAG"
 
 COMPOSE="docker compose -f docker-compose.prod.yml"
 
+# Abort before touching images or containers when the database role
+# split is not configured (DATABASE_SYSTEM_URL missing, migrator URL
+# reused for runtime, ...). The running stack is left as is.
+./scripts/check-prod-env.sh
+
 # Prune BEFORE pulling. Each deploy lands 5 images of ~500MB-1GB
 # each (api/orchestrator/runner/worker-cron/web). Without pruning
 # first, accumulated dangling images + BuildKit cache from prior
@@ -38,7 +43,9 @@ echo "==> Running prisma migrations"
 $COMPOSE --profile migrate run --rm migrate
 
 echo "==> Starting services"
-$COMPOSE up -d
+# --wait: fail the deploy if a service does not report healthy (every
+# service has a /healthz healthcheck in docker-compose.prod.yml).
+$COMPOSE up -d --wait --wait-timeout "${DEPLOY_WAIT_TIMEOUT:-180}"
 
 # Second prune sweep AFTER the up — the pull leaves the old tagged
 # images dangling once compose retags `latest`. Cleaning here keeps

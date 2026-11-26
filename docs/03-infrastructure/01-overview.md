@@ -86,7 +86,7 @@ Hosted providers (Anthropic, OpenAI, Bedrock) work via BYOK — register them th
 
 Configuration is driven by environment variables (`.env.example` is the source of truth). Categories:
 
-- **Core / DB / Redis.** `DATABASE_URL`, `DATABASE_MIGRATE_URL` (separate role for migrations), `REDIS_URL`.
+- **Core / DB / Redis.** `DATABASE_URL` (runtime app role, RLS enforced), `DATABASE_SYSTEM_URL` (runtime cross-tenant role: BYPASSRLS, DML only; required in production), `DATABASE_MIGRATE_URL` (table-owning role for migrations only), `REDIS_URL`. See [`infra/sql/README.md`](../../infra/sql/README.md).
 - **Object storage.** `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_FORCE_PATH_STYLE` (LocalStack-friendly defaults).
 - **Auth.** `MERGECREW_DEV_AUTO_LOGIN` (default `true` outside production), `MERGECREW_DEV_USER_EMAIL`, `BFF_TRUST_TOKEN` (shared header the API uses to trust the BFF on `/v1/auth/exchange`), `JWT_SECRET`, `NEXTAUTH_SECRET`. Optional GitHub / Google OAuth for real sign-in.
 - **Integrations.** `GITHUB_APP_*`, `VERCEL_TOKEN`, etc. — empty in dev, filled in for self-hosted deployments that need them.

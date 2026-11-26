@@ -121,10 +121,89 @@ The deploy step expects the repo to already be cloned on the VM at `VM_REPO_PATH
 git clone https://github.com/<your-org>/mergecrew /home/ec2-user/data/mergecrew
 cd /home/ec2-user/data/mergecrew
 cp .env.example .env
-$EDITOR .env  # fill in DATABASE_URL, KMS_MASTER_KEY, GitHub App secrets, etc.
+$EDITOR .env  # fill in the three DATABASE_* URLs, KMS_MASTER_KEY, GitHub App secrets, etc.
+chmod 600 .env
+./scripts/check-prod-env.sh   # validates the DB role split, SKILL_SIGNING_KEY and the compose config
 ```
 
 The first deploy will run prisma migrations automatically. You don't need to run them by hand.
+
+### 6a. Provision Postgres roles (host-installed PostgreSQL)
+
+The stack uses three database roles; see [`infra/sql/README.md`](../../infra/sql/README.md). As the Postgres superuser on the VM:
+
+```sh
+sudo -u postgres psql -f infra/sql/native-bootstrap.sql
+sudo -u postgres psql -c '\password mergecrew_migrator'
+sudo -u postgres psql -c '\password mergecrew_app'
+sudo -u postgres psql -c '\password mergecrew_system'
+```
+
+Then allow the docker bridge in `pg_hba.conf` (and add the bridge gateway, e.g. `172.17.0.1`, to `listen_addresses`), and `sudo systemctl reload postgresql`:
+
+```
+# TYPE  DATABASE   USER                                               ADDRESS        METHOD
+host    mergecrew  mergecrew_app,mergecrew_system,mergecrew_migrator  172.16.0.0/12  scram-sha-256
+```
+
+`.env` then carries:
+
+```sh
+DATABASE_URL=postgresql://mergecrew_app:<pw>@host.docker.internal:5432/mergecrew?schema=public
+DATABASE_SYSTEM_URL=postgresql://mergecrew_system:<pw>@host.docker.internal:5432/mergecrew?schema=public
+DATABASE_MIGRATE_URL=postgresql://mergecrew_migrator:<pw>@host.docker.internal:5432/mergecrew?schema=public
+```
+
+### 6b. Environment layout
+
+Keep the single `.env` next to `docker-compose.prod.yml`. No service uses `env_file:` any more. Compose reads `.env` for interpolation, and each service declares an allowlist under `environment:`, so a container only receives the variables its code reads:
+
+| Service | Gets | Never gets |
+|---|---|---|
+| `web` | `NEXTAUTH_*`/`AUTH_*`, OAuth client id/secret (GitHub App client, Google), `BFF_TRUST_TOKEN`, `WEB_BASE_URL`, `MERGECREW_PUBLIC_API_BASE_URL`, `MERGECREW_ALLOW_INSECURE_DEFAULTS`, dev-login + demo flags | any `DATABASE_*`, `KMS_MASTER_KEY`, `GITHUB_APP_PRIVATE_KEY*`, `AWS_*`, `VERCEL_TOKEN` and other deploy tokens, `JWT_SECRET`, webhook secrets, `METRICS_TOKEN` |
+| `api` | `DATABASE_URL`, `DATABASE_SYSTEM_URL`, `REDIS_URL`, `KMS_MASTER_KEY`, GitHub App (incl. webhook secret, `GITHUB_APP_INSTALL_REDIRECT_URI`), email, `JWT_SECRET`, `BFF_TRUST_TOKEN`, `METRICS_TOKEN`, `MERGECREW_INTERNAL_TOKEN`, org trust (`MERGECREW_TRUSTED_ORG_IDS`, `MERGECREW_OWNER_ORG_ID`), Slack/Sentry/Linear webhook secrets, safe-fetch egress flags, `MERGECREW_ALLOW_INSECURE_DEFAULTS` | `DATABASE_MIGRATE_URL`, AWS, deploy tokens, `SKILL_SIGNING_KEY` |
+| `orchestrator` | `DATABASE_URL`, `DATABASE_SYSTEM_URL`, `REDIS_URL`, `KMS_MASTER_KEY`, GitHub App, email, `JWT_SECRET`, `SLACK_BOT_TOKEN`, org trust, safe-fetch egress flags, tuning knobs | `DATABASE_MIGRATE_URL`, AWS, deploy tokens |
+| `runner` | `DATABASE_URL`, `DATABASE_SYSTEM_URL`, `REDIS_URL`, `KMS_MASTER_KEY`, GitHub App, email, AWS, deploy tokens (`VERCEL_TOKEN`, ...), `MERGECREW_INTERNAL_TOKEN`, `SKILL_SIGNING_KEY` (required), `MERGECREW_ENABLE_DEVCONTAINER_BUILD`, `MERGECREW_ENV`, safe-fetch egress flags, transcripts, `RUNNER_*` | `DATABASE_MIGRATE_URL`, `JWT_SECRET`, `BFF_TRUST_TOKEN`, `NEXTAUTH_*`, webhook secrets |
+| `worker-cron` | `DATABASE_URL`, `DATABASE_SYSTEM_URL`, `REDIS_URL`, `KMS_MASTER_KEY` (in-process evals), safe-fetch egress flags, cron knobs | `DATABASE_MIGRATE_URL`, GitHub App, AWS, deploy tokens |
+| `migrate` | `DATABASE_MIGRATE_URL` (also as `DATABASE_URL`), `NODE_ENV` | everything else |
+
+`NODE_ENV` defaults to `production` in this file. A variable that is not in a service's list does not reach that container, even if it is in `.env`. When the code starts reading a new variable, add it to the service's list in `docker-compose.prod.yml`. Inspect what each container will get with:
+
+```sh
+docker compose -f docker-compose.prod.yml config            # resolved env per service
+docker inspect mergecrew-web --format '{{range .Config.Env}}{{println .}}{{end}}'
+```
+
+Every service also has a `/healthz` healthcheck (api `:4000`, web `:3000`, orchestrator `:9090`, runner `:9091`, worker-cron `:9092`), `web` waits for a healthy `api`, and container logs rotate at 10 MB x 5 files (`json-file`). The deploy scripts use `up -d --wait`, so a deploy fails if a service does not become healthy within `DEPLOY_WAIT_TIMEOUT` seconds (default 180).
+
+### 6c. Upgrading an existing deployment to the role split
+
+Deployments created before this layout ran system queries as the migrator, and every container received the whole `.env`. Do this on the VM **before** the first deploy that includes the change. Pause auto-deploy (`VM_DEPLOY_ENABLED=false`) if necessary. `deploy-pull.sh` runs `scripts/check-prod-env.sh` first and stops without touching the running stack when the steps below are missing.
+
+1. Fetch the bootstrap script without changing the checkout the deploy workflow manages, then create the system role and its grants (idempotent; existing roles, data and passwords are kept):
+
+   ```sh
+   cd /home/ec2-user/data/mergecrew && git fetch origin
+   git show origin/main:infra/sql/native-bootstrap.sql > /tmp/mergecrew-bootstrap.sql   # or the PR branch before merge
+   sudo -u postgres psql -f /tmp/mergecrew-bootstrap.sql
+   sudo -u postgres psql -c '\password mergecrew_system'
+   ```
+
+   Check the report it prints: no role is superuser, only `mergecrew_migrator` owns tables. The bootstrap also revokes `CONNECT` on the `mergecrew` database from `PUBLIC`. If anything other than the three Mergecrew roles or a superuser connects to it (a backup or monitoring role, say), `GRANT CONNECT` to that role again.
+2. Add `mergecrew_system` to the `pg_hba.conf` line for the docker bridge (see 6a) and reload Postgres.
+3. Add `DATABASE_SYSTEM_URL=postgresql://mergecrew_system:<pw>@host.docker.internal:5432/mergecrew?schema=public` to `.env`. Make sure `DATABASE_URL` is the `mergecrew_app` role and `DATABASE_MIGRATE_URL` is the migrator. Keep `NODE_ENV=production`. Also set `SKILL_SIGNING_KEY` (32+ bytes, `openssl rand -hex 32`): the preflight requires it, and without it the runner refuses high-impact skills in production. `MERGECREW_OWNER_ORG_ID` / `MERGECREW_TRUSTED_ORG_IDS` replace the old `*_SLUG` trust variables.
+4. Nothing to split. Keep the single `.env`. The new compose file passes each service only its allowlisted variables. If you had custom variables in `.env` that a service needs, check that they appear in that service's `environment:` list.
+5. Run `./scripts/check-prod-env.sh`, then deploy (`./scripts/deploy-pull.sh <tag>`, or re-enable auto-deploy). The `migrate` step applies `20261126210000_eval_rls_and_system_role` as the migrator.
+6. Verify:
+
+   ```sh
+   docker inspect mergecrew-web --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -E 'KMS|PRIVATE_KEY|DATABASE|AWS_|VERCEL' || echo "web: clean"
+   for c in api orchestrator runner worker-cron web; do docker inspect mergecrew-$c --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -q DATABASE_MIGRATE_URL && echo "LEAK: $c"; done
+   sudo -u postgres psql -d mergecrew -c "select usename, count(*) from pg_stat_activity where datname = 'mergecrew' group by 1"
+   # expect mergecrew_app + mergecrew_system; mergecrew_migrator only while migrate runs
+   ```
+
+7. Optional: rotate the `mergecrew_migrator` password (`\password mergecrew_migrator`, then update `.env`). Until now it was visible to every container.
 
 ### 7. First deploy
 
@@ -150,15 +229,16 @@ TAG="${1:-latest}"
 export MERGECREW_TAG="$TAG"
 COMPOSE="docker compose -f docker-compose.prod.yml"
 
+./scripts/check-prod-env.sh          # role split + compose config; aborts before any change
 $COMPOSE pull api orchestrator runner worker-cron web
 $COMPOSE --profile migrate run --rm migrate
-$COMPOSE up -d
+$COMPOSE up -d --wait --wait-timeout "${DEPLOY_WAIT_TIMEOUT:-180}"
 docker image prune -f >/dev/null
 ```
 
 The compose file's image references are `ghcr.io/mergecrew/<svc>:${MERGECREW_TAG:-latest}`, so exporting `MERGECREW_TAG` pins the pull + restart to that exact tag.
 
-`migrate` is a one-shot service under the `migrate` compose profile — same image as `api`, runs `prisma migrate deploy`, exits. Profiles mean it doesn't run when the regular `up -d` brings the stack up; it only runs when explicitly invoked with `--profile migrate`. Running it before `up -d` guarantees the schema is current before the app processes touch it.
+`migrate` is a one-shot service under the `migrate` compose profile — same image as `api`, runs `prisma migrate deploy`, exits. Profiles mean it doesn't run when the regular `up -d` brings the stack up; it only runs when explicitly invoked with `--profile migrate`. Running it before `up -d` guarantees the schema is current before the app processes touch it. It is the only service that receives `DATABASE_MIGRATE_URL`: `prisma.config.ts` prefers that URL, and the compose file also sets the container's `DATABASE_URL` to it, so migrations always run as `mergecrew_migrator` and never as the runtime app role (#895).
 
 `docker image prune -f` reclaims layers from the previous deploy. The pinned `:latest` and `:<sha>` tags keep the current and just-prior images.
 
@@ -218,7 +298,13 @@ The `migrate` service has its own logs:
 docker compose -f docker-compose.prod.yml --profile migrate logs migrate
 ```
 
-Most commonly: `DATABASE_URL` doesn't reach Postgres from inside the container. The compose file maps `host.docker.internal` to the host gateway via `extra_hosts`, so a host-installed Postgres at `127.0.0.1:5432` is reachable as `host.docker.internal:5432` from inside containers. Make sure `.env`'s `DATABASE_URL` uses `host.docker.internal`, not `localhost`.
+Most commonly: `DATABASE_MIGRATE_URL` doesn't reach Postgres from inside the container. The compose file maps `host.docker.internal` to the host gateway via `extra_hosts`, so a host-installed Postgres at `127.0.0.1:5432` is reachable as `host.docker.internal:5432` from inside containers. Make sure the `.env` URLs use `host.docker.internal`, not `localhost`, and that `pg_hba.conf` allows the role from the docker bridge (step 6a).
+
+`permission denied for schema public` means migrations ran as a role without `CREATE`, usually because `DATABASE_MIGRATE_URL` is unset or points at `mergecrew_app`. `must be owner of table ...` means a table is not owned by `mergecrew_migrator`. Fix ownership as the superuser (`ALTER TABLE ... OWNER TO mergecrew_migrator`) and re-run.
+
+### Services crash with `DATABASE_SYSTEM_URL is required in production`
+
+The system role URL is missing from `.env` (or empty). Follow [6c](#6c-upgrading-an-existing-deployment-to-the-role-split). Services never fall back to the migrator URL.
 
 ### SSH step hangs or times out
 

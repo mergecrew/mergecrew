@@ -31,8 +31,10 @@ The hard floor.
 - All tenant tables have RLS enabled.
 - Each connection sets `app.org_id` via `SET LOCAL` at request start.
 - RLS policy: `USING (organization_id = current_setting('app.org_id')::uuid)`.
-- The application role used by NestJS has `BYPASSRLS = false`.
-- A separate migration role has `BYPASSRLS = true` and is *only* used for migrations and explicitly-cross-tenant background jobs (e.g., the cost rollup).
+- The application role (`mergecrew_app`, `DATABASE_URL`) has `BYPASSRLS = false`.
+- Explicitly cross-tenant queries (`withSystem()`: org-by-slug auth lookups, org creation, cron sweeps, the cost rollup) use a separate system role (`mergecrew_system`, `DATABASE_SYSTEM_URL`). It has `BYPASSRLS = true` but only DML privileges and owns no tables, so it cannot alter schema, disable RLS or change policies. Production services refuse to run system queries without it.
+- The migration role (`mergecrew_migrator`, `DATABASE_MIGRATE_URL`) owns the schema and is used *only* by `prisma migrate deploy`. No runtime container receives its credentials.
+- See [`infra/sql/README.md`](../../infra/sql/README.md) for the role setup.
 
 Even if the API forgets to filter, RLS makes cross-tenant reads return empty and cross-tenant writes fail.
 

@@ -2,13 +2,103 @@
 # installed reverse proxy (Caddy / nginx / etc). Containers reach Postgres via
 # host.docker.internal; the host reverse-proxies to web:3000 and api:4000 via
 # the localhost port bindings below.
-# Usage: ./scripts/deploy.sh
+# Usage: ./scripts/deploy.sh (build on the VM) or ./scripts/deploy-pull.sh
+# (pull from GHCR).
+#
+# Environment layout
+# ------------------
+# The operator keeps ONE `.env` next to this file. Compose reads it for
+# `${...}` interpolation only; no service uses `env_file:`. Each service
+# gets an explicit allowlist under `environment:` below, so a container
+# only ever sees the variables its code reads:
+#
+#   - `KEY:` with no value copies KEY from `.env` (or the shell) when it
+#     is set and leaves it unset in the container otherwise, the same
+#     semantics `env_file:` had for that key.
+#   - `KEY: value` is fixed by this file.
+#
+# Database roles (infra/sql/native-bootstrap.sql):
+#   DATABASE_URL          mergecrew_app      api, orchestrator, runner, worker-cron
+#   DATABASE_SYSTEM_URL   mergecrew_system   api, orchestrator, runner, worker-cron
+#   DATABASE_MIGRATE_URL  mergecrew_migrator migrate ONLY
+# The web container gets no database, KMS, GitHub App private key, AWS or
+# deploy-provider credentials.
+#
+# Adding a new environment variable to the code? Add it to the
+# allowlist of every service that reads it, or it will not reach the
+# container. `docker compose -f docker-compose.prod.yml config` shows the
+# resolved environment per service.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '5'
+
+# --- Environment allowlists (YAML merge keys; see header) ---
+
+# Every Node service.
+x-env-node: &env-node
+  NODE_ENV: ${NODE_ENV:-production}
+  LOG_LEVEL:
+
+# Services that talk to Postgres + Redis at runtime.
+x-env-backend: &env-backend
+  <<: *env-node
+  DATABASE_URL:
+  DATABASE_SYSTEM_URL:
+  REDIS_URL:
+  KMS_MASTER_KEY:
+  MERGECREW_DEMO_MODE:
+  MERGECREW_AGENT_STUB:
+  MERGECREW_TELEMETRY_URL:
+  MERGECREW_VERSION:
+  # Outbound safe-fetch policy (packages/net; api, orchestrator, llm,
+  # skills). Leave unset in production.
+  MERGECREW_ALLOW_PRIVATE_EGRESS:
+  MERGECREW_PRIVATE_EGRESS_ALLOW_HOSTS:
+
+# instance_builtin runner trust (packages/domain trusted-orgs; api +
+# orchestrator). The *_SLUG pair is legacy and only read to log that it
+# is ignored.
+x-env-trust: &env-trust
+  MERGECREW_TRUSTED_ORG_IDS:
+  MERGECREW_OWNER_ORG_ID:
+  MERGECREW_TRUSTED_ORG_SLUGS:
+  MERGECREW_OWNER_ORG_SLUG:
+
+# GitHub App credentials (packages/adapters-vcs). Prefer
+# GITHUB_APP_PRIVATE_KEY_FILE=/app/secrets/github-app.pem with the
+# ./secrets mount over an inline PEM.
+x-env-github-app: &env-github-app
+  GITHUB_APP_ID:
+  GITHUB_APP_SLUG:
+  GITHUB_APP_CLIENT_ID:
+  GITHUB_APP_CLIENT_SECRET:
+  GITHUB_APP_PRIVATE_KEY:
+  GITHUB_APP_PRIVATE_KEY_FILE:
+
+# Outbound email (packages/adapters-comms).
+x-env-email: &env-email
+  EMAIL_PROVIDER:
+  SMTP_URL:
+  RESEND_API_KEY:
+  MERGECREW_EMAIL_FROM:
+
+# Container healthchecks probe the in-process /healthz endpoints with the
+# image's own node binary (the slim images ship no curl/wget).
+x-healthcheck: &healthcheck
+  interval: 15s
+  timeout: 5s
+  retries: 5
+  start_period: 30s
 
 services:
   redis:
     image: redis:7-alpine
     container_name: mergecrew-redis
     restart: unless-stopped
+    logging: *logging
     volumes:
       - redis_data:/data
     networks: [internal]
@@ -24,7 +114,17 @@ services:
       dockerfile: infra/docker/Dockerfile.api
     image: ghcr.io/mergecrew/api:${MERGECREW_TAG:-latest}
     profiles: [migrate]
-    env_file: .env
+    logging: *logging
+    # The only service that receives the migrator credentials (#895).
+    # prisma.config.ts prefers DATABASE_MIGRATE_URL; DATABASE_URL is
+    # overridden with the same value as a second safeguard so the CLI
+    # can never fall back to the runtime app role. `:-` rather than
+    # `:?` because compose interpolates profile-gated services on every
+    # command; deploy scripts check the variable before running this.
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_MIGRATE_URL: ${DATABASE_MIGRATE_URL:-}
+      DATABASE_URL: ${DATABASE_MIGRATE_URL:-}
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     networks: [internal]
@@ -69,7 +169,27 @@ services:
     image: ghcr.io/mergecrew/api:${MERGECREW_TAG:-latest}
     container_name: mergecrew-api
     restart: unless-stopped
-    env_file: .env
+    logging: *logging
+    environment:
+      <<: [*env-backend, *env-github-app, *env-email, *env-trust]
+      GITHUB_APP_WEBHOOK_SECRET:
+      GITHUB_APP_INSTALL_REDIRECT_URI:
+      LINEAR_WEBHOOK_SECRET:
+      JWT_SECRET:
+      BFF_TRUST_TOKEN:
+      METRICS_TOKEN:
+      MERGECREW_INTERNAL_TOKEN:
+      MERGECREW_ALLOW_INSECURE_DEFAULTS:
+      MERGECREW_DEV_AUTO_LOGIN:
+      MERGECREW_PUBLIC_API_BASE_URL:
+      MERGECREW_SEED_DEMO_PROJECT:
+      MERGECREW_STUB_REVIEWER_VERDICT:
+      MERGECREW_WEB_URL:
+      WEB_BASE_URL:
+      SLACK_SIGNING_SECRET:
+      SENTRY_CLIENT_SECRET:
+      GIT_SHA:
+      BUILD_TIMESTAMP:
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     networks: [internal]
@@ -77,6 +197,15 @@ services:
       - '127.0.0.1:${API_HOST_PORT:-4000}:4000'
     volumes:
       - ./secrets:/app/secrets:ro
+    healthcheck:
+      <<: *healthcheck
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4000/healthz').then((r)=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
     depends_on:
       redis: { condition: service_healthy }
     deploy:
@@ -92,12 +221,32 @@ services:
     image: ghcr.io/mergecrew/orchestrator:${MERGECREW_TAG:-latest}
     container_name: mergecrew-orchestrator
     restart: unless-stopped
-    env_file: .env
+    logging: *logging
+    environment:
+      <<: [*env-backend, *env-github-app, *env-email, *env-trust]
+      JWT_SECRET:
+      WEB_BASE_URL:
+      SLACK_BOT_TOKEN:
+      DIGEST_EMAIL_ENABLED:
+      REVIEW_LOOP_CAP:
+      ORG_CAP_DEFERRAL_MS:
+      ORCHESTRATOR_HEARTBEAT_MAX_ATTEMPTS:
+      ORCHESTRATOR_HEARTBEAT_STALE_AFTER_MS:
+      ORCHESTRATOR_HEARTBEAT_SWEEPER_INTERVAL_MS:
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     networks: [internal]
     volumes:
       - ./secrets:/app/secrets:ro
+    healthcheck:
+      <<: *healthcheck
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:9090/healthz').then((r)=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
     depends_on:
       redis: { condition: service_healthy }
     deploy:
@@ -113,13 +262,59 @@ services:
     image: ghcr.io/mergecrew/runner:${MERGECREW_TAG:-latest}
     container_name: mergecrew-runner
     restart: unless-stopped
-    env_file: .env
+    logging: *logging
+    # The runner needs DATABASE_URL (withTenant step bookkeeping) and
+    # DATABASE_SYSTEM_URL (runner-profile lookups, ephemeral agent
+    # tokens). Never the migrator URL.
     environment:
+      <<: [*env-backend, *env-github-app, *env-email]
       # Same path on both sides of the bind mount below — the
       # DockerDriver passes this as the source path of the sandbox
       # container's `-v workspacePath:/workspace`, and that source is
       # resolved by the **host** daemon. EPIC #828.
       RUNNER_WORKSPACE_ROOT: /var/mergecrew/work
+      API_BASE_URL:
+      MERGECREW_API_BASE_URL:
+      MERGECREW_INTERNAL_TOKEN:
+      MERGECREW_STUB_REVIEWER_VERDICT:
+      MERGECREW_ENV:
+      # Required in production: without it the runner refuses high-impact
+      # skills (commit, PR, deploy). check-prod-env.sh enforces it.
+      SKILL_SIGNING_KEY:
+      # Unsafe on shared hosts; leave unset unless the runner host is
+      # dedicated to a single tenant.
+      MERGECREW_ENABLE_DEVCONTAINER_BUILD:
+      # AWS default credential chain (aws-direct deploys, fargate, S3
+      # transcripts). Leave unset in .env when unused.
+      AWS_REGION:
+      AWS_ACCESS_KEY_ID:
+      AWS_SECRET_ACCESS_KEY:
+      AWS_SESSION_TOKEN:
+      VERCEL_TOKEN:
+      NETLIFY_TOKEN:
+      RENDER_TOKEN:
+      TRANSCRIPT_LOCAL_DIR:
+      TRANSCRIPT_S3_BUCKET:
+      S3_ENDPOINT_URL:
+      RUNNER_SANDBOX:
+      RUNNER_CONCURRENCY:
+      RUNNER_CACHE_ROOT:
+      RUNNER_DEFAULT_IMAGE:
+      RUNNER_OCI_RUNTIME:
+      RUNNER_DOCKER_BIN:
+      RUNNER_DOCKER_GID:
+      RUNNER_EGRESS_NETWORK:
+      RUNNER_DNS_RESOLVER:
+      RUNNER_HEARTBEAT_INTERVAL_MS:
+      RUNNER_K8S_AUTH:
+      RUNNER_K8S_NAMESPACE:
+      RUNNER_K8S_DEFAULT_IMAGE:
+      RUNNER_FARGATE_CLUSTER:
+      RUNNER_FARGATE_REGION:
+      RUNNER_FARGATE_SUBNETS:
+      RUNNER_FARGATE_SG:
+      RUNNER_FARGATE_TASK_DEFINITION:
+      RUNNER_FARGATE_DEFAULT_IMAGE:
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     networks: [internal]
@@ -142,6 +337,15 @@ services:
       # so the runner's workspacePath strings are resolvable by the
       # host daemon when it processes sandbox `-v` flags.
       - /var/mergecrew/work:/var/mergecrew/work
+    healthcheck:
+      <<: *healthcheck
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:9091/healthz').then((r)=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
     depends_on:
       redis: { condition: service_healthy }
     deploy:
@@ -157,10 +361,29 @@ services:
     image: ghcr.io/mergecrew/worker-cron:${MERGECREW_TAG:-latest}
     container_name: mergecrew-worker-cron
     restart: unless-stopped
-    env_file: .env
+    logging: *logging
+    # Nightly evals run in-process (@mergecrew/eval-runner), hence the
+    # KMS key (BYOK provider decryption; Bedrock credentials are stored
+    # per provider, not taken from the environment).
+    environment:
+      <<: *env-backend
+      WORKER_CRON_TICK_MS:
+      EVAL_CRON_MIN_INTERVAL_MS:
+      STUCK_RUN_RUNNING_MS:
+      STUCK_RUN_PAUSED_OVERDUE_MS:
+      MERGECREW_EVAL_TMP_BASE:
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     networks: [internal]
+    healthcheck:
+      <<: *healthcheck
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:9092/healthz').then((r)=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
     depends_on:
       redis: { condition: service_healthy }
     deploy:
@@ -176,13 +399,47 @@ services:
     image: ghcr.io/mergecrew/web:${MERGECREW_TAG:-latest}
     container_name: mergecrew-web
     restart: unless-stopped
-    env_file: .env
+    logging: *logging
+    # Internet-facing: session + OAuth settings and the BFF trust token
+    # only. No database, KMS, GitHub App private key, AWS or deploy
+    # tokens.
     environment:
+      <<: *env-node
       API_BASE_URL: http://api:4000
+      # Next.js standalone binds to $HOSTNAME, which docker sets to the
+      # container id; pin it so the healthcheck can use loopback.
+      HOSTNAME: 0.0.0.0
+      WEB_BASE_URL:
+      MERGECREW_PUBLIC_API_BASE_URL:
+      NEXTAUTH_URL:
+      NEXTAUTH_SECRET:
+      AUTH_URL:
+      AUTH_SECRET:
+      AUTH_TRUST_HOST:
+      BFF_TRUST_TOKEN:
+      GITHUB_APP_CLIENT_ID:
+      GITHUB_APP_CLIENT_SECRET:
+      GOOGLE_OAUTH_CLIENT_ID:
+      GOOGLE_OAUTH_CLIENT_SECRET:
+      MERGECREW_ALLOW_INSECURE_DEFAULTS:
+      MERGECREW_DEMO_MODE:
+      MERGECREW_DEV_AUTO_LOGIN:
+      MERGECREW_DEV_USER_EMAIL:
+      MERGECREW_DEV_USER_NAME:
     networks: [internal]
     ports:
       - '127.0.0.1:${WEB_HOST_PORT:-3000}:3000'
-    depends_on: [api]
+    healthcheck:
+      <<: *healthcheck
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/healthz').then((r)=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+    depends_on:
+      api: { condition: service_healthy }
     deploy:
       resources:
         limits:
@@ -206,6 +463,7 @@ services:
   #   image: ghcr.io/mergecrew/runner-dns:${MERGECREW_TAG:-latest}
   #   container_name: mergecrew-runner-dns
   #   restart: unless-stopped
+  #   logging: *logging
   #   environment:
   #     RUNNER_DNS_PORT: "53"
   #     # Comma-separated; supports *.suffix.tld wildcards. Union of every

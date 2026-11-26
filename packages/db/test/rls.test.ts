@@ -32,6 +32,14 @@ function migratorUrl(): string {
   return process.env.DATABASE_URL ?? '';
 }
 
+function systemUrl(): string {
+  if (process.env.DATABASE_SYSTEM_URL) return process.env.DATABASE_SYSTEM_URL;
+  // Same rewrite as appUrl(): 00-roles.sql provisions `mergecrew_system`
+  // with password 'mergecrew_system' in dev + CI.
+  const base = process.env.DATABASE_URL ?? '';
+  return base.replace(/^postgresql:\/\/[^@]+@/, 'postgresql://mergecrew_system:mergecrew_system@');
+}
+
 // Prisma 7 (#794): connection URL goes into the adapter, not a
 // `datasources` block. The split between migrator + app clients
 // stays — same RLS verification posture.
@@ -41,6 +49,11 @@ const migratorClient = new PrismaClient({
 const appClient = new PrismaClient({
   adapter: new PrismaPg(appUrl()),
 });
+// The runtime cross-tenant client (getSystemPrisma / DATABASE_SYSTEM_URL).
+const systemClient = new PrismaClient({
+  adapter: new PrismaPg(systemUrl()),
+});
+let systemRoleExists = false;
 
 const ORG_A_SLUG = `rls-test-a-${Date.now()}`;
 const ORG_B_SLUG = `rls-test-b-${Date.now()}`;
@@ -67,9 +80,19 @@ beforeAll(async () => {
   });
   projectAId = projectA.id;
   projectBId = projectB.id;
+
+  const roles = await migratorClient.$queryRaw<Array<{ n: number }>>`
+    select count(*)::int as n from pg_roles where rolname = 'mergecrew_system'`;
+  systemRoleExists = (roles[0]?.n ?? 0) > 0;
 });
 
 afterAll(async () => {
+  // Eval tables have no FK to organizations, so clean them up explicitly.
+  const orgIds = [orgAId, orgBId].filter(Boolean);
+  if (orgIds.length) {
+    await migratorClient.evalAbRun.deleteMany({ where: { organizationId: { in: orgIds } } }).catch(() => {});
+    await migratorClient.evalRun.deleteMany({ where: { organizationId: { in: orgIds } } }).catch(() => {});
+  }
   // Cascade through the FKs — projects/memberships/etc. are deleted with the org.
   if (orgAId) {
     await migratorClient.organization.delete({ where: { id: orgAId } }).catch(() => {});
@@ -79,6 +102,7 @@ afterAll(async () => {
   }
   await migratorClient.$disconnect();
   await appClient.$disconnect();
+  await systemClient.$disconnect();
 });
 
 async function withAppTenant<T>(orgId: string, fn: (tx: any) => Promise<T>): Promise<T> {
@@ -213,5 +237,130 @@ describe('RLS: cross-tenant isolation (V1.0 exit criterion)', () => {
         }),
       ),
     ).rejects.toThrow();
+  });
+
+  it('eval_runs / eval_ab_runs / eval_cases: cross-org read + write blocked under RLS', async () => {
+    // Seed through the migrator (bypasses RLS).
+    const runA = await migratorClient.evalRun.create({
+      data: { organizationId: orgAId, source: 'cli' },
+    });
+    const runB = await migratorClient.evalRun.create({
+      data: { organizationId: orgBId, source: 'cli' },
+    });
+    const abB = await migratorClient.evalAbRun.create({
+      data: {
+        organizationId: orgBId,
+        profileAId: runB.id,
+        profileBId: runB.id,
+        runAId: runB.id,
+        runBId: runB.id,
+      },
+    });
+    const caseB = await migratorClient.evalCase.create({
+      data: { evalRunId: runB.id, fixtureId: 'rls-fixture', status: 'pass' },
+    });
+
+    // Reads: tenant A sees its own run and nothing of B's.
+    const runsAsA = await withAppTenant(orgAId, async (tx) =>
+      tx.evalRun.findMany({ where: { id: { in: [runA.id, runB.id] } } }),
+    );
+    expect(runsAsA.map((r: any) => r.id)).toEqual([runA.id]);
+    const abAsA = await withAppTenant(orgAId, async (tx) =>
+      tx.evalAbRun.findMany({ where: { id: abB.id } }),
+    );
+    expect(abAsA).toEqual([]);
+    const casesAsA = await withAppTenant(orgAId, async (tx) =>
+      tx.evalCase.findMany({ where: { id: caseB.id } }),
+    );
+    expect(casesAsA).toEqual([]);
+
+    // Writes: updates of B's rows affect nothing; inserts into B fail.
+    const updated = await withAppTenant(orgAId, async (tx) =>
+      tx.evalRun.updateMany({ where: { id: runB.id }, data: { passCount: 99 } }),
+    );
+    expect(updated.count).toBe(0);
+    await expect(
+      withAppTenant(orgAId, async (tx) =>
+        tx.evalRun.create({ data: { organizationId: orgBId, source: 'cli' } }),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      withAppTenant(orgAId, async (tx) =>
+        tx.evalAbRun.create({
+          data: {
+            organizationId: orgBId,
+            profileAId: runB.id,
+            profileBId: runB.id,
+            runAId: runB.id,
+            runBId: runB.id,
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+    // eval_cases is scoped through its parent run.
+    await expect(
+      withAppTenant(orgAId, async (tx) =>
+        tx.evalCase.create({
+          data: { evalRunId: runB.id, fixtureId: 'evil', status: 'pass' },
+        }),
+      ),
+    ).rejects.toThrow();
+
+    // The tenant's own eval writes keep working.
+    const ownCase = await withAppTenant(orgAId, async (tx) =>
+      tx.evalCase.create({ data: { evalRunId: runA.id, fixtureId: 'own', status: 'pass' } }),
+    );
+    expect(ownCase.evalRunId).toBe(runA.id);
+
+    // No tenant context at all fails closed, like every other tenant table.
+    await expect(
+      appClient.evalRun.findMany({ where: { id: { in: [runA.id, runB.id] } } }),
+    ).rejects.toThrow(/uuid/);
+  });
+});
+
+describe('mergecrew_system role (DATABASE_SYSTEM_URL)', () => {
+  it('bypasses RLS for cross-tenant reads', async (ctx) => {
+    if (!systemRoleExists) ctx.skip();
+    const orgs = await systemClient.organization.findMany({
+      where: { slug: { in: [ORG_A_SLUG, ORG_B_SLUG] } },
+      select: { slug: true },
+    });
+    expect(orgs.map((o) => o.slug).sort()).toEqual([ORG_A_SLUG, ORG_B_SLUG].sort());
+  });
+
+  it('has DML on tenant tables', async (ctx) => {
+    if (!systemRoleExists) ctx.skip();
+    const r = await systemClient.project.updateMany({
+      where: { id: { in: [projectAId, projectBId] } },
+      data: { description: 'touched by system role' },
+    });
+    expect(r.count).toBe(2);
+  });
+
+  it('is not a superuser and owns no tables', async (ctx) => {
+    if (!systemRoleExists) ctx.skip();
+    const rows = await systemClient.$queryRaw<
+      Array<{ superuser: boolean; bypassrls: boolean; owned: number }>
+    >`
+      select r.rolsuper as superuser,
+             r.rolbypassrls as bypassrls,
+             (select count(*)::int from pg_tables t where t.tableowner = r.rolname) as owned
+        from pg_roles r
+       where r.rolname = current_user`;
+    expect(rows[0]).toEqual({ superuser: false, bypassrls: true, owned: 0 });
+  });
+
+  it('cannot change schema or RLS policies', async (ctx) => {
+    if (!systemRoleExists) ctx.skip();
+    await expect(
+      systemClient.$executeRawUnsafe('alter table eval_runs disable row level security'),
+    ).rejects.toThrow(/owner/);
+    await expect(
+      systemClient.$executeRawUnsafe('drop policy tenant_isolation on projects'),
+    ).rejects.toThrow(/owner/);
+    await expect(
+      systemClient.$executeRawUnsafe('create table rls_test_should_not_exist (id int)'),
+    ).rejects.toThrow(/permission denied/);
   });
 });

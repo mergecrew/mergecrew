@@ -115,14 +115,14 @@ Mergecrew checks the org-level gates at *step entry* so one LLM call can't push 
 - `P1012`: schema.prisma was edited without re-running `prisma generate` — the binary targets in the schema don't match the engines in node_modules.
 
 **Recovery.**
-1. **P1010:** verify `mergecrew_migrator` was created with BYPASSRLS by `infra/sql/init/00-roles.sql`. Re-run that SQL against the DB if the role is missing:
+1. **P1010:** verify `mergecrew_migrator` exists with BYPASSRLS and that migrations actually connect as it (`prisma.config.ts` uses `DATABASE_MIGRATE_URL`, falling back to `DATABASE_URL` only when it is unset). Re-create missing roles as a superuser. Use `infra/sql/init/00-roles.sql` for the dev/compose database (dev passwords) and `infra/sql/native-bootstrap.sql` for a host-installed production Postgres:
    ```sh
-   psql "$DATABASE_URL" -f infra/sql/init/00-roles.sql
+   sudo -u postgres psql -f infra/sql/native-bootstrap.sql
    ```
 2. **P3009:** inspect `_prisma_migrations` — find the row with `finished_at IS NULL`, fix the underlying problem (often a schema constraint violation), then `prisma migrate resolve --applied <migration-name>` from a container with the migrator URL.
 3. **P1012:** rebuild with `prisma generate` baked in (the production Dockerfiles already do this in the build stage).
 
-**Source.** `packages/db/prisma/schema.prisma` (binary targets). Role bootstrap: `infra/sql/init/00-roles.sql`. Migration history: `packages/db/prisma/migrations/`.
+**Source.** `packages/db/prisma/schema.prisma` (binary targets). Role bootstrap: `infra/sql/init/00-roles.sql` (dev), `infra/sql/native-bootstrap.sql` (host Postgres). Migration history: `packages/db/prisma/migrations/`.
 
 ### BullMQ queue depth keeps growing
 <a id="queue-depth-growing"></a>

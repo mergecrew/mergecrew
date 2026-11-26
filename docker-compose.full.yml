@@ -173,6 +173,12 @@ services:
         # executor mediator (the stub executor still surfaces a
         # clear error).
         MERGECREW_INTERNAL_TOKEN: '${MERGECREW_INTERNAL_TOKEN:-}'
+      # prisma.config.ts now prefers DATABASE_MIGRATE_URL (#895). This
+      # trial stack has always migrated as the `mergecrew` superuser
+      # (existing volumes hold superuser-owned tables the migrator could
+      # not ALTER), so keep doing that here. Only this one-shot service
+      # sees the override; runtime services keep the shared env.
+      DATABASE_MIGRATE_URL: postgresql://mergecrew:mergecrew@postgres:5432/mergecrew?schema=public
     networks: [internal]
     depends_on:
       postgres: { condition: service_healthy }

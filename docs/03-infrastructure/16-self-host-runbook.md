@@ -367,21 +367,30 @@ cp .env.example .env
 #   KMS_MASTER_KEY=base64:<32 bytes>       # `openssl rand -base64 32`
 #   MERGECREW_INTERNAL_TOKEN=<32+ chars>   # `openssl rand -hex 32`
 #   GITHUB_APP_* …                         # see the GitHub App setup doc
+#   DATABASE_URL=         # mergecrew_app      (runtime, RLS enforced)
+#   DATABASE_SYSTEM_URL=  # mergecrew_system   (runtime, cross-tenant, DML only) — required
+#   DATABASE_MIGRATE_URL= # mergecrew_migrator (migrate service only)
+#   SKILL_SIGNING_KEY=<32+ chars>          # `openssl rand -hex 32`; required by check-prod-env.sh
+chmod 600 .env
+./scripts/check-prod-env.sh
 ```
+
+Create the three database roles first with `infra/sql/native-bootstrap.sql` (host-installed Postgres; see [`infra/sql/README.md`](../../infra/sql/README.md) and [VM deploy § 6a](19-vm-deploy.md#6a-provision-postgres-roles-host-installed-postgresql)). Keep one `.env`: `docker-compose.prod.yml` hands each service only the variables on its `environment:` allowlist ([VM deploy § 6b](19-vm-deploy.md#6b-environment-layout)).
 
 > **Trust is by org id.** Create your org first, then copy its `organizations.id` into `MERGECREW_OWNER_ORG_ID` and restart the API + orchestrator. Creating or renaming an org to any slug grants nothing.
 
 **5. Boot.**
 
 ```sh
-docker compose -f docker-compose.prod.yml up -d
+./scripts/deploy.sh    # preflight, build, migrate (as mergecrew_migrator), up -d --wait
 ```
 
 **6. Verify.**
 
 | Check | Command | Expected |
 |---|---|---|
-| All services healthy | `docker compose -f docker-compose.prod.yml ps` | every row `healthy` or `running` |
+| All services healthy | `docker compose -f docker-compose.prod.yml ps` | every app row `healthy` (each has a `/healthz` healthcheck) |
+| No migrator creds at runtime | `docker inspect mergecrew-runner --format '{{range .Config.Env}}{{println .}}{{end}}' \| grep DATABASE_` | `DATABASE_URL` + `DATABASE_SYSTEM_URL` only |
 | DooD wiring works | `docker exec mergecrew-runner docker ps` | lists at least `mergecrew-runner` itself |
 | Sandbox driver active | `docker logs mergecrew-runner \| grep -i sandbox` | `sandbox driver: docker (per-run container isolation enabled)` — **not** the multi-line `UNSANDBOXED RUNNER MODE` banner |
 | Orphan sweep ran | same logs | `orphan sweep complete` info entry (zero candidates on a fresh box) |

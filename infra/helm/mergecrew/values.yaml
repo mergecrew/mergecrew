@@ -60,7 +60,8 @@ resources:
 secrets:
   # Required keys in the referenced Secret:
   #   DATABASE_URL
-  #   DATABASE_MIGRATE_URL
+  #   DATABASE_SYSTEM_URL (mergecrew_system role: BYPASSRLS, DML only;
+  #                        required when NODE_ENV=production)
   #   REDIS_URL
   #   KMS_MASTER_KEY      (base64:<32 bytes>)
   #   JWT_SECRET
@@ -71,6 +72,9 @@ secrets:
   #   ANTHROPIC_API_KEY, OPENAI_API_KEY, GITHUB_APP_PRIVATE_KEY,
   #   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
   #   TRANSCRIPT_S3_BUCKET, S3_ENDPOINT_URL
+  #
+  # DATABASE_MIGRATE_URL (the table-owning migrator) is deliberately NOT
+  # injected into any pod. Run `prisma migrate deploy` out of band with it.
   existingSecret: mergecrew-secrets
 
 # Non-secret env (everything else). Lifted into ConfigMap-style env
