@@ -1,7 +1,10 @@
 import { Module } from '@nestjs/common';
-import { GitHubAppController } from './github-app.controller.js';
+import { GitHubAppController, GitHubInstallationController } from './github-app.controller.js';
+import { GitHubInstallationService } from './github-installation.service.js';
 
 @Module({
-  controllers: [GitHubAppController],
+  controllers: [GitHubAppController, GitHubInstallationController],
+  providers: [GitHubInstallationService],
+  exports: [GitHubInstallationService],
 })
 export class IntegrationModule {}

@@ -1,6 +1,12 @@
 export * from './client.js';
 export { effectiveBaseBranch } from './connected-repo.js';
 export {
+  isInstallationBoundToOrg,
+  assertInstallationBoundToOrg,
+  InstallationNotBoundError,
+  type InstallationBindingReader,
+} from './github-installation.js';
+export {
   computeMetricsRollups,
   truncToHour,
   truncToDay,
@@ -43,6 +49,7 @@ export type {
   Membership,
   Project,
   ConnectedRepo,
+  OrgGithubInstallation,
   DeployTarget,
   PromotionStrategy,
   PromoteRun,

@@ -352,6 +352,7 @@ export class GiteaProvider implements VcsProvider {
     body: Buffer,
     secret: string,
   ): Promise<boolean> {
+    if (!secret) return false;
     const sig = headers['x-gitea-signature'] ?? headers['X-Gitea-Signature'];
     if (!sig) return false;
     const expected = crypto.createHmac('sha256', secret).update(body).digest('hex');

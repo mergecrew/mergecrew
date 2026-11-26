@@ -116,17 +116,18 @@ model Organization {
   updatedAt                DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt                DateTime? @map("deleted_at") @db.Timestamptz(6)
 
-  memberships        Membership[]
-  projects           Project[]
-  llmProviders       LlmProvider[]
-  llmProfiles        LlmProfile[]
-  auditEntries       AuditLogEntry[]
-  lifecycleTemplates OrgLifecycleTemplate[]
-  apiKeys            ApiKey[]
-  outboundWebhooks   OutboundWebhook[]
-  alertRoutes        AlertRoute[]
-  runnerProfile      RunnerProfile?
-  runnerAgents       RunnerAgent[]
+  memberships         Membership[]
+  projects            Project[]
+  llmProviders        LlmProvider[]
+  llmProfiles         LlmProfile[]
+  auditEntries        AuditLogEntry[]
+  lifecycleTemplates  OrgLifecycleTemplate[]
+  apiKeys             ApiKey[]
+  outboundWebhooks    OutboundWebhook[]
+  alertRoutes         AlertRoute[]
+  runnerProfile       RunnerProfile?
+  runnerAgents        RunnerAgent[]
+  githubInstallations OrgGithubInstallation[]
 
   @@map("organizations")
 }
@@ -339,6 +340,32 @@ model ConnectedRepo {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@map("connected_repos")
+}
+
+/// Binds a GitHub App installation to the one organization allowed to
+/// use it. Written by the install callback only after GitHub confirms
+/// (via a user-to-server token) that the installing user can access the
+/// installation. `connect-repo`, `installation-repos` and the runner's
+/// token minting all refuse installation ids without a row here for the
+/// caller's org. Unique on `installationId`: an installation belongs to
+/// exactly one org. `suspendedAt` mirrors GitHub's `installation.suspend`
+/// webhook; a suspended binding is treated as unbound.
+model OrgGithubInstallation {
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @map("organization_id") @db.Uuid
+  installationId  String    @unique @map("installation_id")
+  /// GitHub account (user or org login) the App is installed on. NULL
+  /// for rows created by the backfill migration.
+  accountLogin    String?   @map("account_login")
+  createdByUserId String?   @map("created_by_user_id") @db.Uuid
+  suspendedAt     DateTime? @map("suspended_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("org_github_installations")
 }
 
 enum DeployTargetKind {

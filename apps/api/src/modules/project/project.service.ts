@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   AutoPromoteRule,
+  ForbiddenError,
   NotFoundError,
   ValidationError,
   findStockLifecycleTemplate,
@@ -14,6 +15,7 @@ import { CryptoService } from '../../common/crypto.service.js';
 import { TelemetryService } from '../../common/telemetry.service.js';
 import { EventlogService } from '../../common/eventlog.service.js';
 import { defaultConfig } from '@mergecrew/config-yaml';
+import { isInstallationBoundToOrg } from '@mergecrew/db';
 
 const PAUSE_REASON_MAX = 500;
 
@@ -47,6 +49,18 @@ function isPlausibleCron(s: string): boolean {
 // want the simpler 3-agent loop can still pick `generic-careful` or any
 // stack-specific careful template from the picker.
 const DEFAULT_STOCK_TEMPLATE_ID = 'roster';
+
+/**
+ * The `'manual'` placeholder installation (no GitHub App) is a local-dev
+ * convenience only. Outside dev mode every installation id must be bound
+ * to the calling org via the install flow. Same resolution as the web
+ * tier's `isDevAutoLogin()`: MERGECREW_DEV_AUTO_LOGIN wins when set,
+ * otherwise dev mode means NODE_ENV !== 'production'.
+ */
+export function isDevMode(env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = env.MERGECREW_DEV_AUTO_LOGIN ?? (env.NODE_ENV === 'production' ? 'false' : 'true');
+  return raw === 'true';
+}
 
 @Injectable()
 export class ProjectService {
@@ -322,6 +336,13 @@ export class ProjectService {
     // path can coalesce to defaultBranch without a trailing-space gotcha (#469).
     const basePrBranch = input.basePrBranch?.trim() ? input.basePrBranch.trim() : null;
     const project = await this.detail(slug);
+    if (input.installationId === 'manual') {
+      if (!isDevMode()) {
+        throw new ForbiddenError('a GitHub App installation is required to connect a repository');
+      }
+    } else {
+      await this.assertInstallationBound(project.organizationId, input.installationId);
+    }
     const result = await this.prisma.withTenant(project.organizationId, (tx) =>
       tx.connectedRepo.upsert({
         where: { projectId: project.id },
@@ -398,6 +419,7 @@ export class ProjectService {
    * the caller's UI degrades to a free-text input in that case.
    */
   async listInstallationRepos(installationId: string) {
+    const t = this.tenant.require();
     // Lazy-import so the API doesn't pull execa-via-adapters-vcs into the
     // module graph until a request actually needs it.
     const { GitHubProvider, getGitHubAppCredentials } = await import('@mergecrew/adapters-vcs');
@@ -408,8 +430,21 @@ export class ProjectService {
     if (!installationId || !/^\d+$/.test(installationId)) {
       throw new ValidationError('installationId must be a numeric string');
     }
+    await this.assertInstallationBound(t.organizationId, installationId);
     const gh = new GitHubProvider(creds);
     return gh.listInstallationRepos(installationId);
+  }
+
+  /** 403 unless the GitHub App installation is bound to `organizationId`. */
+  private async assertInstallationBound(organizationId: string, installationId: string): Promise<void> {
+    const ok = await this.prisma.withTenant(organizationId, (tx) =>
+      isInstallationBoundToOrg(tx, organizationId, installationId),
+    );
+    if (!ok) {
+      throw new ForbiddenError('GitHub App installation is not connected to this organization', {
+        reason: 'INSTALLATION_NOT_BOUND',
+      });
+    }
   }
 
   async listDeployTargets(slug: string) {
@@ -432,6 +467,12 @@ export class ProjectService {
     config: Record<string, unknown>;
   }) {
     const project = await this.detail(slug);
+    if (input.adapterId === 'github-actions') {
+      // The GitHub Actions adapter mints installation tokens from the
+      // config's own installationId — same binding rule as connect-repo.
+      const installationId = String((input.config as { installationId?: unknown })?.installationId ?? '');
+      await this.assertInstallationBound(project.organizationId, installationId);
+    }
     const result = await this.prisma.withTenant(project.organizationId, (tx) =>
       tx.deployTarget.upsert({
         where: { projectId_kind: { projectId: project.id, kind: input.kind } },

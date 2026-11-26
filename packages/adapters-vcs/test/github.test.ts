@@ -322,6 +322,17 @@ describe('GitHubProvider — conformance (webhooks)', () => {
     expect(ok).toBe(false);
   });
 
+  it('verifyWebhookSignature fails closed when the secret is empty', async () => {
+    const body = Buffer.from('{"hello":"world"}');
+    // Even a signature computed with the empty key must not verify.
+    const ok = await provider.verifyWebhookSignature(
+      { 'x-hub-signature-256': sign(body, '') },
+      body,
+      '',
+    );
+    expect(ok).toBe(false);
+  });
+
   it('parseWebhookEvent extracts pull_request shape', () => {
     const body = Buffer.from(
       JSON.stringify({
@@ -403,5 +414,37 @@ describe('GitHubProvider — GHES base URL (#205)', () => {
     // explicitly when it isn't needed would be drift, so the
     // happy-path code path passes only `auth` here.
     expect(lastCallOpts.baseUrl).toBe('https://api.github.com');
+  });
+});
+
+describe('GitHubProvider — authorizeInstallation hook', () => {
+  it('mints a token when the hook allows the installation', async () => {
+    const seen: string[] = [];
+    const p = new GitHubProvider({
+      appId: '1',
+      privateKey: 'TEST',
+      authorizeInstallation: async (id) => {
+        seen.push(id);
+      },
+    });
+    await expect(p.getInstallationToken('123')).resolves.toBe('gh_test_token');
+    expect(seen).toEqual(['123']);
+  });
+
+  it('refuses every token-backed operation when the hook throws', async () => {
+    const p = new GitHubProvider({
+      appId: '1',
+      privateKey: 'TEST',
+      authorizeInstallation: async (id) => {
+        throw new Error(`installation ${id} not bound`);
+      },
+    });
+    await expect(p.getInstallationToken('999')).rejects.toThrow(/not bound/);
+    await expect(p.listInstallationRepos('999')).rejects.toThrow(/not bound/);
+    await expect(
+      p.listOpenPullRequests(makeRepoRef({ installationId: '999' })),
+    ).rejects.toThrow(/not bound/);
+    expect(kitMock.paginate).not.toHaveBeenCalled();
+    expect(kitMock.pulls.list).not.toHaveBeenCalled();
   });
 });

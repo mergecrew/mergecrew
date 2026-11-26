@@ -32,6 +32,8 @@ GitHub *App* installation:
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/v1/integrations/github/install` | GET | Redirects to GitHub App install. |
+| `/v1/integrations/github/install/callback` | GET | Public GitHub redirect target; verifies the installation with GitHub and issues a short-lived grant. |
+| `/v1/orgs/:slug/github/installations/confirm` | POST | Redeems the install grant (same user + org) and binds the installation to the org. |
 
 ## Organizations
 
@@ -163,12 +165,12 @@ Reconnect protocol: client sends `Last-Event-ID` (the largest event id received)
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/v1/webhooks/github` | POST | GitHub webhook receiver. |
-| `/v1/webhooks/sentry` | POST | Sentry alert receiver. |
-| `/v1/webhooks/linear` | POST | Linear webhook receiver. |
-| `/v1/webhooks/slack/interactivity` | POST | Slack action button responses. |
+| `/v1/webhooks/github` | POST | GitHub webhook receiver (`X-Hub-Signature-256`, secret `GITHUB_APP_WEBHOOK_SECRET`). |
+| `/v1/webhooks/sentry` | POST | Sentry alert receiver (`sentry-hook-signature`, secret `SENTRY_CLIENT_SECRET`). |
+| `/v1/webhooks/linear` | POST | Linear webhook receiver (`linear-signature` + `webhookTimestamp` within 60 s, secret `LINEAR_WEBHOOK_SECRET`). |
+| `/v1/webhooks/slack/interactivity` | POST | Slack action button responses (`x-slack-signature` + 5-min timestamp window, secret `SLACK_SIGNING_SECRET`). |
 
-All inbound webhooks verify signatures and dispatch events into the orchestrator's inbox.
+All inbound webhooks receive the raw request body (for every HTTP method), verify an HMAC-SHA256 signature with a constant-time compare, and dispatch events into the orchestrator's inbox. A receiver whose secret is unset or empty rejects every request with 403.
 
 Outbound webhooks (user-supplied URLs receiving Mergecrew events) are Planned, not implemented.
 
