@@ -359,6 +359,13 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
                         label: input.label,
                         apiKey: input.apiKey || undefined,
                         endpoint: input.endpoint || undefined,
+                        ...(input.kind === 'bedrock'
+                          ? {
+                              awsAccessKeyId: input.awsAccessKeyId,
+                              awsSecretAccessKey: input.awsSecretAccessKey,
+                              awsRegion: input.awsRegion,
+                            }
+                          : {}),
                         capabilityOverrides:
                           input.models.length > 0 ? { models: input.models } : undefined,
                       }),
@@ -379,6 +386,9 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
                         label: input.label,
                         endpoint: input.endpoint,
                         apiKey: input.apiKey,
+                        awsAccessKeyId: input.awsAccessKeyId,
+                        awsSecretAccessKey: input.awsSecretAccessKey,
+                        awsRegion: input.awsRegion,
                         capabilityOverrides:
                           input.models === null ? null : { models: input.models },
                       }),

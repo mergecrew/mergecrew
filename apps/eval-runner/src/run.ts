@@ -18,6 +18,7 @@ import {
   chat,
   estimateUsd,
   priceFor,
+  providerConfigFromRow,
   type ProviderConfig,
 } from '@mergecrew/llm';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
@@ -275,12 +276,8 @@ export async function runEvalsForOrg(
   }
 
   const configs: ProviderConfig[] = providers.map((p) => ({
-    id: p.id,
-    kind: p.kind as any,
-    apiKey: p.credentialCiphertext ? decryptDevOnly(p.credentialCiphertext) : undefined,
-    endpoint: p.endpoint ?? undefined,
-    awsRegion: process.env.BEDROCK_REGION ?? process.env.AWS_REGION ?? 'us-east-1',
-    models: ((p.capabilityOverrides as any)?.models ?? []) as string[],
+    ...providerConfigFromRow(p, decryptDevOnly),
+    capabilityOverrides: undefined,
   }));
   const registry = new ProviderRegistry(configs);
 
@@ -331,12 +328,8 @@ export async function buildOrgRegistry(orgSlug: string): Promise<{
     tx.llmProvider.findMany({ where: { organizationId } }),
   );
   const configs: ProviderConfig[] = providers.map((p) => ({
-    id: p.id,
-    kind: p.kind as any,
-    apiKey: p.credentialCiphertext ? decryptDevOnly(p.credentialCiphertext) : undefined,
-    endpoint: p.endpoint ?? undefined,
-    awsRegion: process.env.BEDROCK_REGION ?? process.env.AWS_REGION ?? 'us-east-1',
-    models: ((p.capabilityOverrides as any)?.models ?? []) as string[],
+    ...providerConfigFromRow(p, decryptDevOnly),
+    capabilityOverrides: undefined,
   }));
   return { organizationId, configs, registry: new ProviderRegistry(configs) };
 }

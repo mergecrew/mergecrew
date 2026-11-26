@@ -93,20 +93,29 @@ async function addLlmProviderAction(formData: FormData) {
     | 'openai'
     | 'bedrock'
     | 'ollama';
-  const apiKey = String(formData.get('apiKey') ?? '').trim();
-  const endpoint = String(formData.get('endpoint') ?? '').trim();
+  const field = (k: string) => String(formData.get(k) ?? '').trim();
+  const apiKey = field('apiKey');
+  const endpoint = field('endpoint');
+  const awsAccessKeyId = field('awsAccessKeyId');
+  const awsSecretAccessKey = field('awsSecretAccessKey');
+  const awsRegion = field('awsRegion');
   if (!slug || !kind) return;
-  // Ollama is the only kind where the operator can skip the API key
-  // (the endpoint URL is the credential).
-  if (kind !== 'ollama' && !apiKey) return;
+  // Ollama: the endpoint URL is the credential. Bedrock: the tenant's own
+  // AWS access key ID + secret + region. Others: an API key.
+  if (kind === 'ollama' && !endpoint) return;
+  if (kind === 'bedrock' && (!awsAccessKeyId || !awsSecretAccessKey || !awsRegion)) return;
+  if ((kind === 'anthropic' || kind === 'openai') && !apiKey) return;
   const session = await requireSession();
   await api(`/v1/orgs/${slug}/llm/providers`, {
     method: 'POST',
     body: JSON.stringify({
       kind,
-      label: kind === 'ollama' ? 'Ollama (local)' : `${kind} (added via wizard)`,
-      ...(apiKey ? { apiKey } : {}),
-      ...(endpoint ? { endpoint } : {}),
+      label: kind === 'ollama' ? 'Ollama' : `${kind} (added via wizard)`,
+      ...(kind === 'bedrock'
+        ? { awsAccessKeyId, awsSecretAccessKey, awsRegion }
+        : kind === 'ollama'
+          ? { endpoint }
+          : { apiKey }),
     }),
     session,
   }).catch(() => undefined);

@@ -1,5 +1,12 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import { withTenant } from '@mergecrew/db';
+import {
+  discardBody,
+  safeFetch,
+  SafeFetchError,
+  UnsafeEgressError,
+  type EgressOptions,
+} from '@mergecrew/net';
 import type { Logger } from 'pino';
 
 /**
@@ -15,6 +22,15 @@ import type { Logger } from 'pino';
  * Signed input: `${t}.${rawJsonBody}` HMAC-SHA-256 with the per-webhook
  * secret. Receivers should reject `t` outside ±5 minutes of `now` to
  * mitigate replay.
+ *
+ * Destination safety: the URL is tenant-supplied, so delivery goes
+ * through `@mergecrew/net` `safeFetch` — private, loopback, link-local,
+ * CGNAT and metadata destinations are refused (unless the operator set
+ * `MERGECREW_ALLOW_PRIVATE_EGRESS=1`), the socket is pinned to the
+ * vetted address, and redirects are NOT followed (a 3xx counts as a
+ * failed delivery). The delivery log records only the HTTP status from
+ * public receivers plus a short generic error code — never upstream
+ * bodies or transport error text.
  */
 export interface OutboundJob {
   webhookId: string;
@@ -25,10 +41,61 @@ export interface OutboundJob {
   deliveryUuid?: string;
 }
 
+/** Generic, user-visible delivery error strings. */
+export const DELIVERY_ERRORS = {
+  blocked: 'destination not allowed',
+  redirect: 'redirect not followed',
+  timeout: 'timeout',
+  network: 'connection failed',
+} as const;
+
+export interface DeliveryDeps {
+  /** Egress overrides (tests). Defaults to the env-derived policy. */
+  egress?: EgressOptions;
+  timeoutMs?: number;
+}
+
+/**
+ * POST one signed payload. Returns the status code (null when no
+ * response was received) and a generic error string (null on 2xx).
+ */
+export async function postWebhook(
+  url: string,
+  headers: Record<string, string>,
+  rawBody: string,
+  deps: DeliveryDeps = {},
+): Promise<{ statusCode: number | null; errorMessage: string | null; detail?: string }> {
+  try {
+    const res = await safeFetch(
+      url,
+      { method: 'POST', headers, body: rawBody, redirect: 'manual' },
+      { ...(deps.egress ?? {}), timeoutMs: deps.timeoutMs ?? 10_000, maxResponseBytes: 64 * 1024 },
+    );
+    await discardBody(res);
+    if (res.status >= 300 && res.status < 400) {
+      return { statusCode: res.status, errorMessage: DELIVERY_ERRORS.redirect };
+    }
+    if (res.status < 200 || res.status >= 300) {
+      return { statusCode: res.status, errorMessage: `non-2xx: ${res.status}` };
+    }
+    return { statusCode: res.status, errorMessage: null };
+  } catch (err) {
+    if (err instanceof UnsafeEgressError) {
+      return { statusCode: null, errorMessage: DELIVERY_ERRORS.blocked, detail: err.reason };
+    }
+    if (err instanceof SafeFetchError && err.code === 'TIMEOUT') {
+      return { statusCode: null, errorMessage: DELIVERY_ERRORS.timeout };
+    }
+    const detail = err instanceof SafeFetchError ? err.code : 'unknown';
+    return { statusCode: null, errorMessage: DELIVERY_ERRORS.network, detail };
+  }
+}
+
 export async function deliverOutboundWebhook(
   job: OutboundJob,
   logger: Logger,
   attempt: number,
+  deps: DeliveryDeps = {},
 ): Promise<void> {
   const webhook = await withTenant(job.organizationId, (tx) =>
     tx.outboundWebhook.findFirst({
@@ -51,28 +118,20 @@ export async function deliverOutboundWebhook(
     .update(`${t}.${rawBody}`)
     .digest('hex');
 
-  let statusCode: number | null = null;
-  let errorMessage: string | null = null;
-
-  try {
-    const res = await fetch(webhook.url, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'X-Mergecrew-Signature': `t=${t},v1=${signature}`,
-        'X-Mergecrew-Event': job.eventType,
-        'X-Mergecrew-Delivery': deliveryUuid,
-        'user-agent': 'Mergecrew-Webhook/1.0',
-      },
-      body: rawBody,
-      signal: AbortSignal.timeout(10_000),
-    });
-    statusCode = res.status;
-    if (!res.ok) {
-      errorMessage = `non-2xx: ${res.status}`;
-    }
-  } catch (err) {
-    errorMessage = err instanceof Error ? err.message : String(err);
+  const { statusCode, errorMessage, detail } = await postWebhook(
+    webhook.url,
+    {
+      'content-type': 'application/json',
+      'X-Mergecrew-Signature': `t=${t},v1=${signature}`,
+      'X-Mergecrew-Event': job.eventType,
+      'X-Mergecrew-Delivery': deliveryUuid,
+      'user-agent': 'Mergecrew-Webhook/1.0',
+    },
+    rawBody,
+    deps,
+  );
+  if (errorMessage && detail) {
+    logger.warn({ webhookId: webhook.id, attempt, reason: detail }, 'webhook delivery refused or failed');
   }
 
   await withTenant(job.organizationId, (tx) =>

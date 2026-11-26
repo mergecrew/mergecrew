@@ -83,6 +83,9 @@ importers:
       '@mergecrew/llm':
         specifier: workspace:*
         version: link:../../packages/llm
+      '@mergecrew/net':
+        specifier: workspace:*
+        version: link:../../packages/net
       '@mergecrew/skills':
         specifier: workspace:*
         version: link:../../packages/skills
@@ -273,6 +276,9 @@ importers:
       '@mergecrew/eventlog':
         specifier: workspace:*
         version: link:../../packages/eventlog
+      '@mergecrew/net':
+        specifier: workspace:*
+        version: link:../../packages/net
       '@mergecrew/telemetry':
         specifier: workspace:*
         version: link:../../packages/telemetry
@@ -860,9 +866,21 @@ importers:
       '@mergecrew/domain':
         specifier: workspace:*
         version: link:../domain
+      '@mergecrew/net':
+        specifier: workspace:*
+        version: link:../net
       '@prisma/client':
         specifier: ^7.8.0
         version: 7.8.0(prisma@7.8.0(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(typescript@5.9.3))(typescript@5.9.3)
+    devDependencies:
+      typescript:
+        specifier: ^5.6.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.1
+        version: 2.1.9(@types/node@25.9.1)(terser@5.47.1)
+
+  packages/net:
     devDependencies:
       typescript:
         specifier: ^5.6.2
@@ -930,6 +948,9 @@ importers:
       '@mergecrew/llm':
         specifier: workspace:*
         version: link:../llm
+      '@mergecrew/net':
+        specifier: workspace:*
+        version: link:../net
       '@mergecrew/sandbox-driver':
         specifier: workspace:*
         version: link:../sandbox-driver
