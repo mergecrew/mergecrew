@@ -70,8 +70,7 @@ class SseClient {
     return new Promise((resolve, reject) => {
       // Bearer auth via fetch isn't possible from EventSource; we use the
       // `eventsource` polyfill semantics by sending Authorization via a
-      // signed cookie in real deployments. In dev, the API also accepts
-      // `x-mergecrew-user-id`. Use whichever the test environment supports.
+      // signed cookie in real deployments.
       // Built-in EventSource accepts no headers, so this script targets
       // dev-mode auth via a query param fallback: pass `?token=` and
       // teach the controller to pick it up. For now, document the

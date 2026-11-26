@@ -45,7 +45,6 @@ export async function GET(
     method: 'GET',
     headers: {
       authorization: `Bearer ${session.jwt}`,
-      'x-mergecrew-user-id': session.userId,
     },
     redirect: 'manual',
     cache: 'no-store',

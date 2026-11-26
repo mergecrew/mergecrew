@@ -56,8 +56,10 @@ async function bootstrap() {
   });
 
   // Tenant middleware: registered as plain Express middleware so the path
-  // matching is reliable. Resolves user from Bearer JWT (or x-mergecrew-user-id
-  // header in dev) and, for org-scoped paths, the membership and role.
+  // matching is reliable. Resolves user from the Bearer JWT only and, for
+  // org-scoped paths, the membership and role. Identity is never taken from a
+  // client-supplied header: an `x-mergecrew-user-id` fallback here let any
+  // caller act as any user whose id they knew.
   const prisma = app.get(PrismaService);
   const jwt = new JwtService({ secret: process.env.JWT_SECRET ?? 'dev-secret' });
 
@@ -141,8 +143,6 @@ async function bootstrap() {
         // fall through
       }
     }
-    const cookieUid = req.headers['x-mergecrew-user-id'];
-    if (!userId && typeof cookieUid === 'string') userId = cookieUid;
     if (!userId) {
       res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'unauthorized' } });
       return;
