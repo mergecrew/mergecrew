@@ -1,7 +1,15 @@
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import type { Logger } from 'pino';
-import type { VcsProvider } from '@mergecrew/adapters-vcs';
+import {
+  assertRepoFullName,
+  assertSafeGitDir,
+  assertValidBranchName,
+  basicAuth,
+  gitEnsureRunBranch,
+  scrubWorkspaceGitCredentials,
+  type VcsProvider,
+} from '@mergecrew/adapters-vcs';
 import type { SandboxDriver, SandboxHandle } from '@mergecrew/sandbox-driver';
 
 /**
@@ -79,14 +87,35 @@ export async function bootstrapWorkspace(args: {
   vcs: VcsProvider | undefined;
   fetchConnectedRepo: () => Promise<ConnectedRepoForBootstrap | null>;
   logger: Logger;
+  /**
+   * Runner-owned branch (`mergecrew/<run-id>`) HEAD is moved onto right
+   * after the clone, before any agent writes. Optional for tests.
+   */
+  runBranch?: string;
 }): Promise<BootstrapResult> {
-  const { workspacePath, vcs, fetchConnectedRepo, logger } = args;
+  const { workspacePath, vcs, fetchConnectedRepo, logger, runBranch } = args;
   const gitDir = path.join(workspacePath, '.git');
   const alreadyCloned = await fs
-    .access(gitDir)
+    .lstat(gitDir)
     .then(() => true)
     .catch(() => false);
-  if (alreadyCloned) return { kind: 'reused' };
+  if (alreadyCloned) {
+    // Workspaces cloned before tokens moved out of remote URLs still
+    // carry one in .git/config — strip it before anything else runs.
+    const scrubbed = await scrubWorkspaceGitCredentials(workspacePath).catch(() => false);
+    if (scrubbed) logger.info({ workspacePath }, 'workspace bootstrap: removed credentials from .git/config');
+    try {
+      await assertSafeGitDir(workspacePath);
+      if (runBranch) await gitEnsureRunBranch(workspacePath, runBranch);
+    } catch (err: any) {
+      return {
+        kind: 'failed',
+        reason: 'clone_failed',
+        message: `workspace git metadata failed validation: ${err?.message ?? String(err)}`,
+      };
+    }
+    return { kind: 'reused' };
+  }
 
   if (!vcs) {
     return {
@@ -122,6 +151,7 @@ export async function bootstrapWorkspace(args: {
       repo.defaultBranch,
       workspacePath,
     );
+    if (runBranch) await gitEnsureRunBranch(workspacePath, runBranch);
     logger.info(
       { workspacePath, repoFullName: repo.repoFullName, branch: repo.defaultBranch },
       'workspace bootstrap: cloned',
@@ -150,10 +180,11 @@ export async function bootstrapWorkspace(args: {
  * keep the existing host-side `bootstrapWorkspace` as the default
  * there because it's well-tested and shaves one round-trip.
  *
- * The supervisor mints a 1-hour installation token via
- * `vcs.getInstallationToken` and bakes it into the clone URL. Token
- * is logged-scrubbed (replaced with `***`) so the runner logs don't
- * leak it.
+ * The supervisor mints a short-lived, read-only installation token
+ * scoped to the connected repository and passes it to this single
+ * `git clone` as a URL-scoped Authorization header via env — never in
+ * the remote URL, argv or `.git/config`. Error output is scrubbed of
+ * the token before it is surfaced.
  */
 export async function bootstrapWorkspaceViaDriver(args: {
   driver: SandboxDriver;
@@ -191,7 +222,12 @@ export async function bootstrapWorkspaceViaDriver(args: {
 
   let token: string;
   try {
-    token = await vcs.getInstallationToken(repo.installationId);
+    // Read-only, single-repo token: the remote agent only clones.
+    token = await vcs.getInstallationToken(repo.installationId, {
+      repoId: repo.repoId ?? undefined,
+      repoFullName: repo.repoFullName,
+      permissions: { contents: 'read', metadata: 'read' },
+    });
   } catch (err) {
     return {
       kind: 'failed',
@@ -200,9 +236,18 @@ export async function bootstrapWorkspaceViaDriver(args: {
         `failed to mint installation token for ${vcs.id}: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
-  // Auth URL for git over HTTPS. GitHub accepts `x-access-token:<token>`
-  // as the basic-auth user/password pair.
-  const repoUrl = `https://x-access-token:${token}@github.com/${repo.repoFullName}.git`;
+  // Credential-free URL; the token travels as a URL-scoped
+  // Authorization header in this one git invocation's env
+  // (GIT_CONFIG_COUNT), so it is never written to .git/config and
+  // never appears in argv.
+  try {
+    assertRepoFullName(repo.repoFullName);
+    assertValidBranchName(repo.defaultBranch);
+  } catch (err) {
+    return { kind: 'failed', reason: 'clone_failed', message: (err as Error).message };
+  }
+  const repoUrl = `https://github.com/${repo.repoFullName}.git`;
+  const auth = basicAuth('https://github.com', 'x-access-token', token);
 
   // Clone into the current workspace dir. `--depth 50` matches the
   // host-side bootstrap; `--branch` pins to the default branch so the
@@ -210,7 +255,27 @@ export async function bootstrapWorkspaceViaDriver(args: {
   const cloneResult = await driver
     .exec(handle, {
       cmd: 'git',
-      args: ['clone', '--depth', '50', '--branch', repo.defaultBranch, repoUrl, '.'],
+      args: [
+        '-c',
+        'core.hooksPath=/dev/null',
+        '-c',
+        'credential.helper=',
+        'clone',
+        '--depth',
+        '50',
+        '--no-recurse-submodules',
+        '--branch',
+        repo.defaultBranch,
+        '--',
+        repoUrl,
+        '.',
+      ],
+      env: {
+        GIT_TERMINAL_PROMPT: '0',
+        GIT_CONFIG_COUNT: '1',
+        GIT_CONFIG_KEY_0: `http.${auth.origin}/.extraheader`,
+        GIT_CONFIG_VALUE_0: `Authorization: ${auth.authorization}`,
+      },
       // Per-call timeout. Most clones land in <60s; allow 5min for
       // large repos. The hard supervisor ceiling on a sandbox op is
       // 15min (server-side), so this is well inside that.
@@ -228,7 +293,12 @@ export async function bootstrapWorkspaceViaDriver(args: {
       kind: 'failed',
       reason: 'clone_failed',
       // Scrub the token before surfacing the error.
-      message: cloneResult.stderr.replace(token, '***').slice(0, 500),
+      message: cloneResult.stderr
+        .split(token)
+        .join('***')
+        .split(auth.authorization)
+        .join('***')
+        .slice(0, 500),
     };
   }
   logger.info(

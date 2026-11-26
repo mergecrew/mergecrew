@@ -7,8 +7,6 @@ import {
   isInstallationBoundToOrg,
   withTenant,
 } from '@mergecrew/db';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import {
   AutoPromoteRule,
   autoPromoteMatches,
@@ -17,6 +15,7 @@ import {
   computeRiskScore,
   parsePackageJsonDiff,
   resolveAgentByRef,
+  ValidationError,
   type AgentDefinition,
   type AutoPromoteRule as AutoPromoteRuleType,
   type BlastRadiusLimits,
@@ -27,7 +26,6 @@ import {
   type TestSummary,
 } from '@mergecrew/domain';
 
-const execFileAsync = promisify(execFile);
 import { parseTestOutput, mergeIntoSummary } from './test-summary.js';
 import { computeRiskChip, type RiskLevel } from './risk-chip.js';
 import { Eventlog } from '@mergecrew/eventlog';
@@ -46,9 +44,15 @@ import {
   buildHttpSkill,
   SkillExecutor,
   buildPolicyEngineFromEnv,
-  HIGH_IMPACT_SKILLS,
+  isHighImpactSkill,
+  isProductionEnv,
+  registerKnownSecret,
+  assertNoSecrets,
+  runBranchName,
   type SkillExecutionContext,
 } from '@mergecrew/skills';
+import { gitStageAllAndList } from '@mergecrew/adapters-vcs';
+import { checkDeployAllowed, getLocalBranchStats, scanChangesetBeforePush } from './git-gates.js';
 import type { SandboxDriver, SandboxHandle } from '@mergecrew/sandbox-driver';
 import { GitHubProvider, getGitHubAppCredentials, type VcsProvider } from '@mergecrew/adapters-vcs';
 import {
@@ -331,32 +335,39 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   // driver.start() and emit a SANDBOX_STARTED timeline event so the
   // bake-report can compare process vs docker cold-start overhead
   // without depending on pino log shipping.
-  const sandboxStartedAt = Date.now();
-  const sandbox: SandboxHandle = await driver.start({
-    runId,
-    projectId,
-    organizationId,
-    workspacePath,
-    image: sandboxImage,
-    resources: sandboxResources,
-    cacheMounts,
-    egressAllowlist: sandboxEgressAllow,
-  });
-  const sandboxColdStartMs = Date.now() - sandboxStartedAt;
-  await eventlog.emit({
-    organizationId,
-    projectId,
-    dailyRunId: runId,
-    workflowRunId,
-    agentStepId: stepId,
-    type: 'SANDBOX_STARTED',
-    actor: { kind: 'system' },
-    payload: {
-      driver: driver.name,
-      image: sandboxImage ?? null,
-      coldStartMs: sandboxColdStartMs,
-    },
-  });
+  //
+  // Host-side bootstrap runs BEFORE the sandbox starts (see below) so
+  // the docker driver can mount the cloned `.git` read-only into the
+  // container from the very first step.
+  const startSandbox = async (): Promise<SandboxHandle> => {
+    const sandboxStartedAt = Date.now();
+    const handle: SandboxHandle = await driver.start({
+      runId,
+      projectId,
+      organizationId,
+      workspacePath,
+      image: sandboxImage,
+      resources: sandboxResources,
+      cacheMounts,
+      egressAllowlist: sandboxEgressAllow,
+    });
+    const sandboxColdStartMs = Date.now() - sandboxStartedAt;
+    await eventlog.emit({
+      organizationId,
+      projectId,
+      dailyRunId: runId,
+      workflowRunId,
+      agentStepId: stepId,
+      type: 'SANDBOX_STARTED',
+      actor: { kind: 'system' },
+      payload: {
+        driver: driver.name,
+        image: sandboxImage ?? null,
+        coldStartMs: sandboxColdStartMs,
+      },
+    });
+    return handle;
+  };
 
   // VCS adapter from env (used by the workspace bootstrap below and by
   // skills that touch the repo).
@@ -407,12 +418,16 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   // is meaningless to the remote agent — clone inside the agent's
   // sandbox via `driver.exec` instead. Stub/demo mode still
   // short-circuits both paths.
+  //
+  // The BYO path needs the sandbox first (it clones through it); the
+  // host path clones first and starts the sandbox afterwards.
+  const earlySandbox = executor === 'agent' ? await startSandbox() : undefined;
   const bootstrap = stubMode
     ? ({ kind: 'reused' } as const)
-    : executor === 'agent'
+    : earlySandbox
       ? await bootstrapWorkspaceViaDriver({
           driver,
-          handle: sandbox,
+          handle: earlySandbox,
           vcs,
           fetchConnectedRepo,
           logger,
@@ -422,8 +437,12 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
           vcs,
           fetchConnectedRepo,
           logger,
+          // Agents never write on the default branch: the runner puts
+          // HEAD on its own `mergecrew/<run-id>` branch right away.
+          runBranch: runBranchName(runId),
         });
   if (bootstrap.kind === 'failed') {
+    if (earlySandbox) await driver.stop(earlySandbox).catch(() => {});
     const failureReason =
       bootstrap.reason === 'clone_failed'
         ? `clone_failed: ${bootstrap.message.slice(0, 500)}`
@@ -453,25 +472,19 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     return { kind: 'failed', reason: bootstrap.reason };
   }
 
-  // Devcontainer build (#570). When the cloned workspace contains
-  // .devcontainer/devcontainer.json, build it into an OCI image and
-  // promote that image to be the sandbox image. Cached on host by
-  // config hash; failures fall back to the explicit runner.image or
-  // the driver's default.
-  const devcontainer = await maybeBuildDevcontainer({ workspacePath, logger }).catch(
+  // Devcontainer build (#570). Disabled unless the operator sets
+  // MERGECREW_ENABLE_DEVCONTAINER_BUILD=1 (it builds tenant Dockerfiles
+  // on the host daemon — unsafe on shared hosts). When enabled, the
+  // image is keyed by org + full build context and, on the host path,
+  // used for this step's sandbox (which starts right below).
+  const devcontainer = await maybeBuildDevcontainer({ workspacePath, organizationId, logger }).catch(
     (err: any) => ({ kind: 'failed' as const, reason: String(err?.message ?? err) }),
   );
   if (devcontainer.kind === 'built' || devcontainer.kind === 'cached') {
     sandboxImage = devcontainer.image;
   }
-  // sandbox already started above with the previous image — for the
-  // devcontainer to actually be the sandbox's image, we'd need to
-  // restart it. In this iteration the build is precomputed so the
-  // NEXT step in the same run uses it; the first step pays the
-  // stock-image cost. A follow-up (small) can move the build hook
-  // before driver.start() once the bootstrap+driver lifecycle is
-  // restructured. For now: log and surface.
-  void sandboxImage;
+
+  const sandbox: SandboxHandle = earlySandbox ?? (await startSandbox());
 
   // Bootstrap project toolchain via mise (#568). No-op when there's
   // no .tool-versions / .mise.toml or when the sentinel matches the
@@ -560,6 +573,8 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
       }),
     );
     const storedToken = tokenRow ? decryptDevOnly(tokenRow.ciphertext) : null;
+    // Decrypted tenant secret: outbound text containing it is refused.
+    registerKnownSecret(storedToken);
     if (trackerTarget.adapterId === 'github-issues') {
       const repoFullName = (trackerTarget.config as any)?.repoFullName ?? '';
       if (repoFullName) {
@@ -572,9 +587,15 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
             tx.connectedRepo.findUnique({ where: { projectId } }),
           );
           if (repo) {
+            // Down-scoped: this repo only, issues + metadata only.
             issuesToken = await vcs
-              .getInstallationToken(repo.installationId)
+              .getInstallationToken(repo.installationId, {
+                repoId: repo.repoId ?? undefined,
+                repoFullName: repo.repoFullName,
+                permissions: { issues: 'write', metadata: 'read' },
+              })
               .catch(() => null);
+            registerKnownSecret(issuesToken);
           }
         }
         if (issuesToken) {
@@ -609,6 +630,7 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     );
     if (tokenRow && errorTarget.adapterId === 'sentry') {
       const token = decryptDevOnly(tokenRow.ciphertext);
+      registerKnownSecret(token);
       const cfg = errorTarget.config as { org?: string; project?: string };
       if (cfg.org && cfg.project) {
         sentryConfig = { token, org: cfg.org, project: cfg.project };
@@ -624,8 +646,10 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   const skillPolicy = buildPolicyEngineFromEnv();
   if (!skillPolicy) {
     logger.warn(
-      { event: 'runner.skill_policy_disabled' },
-      'SKILL_SIGNING_KEY not set — per-agent allowlist + high-impact call-token gates are disabled. Set the key in the supervisor env for production deployments.',
+      { event: 'runner.skill_policy_disabled', failClosed: isProductionEnv() },
+      isProductionEnv()
+        ? 'SKILL_SIGNING_KEY not set in production — high-impact skills (commit, PR, revert, deploy) will be REFUSED until the key is configured.'
+        : 'SKILL_SIGNING_KEY not set — per-agent allowlist + high-impact call-token gates are disabled (non-production only).',
     );
   }
   // Normalize agent skill list to bare names — the AgentDefinition
@@ -659,7 +683,13 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
   const policy = new PolicyEngine({
     agentDoNotTouch: agentDef.do_not_touch,
     projectSensitivePatterns: cfg.lifecycle?.human_gates?.sensitive_path_patterns ?? [],
+    // `.git/**`, `.gitmodules`, `.gitattributes` and `**/.env*` are
+    // built-in hard blocks in the PolicyEngine; CI / Docker / IaC paths
+    // are built-in sensitive (approval) paths.
     projectHardBlocked: ['**/.env*'],
+    // Commit gate on the real staged diff (safe-git), not on the paths
+    // the agent claims to be committing.
+    stagedPathsProvider: () => gitStageAllAndList(workspacePath),
   });
 
   // Per-kind run budget enforcement (#351). When the agentDef declares
@@ -695,10 +725,12 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     // gates are bypassed (back-compat).
     agentKind: agentDef.kind,
     allowedSkills: allowedSkillNames,
-    callToken:
-      skillPolicy && HIGH_IMPACT_SKILLS.has(extra.skillName)
+    callToken: (() => {
+      const def = skills.get(extra.skillName);
+      return skillPolicy && def && isHighImpactSkill(def)
         ? skillPolicy.mintCallToken({ stepId, skill: extra.skillName })
-        : undefined,
+        : undefined;
+    })(),
     logger: {
       info: (m, meta) => logger.info({ ...meta, skillName: extra.skillName }, m),
       warn: (m, meta) => logger.warn({ ...meta, skillName: extra.skillName }, m),
@@ -741,6 +773,23 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
     config: {
       // Per-skill / per-step config bag the runner injects.
       adapterConfig: dt?.config ?? {},
+      // Applied inside `repo.git.commit` after staging, right before the
+      // commit object is written: hard-blocked paths can never be
+      // committed even if something raced the loop-level gate.
+      commitGuard: (paths: string[]) => {
+        const blocked = policy.hardBlockedPaths(paths);
+        if (blocked.length > 0) {
+          throw new ValidationError(`commit refused: hard-blocked paths staged: ${blocked.slice(0, 5).join(', ')}`);
+        }
+      },
+      // `deploy.dev`: same sensitive-path gate as the runner's own
+      // auto-deploy (workflows / CI / Dockerfiles / IaC need a human).
+      deployGuard: async (branch: string) => {
+        const repo = await fetchConnectedRepo();
+        if (!repo) throw new ValidationError('deploy refused: no connected repository');
+        const gate = await checkDeployAllowed({ workspacePath, branch, baseBranch: repo.defaultBranch });
+        if (!gate.ok) throw new ValidationError(`deploy refused: ${gate.message}`);
+      },
       ...(sentryConfig ? { sentry: sentryConfig } : {}),
       // Provider-routed LLM closure for skills that need to think (summarize,
       // draft spec, design review, …). The closure resolves a model that
@@ -1110,6 +1159,9 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
                   ? '\n\n**Requested changes:**\n' +
                     requestedChanges.map((c) => `- ${c}`).join('\n')
                   : '');
+          // Reviewer text is LLM output over tenant content: refuse to
+          // publish it if it carries secret material.
+          assertNoSecrets(reviewBody, 'PR review');
           await vcs.postReview(repoRef, cs.prNumber, {
             event: verdict === 'approve' ? 'approve' : 'request_changes',
             body: reviewBody,
@@ -1550,6 +1602,7 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
       deployTarget: dt,
       eventlog,
       logger,
+      workspacePath,
     });
   }
 
@@ -1576,6 +1629,7 @@ export async function runStep(args: StepArgs): Promise<StepOutcome> {
       deployTarget: dt,
       eventlog,
       logger,
+      workspacePath,
     });
     const dep = await withTenant(organizationId, (tx) =>
       tx.deploy.findFirst({
@@ -1868,8 +1922,46 @@ async function openPendingChangesetPrs(opts: {
         continue;
       }
 
-      await vcs.push(workspacePath, cs.branch);
       const body = buildPrBody(cs);
+      // Outbound secret scan before anything leaves: PR title / body,
+      // branch name and every added line of the diff. Fails closed.
+      const leaks = await scanChangesetBeforePush({
+        workspacePath,
+        branch: cs.branch,
+        baseBranch,
+        title: cs.title,
+        body,
+      });
+      if (leaks.length > 0) {
+        const kinds = [...new Set(leaks.map((l) => l.kind))];
+        await withTenant(organizationId, (tx) =>
+          tx.changeset.update({
+            where: { id: cs.id },
+            data: {
+              status: 'blocked',
+              blockedReason: { kind: 'outbound_secret', kinds, locations: [...new Set(leaks.map((l) => l.location))] } as any,
+              updatedAt: new Date(),
+            },
+          }),
+        );
+        await eventlog.emit({
+          organizationId,
+          projectId,
+          dailyRunId: runId,
+          workflowRunId,
+          changesetId: cs.id,
+          type: 'CHANGESET_FLAGGED',
+          actor: { kind: 'system' },
+          payload: { reason: 'outbound_secret', kinds },
+        });
+        logger.warn({ changesetId: cs.id, kinds }, 'outbound secret scan: blocking changeset; skipping push');
+        continue;
+      }
+      // Explicit refspec to `mergecrew/…` only; the base / default branch
+      // and protected names are refused; auth is per invocation.
+      await vcs.push(workspacePath, cs.branch, repoRef, {
+        protectedBranches: [baseBranch, repo.defaultBranch],
+      });
       const pr = await vcs.openPullRequest(repoRef, {
         head: cs.branch,
         base: baseBranch,
@@ -2130,8 +2222,16 @@ async function triggerPendingDevDeploys(opts: {
   deployTarget: { id: string; kind: string; adapterId: string; config: unknown };
   eventlog: Eventlog;
   logger: Logger;
+  /** Host workspace, for the sensitive-path diff gate. */
+  workspacePath: string;
 }): Promise<void> {
-  const { organizationId, projectId, runId, workflowRunId, deploy, deployTarget, eventlog, logger } = opts;
+  const { organizationId, projectId, runId, workflowRunId, deploy, deployTarget, eventlog, logger, workspacePath } = opts;
+
+  const connected = await withTenant(organizationId, (tx) =>
+    tx.connectedRepo.findUnique({ where: { projectId } }),
+  );
+  if (!connected) return;
+  const baseBranch = effectiveBaseBranch(connected);
 
   const changesets = await withTenant(organizationId, (tx) =>
     tx.changeset.findMany({
@@ -2155,6 +2255,29 @@ async function triggerPendingDevDeploys(opts: {
   for (const cs of changesets) {
     const correlationId = `${cs.id}-${Date.now()}`;
     try {
+      // Auto-dispatch only from a runner-owned branch whose diff does
+      // not touch CI / deploy workflows, Dockerfiles or IaC: otherwise
+      // the dispatched workflow would run agent-written pipeline code
+      // with the tenant's deploy secrets. Such changesets wait for a
+      // human. Fails closed when the diff can't be computed.
+      const gate = await checkDeployAllowed({ workspacePath, branch: cs.branch, baseBranch });
+      if (!gate.ok) {
+        await eventlog.emit({
+          organizationId,
+          projectId,
+          dailyRunId: runId,
+          workflowRunId,
+          changesetId: cs.id,
+          type: 'CHANGESET_FLAGGED',
+          actor: { kind: 'system' },
+          payload: { reason: 'deploy_blocked', gate: gate.reason, paths: gate.paths ?? [] },
+        });
+        logger.warn(
+          { changesetId: cs.id, gate: gate.reason, paths: gate.paths },
+          'auto-deploy-dev: blocked by deploy gate; leaving changeset for a human',
+        );
+        continue;
+      }
       const handle = await deploy.triggerDeploy(targetRef, {
         ref: cs.branch,
         branch: cs.branch,
@@ -2360,43 +2483,6 @@ async function loadRiskScoreConfig(
       ? (row.sensitivePaths as string[])
       : ['**/config/**', '**/auth/**', '**/*.sql'],
   };
-}
-
-/**
- * `git diff --numstat origin/<defaultBranch>...<branch>` in the runner's
- * workspace. Returns per-file additions + deletions for blast-radius
- * accounting. Empty array when the branch hasn't diverged.
- */
-async function getLocalBranchStats(
-  workspacePath: string,
-  branch: string,
-  defaultBranch: string,
-): Promise<{ path: string; additions: number; deletions: number }[]> {
-  try {
-    const { stdout } = await execFileAsync(
-      'git',
-      ['diff', '--numstat', `origin/${defaultBranch}...${branch}`],
-      { cwd: workspacePath, maxBuffer: 10 * 1024 * 1024 },
-    );
-    return stdout
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const [add, del, ...pathParts] = line.split(/\s+/);
-        // Binary files render as "-\t-\t<path>" in numstat; count those
-        // as 0 additions/deletions so they only trip the file-count cap.
-        const additions = add === '-' ? 0 : Number(add) || 0;
-        const deletions = del === '-' ? 0 : Number(del) || 0;
-        return { path: pathParts.join(' '), additions, deletions };
-      })
-      .filter((f) => f.path);
-  } catch {
-    // Best-effort: a git failure (e.g. missing default branch ref)
-    // should NOT block the push — the human-gate downstream is still
-    // there. Returning [] makes the blast-radius check pass through.
-    return [];
-  }
 }
 
 async function checkDailyBudget(

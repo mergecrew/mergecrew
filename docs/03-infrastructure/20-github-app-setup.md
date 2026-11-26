@@ -64,7 +64,15 @@ Set under **Permissions → Repository permissions**.
 | Issues | Read & write |
 | Metadata | Read-only (auto-set) |
 | Pull requests | Read & write |
-| Workflows | Read & write — so the agents can author `.github/workflows/*.yml` |
+| Workflows | **Not required — leave at "No access".** The runner never requests it, so agent pushes that modify `.github/workflows/*` are rejected by GitHub. |
+
+Mergecrew mints a fresh installation token per operation, scoped with
+`repository_ids` to the connected repository only and with the minimum
+permissions that operation needs (e.g. `contents: read` for clone,
+`contents: write` for push, `pull_requests: write` for PRs). The App
+permissions above are the ceiling; individual tokens never carry more.
+Tokens are passed to git per invocation and are never written into the
+workspace's `.git/config`.
 
 **Organization permissions** — none required for basic install.
 
