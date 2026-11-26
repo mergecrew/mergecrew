@@ -43,6 +43,20 @@
         ]
       }
     },
+    "/v1/auth/logout": {
+      "post": {
+        "operationId": "AuthController_logout",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
     "/v1/orgs": {
       "get": {
         "operationId": "OrgController_list",
@@ -370,6 +384,76 @@
         },
         "tags": [
           "RunnerProfile"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/invitations": {
+      "get": {
+        "operationId": "OrgInvitationController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OrgInvitation"
+        ]
+      }
+    },
+    "/v1/orgs/{slug}/invitations/{id}": {
+      "delete": {
+        "operationId": "OrgInvitationController_revoke",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "OrgInvitation"
+        ]
+      }
+    },
+    "/v1/me/invitations": {
+      "get": {
+        "operationId": "MyInvitationController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "MyInvitation"
+        ]
+      }
+    },
+    "/v1/me/invitations/{id}/accept": {
+      "post": {
+        "operationId": "MyInvitationController_accept",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "MyInvitation"
+        ]
+      }
+    },
+    "/v1/me/invitations/{id}/decline": {
+      "post": {
+        "operationId": "MyInvitationController_decline",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "MyInvitation"
         ]
       }
     },

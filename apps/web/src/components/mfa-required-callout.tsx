@@ -2,10 +2,10 @@ import { LinkButton } from '@/components/ui';
 
 /**
  * Passive nudge shown on admin/owner pages when the caller hasn't
- * enrolled in MFA. The API doesn't enforce MFA on writes (see
- * `apps/api/src/common/role.guard.ts`) — this is a recommendation, not
- * a gate. Renders inline; the page below it works whether the user
- * follows the link or ignores it.
+ * enrolled in MFA. Enrolment is a recommendation, not a gate; once a
+ * user enrols, the API requires a recent TOTP challenge for admin/owner
+ * writes (see `apps/api/src/common/role.guard.ts`). Renders inline; the
+ * page below it works whether the user follows the link or ignores it.
  *
  * The component is named `MfaRequiredCallout` for backwards-compat with
  * existing imports; the copy is "recommended" because that's what the

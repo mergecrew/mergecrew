@@ -154,6 +154,12 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
       () => ({ items: [] }) as AlertRoutesResponse,
     ),
   ]);
+  // Pending invitations are admin-only; skip the call for everyone else.
+  const invitations = canEdit
+    ? await api<{ items: unknown[] }>(`/v1/orgs/${slug}/invitations`, { session }).catch(() => ({
+        items: [] as unknown[],
+      }))
+    : { items: [] as unknown[] };
   // Runner profile kind drives sidebar + section visibility (#844).
   // Agent tokens (mca_…) only apply when kind=agent; hiding the nav
   // for the other kinds removes the "what is this even for?" papercut.
@@ -286,13 +292,27 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ sl
           id="members"
           anchor="ORG · 002"
           title="Members"
-          desc="Org-level membership. Each project then has its own member subset and roles. Invite an existing Mergecrew user by email; pending invitations for new signups are tracked separately."
+          desc="Org-level membership. Each project then has its own member subset and roles. Invite anyone by email; they join after signing in with that address and accepting the invitation."
         >
           <MembersSection
             members={members.items as any}
+            invitations={invitations.items as any}
             canEdit={canEdit}
             currentUserId={session.userId ?? null}
             actions={{
+              revokeInvitation: async (id) => {
+                'use server';
+                try {
+                  await api(`/v1/orgs/${slug}/invitations/${id}`, {
+                    method: 'DELETE',
+                    session: await requireSession(),
+                  });
+                  revalidatePath(`/orgs/${slug}/settings`);
+                  return { ok: true } as const;
+                } catch (e: any) {
+                  return { ok: false, error: String(e?.message ?? e) } as const;
+                }
+              },
               invite: async (input) => {
                 'use server';
                 try {

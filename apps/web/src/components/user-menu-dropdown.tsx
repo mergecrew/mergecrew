@@ -135,6 +135,13 @@ export function UserMenuDropdown({
             >
               Two-factor + sessions
             </Link>
+            <Link
+              href="/account/invitations"
+              onClick={() => setOpen(false)}
+              className="block px-4 py-[7px] text-[13px] text-ink-2 no-underline hover:bg-paper-2 hover:text-ink"
+            >
+              Invitations
+            </Link>
             {currentOrgSlug && (
               <Link
                 href={`/orgs/${currentOrgSlug}/settings`}

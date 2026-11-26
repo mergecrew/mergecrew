@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { getSession } from '@/lib/session';
+import { getPendingMfa, getSession } from '@/lib/session';
 import { api } from '@/lib/api';
 import { PreOrgNav } from '@/components/pre-org-nav';
 import { CreateOrgForm } from '@/components/create-org-form';
@@ -16,7 +16,11 @@ import { Footer } from '@/components/landing/footer';
 
 export default async function RootPage() {
   const session = await getSession();
-  if (!session) return <Landing />;
+  if (!session) {
+    // OAuth / magic-link sign-in that still owes the TOTP challenge.
+    if (await getPendingMfa()) redirect('/login/mfa');
+    return <Landing />;
+  }
 
   let orgs: { items: Array<{ slug: string; name: string }> } = { items: [] };
   try {
@@ -26,7 +30,15 @@ export default async function RootPage() {
   }
 
   const firstSlug = orgs.items[0]?.slug;
-  if (!firstSlug) return <NewOrgFlow />;
+  if (!firstSlug) {
+    // No orgs yet but someone invited this address: offer the invitation
+    // before the create-org flow.
+    const invites = await api<{ items: unknown[] }>('/v1/me/invitations', { session }).catch(() => ({
+      items: [] as unknown[],
+    }));
+    if (invites.items.length > 0) redirect('/account/invitations');
+    return <NewOrgFlow />;
+  }
   redirect(`/orgs/${firstSlug}`);
 }
 

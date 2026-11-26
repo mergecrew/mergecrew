@@ -17,9 +17,15 @@ export interface UserContext {
    * Last successful MFA challenge timestamp from the JWT's `mfa_at` claim.
    * Undefined when the session was minted without an MFA step. RoleGuard's
    * MFA gate (#107) requires this within a 15-minute window for admin/owner
-   * routes when the user is enrolled.
+   * write routes when the user is enrolled.
    */
   mfaChallengedAt?: Date;
+  /**
+   * Whether the user has a confirmed MFA enrolment. Stamped by the auth
+   * middleware from the user row; RoleGuard only applies the freshness
+   * gate to enrolled users.
+   */
+  mfaEnrolled?: boolean;
   /**
    * Set when the request authenticated via an API key (`mc_*` bearer) rather
    * than a user JWT. RoleGuard skips the per-request MFA freshness gate in

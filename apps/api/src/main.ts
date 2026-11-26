@@ -5,6 +5,7 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule } from '@nestjs/swagger';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { JwtService } from '@nestjs/jwt';
 import { AppModule } from './app.module.js';
 import { buildOpenApiDocumentConfig } from './openapi-config.js';
@@ -12,6 +13,8 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 import { PrismaService } from './common/prisma.service.js';
 import { stampUserContextOnRequest } from './common/tenant-context.service.js';
 import { API_KEY_PREFIX, hashToken } from './modules/api-key/api-key.service.js';
+import { assertProductionSecrets, jwtSecret } from './common/secrets.js';
+import { checkSessionToken, isMfaChallengeRoute } from './common/session-token.js';
 import {
   httpRequestDurationSeconds,
   httpRequestsTotal,
@@ -20,9 +23,16 @@ import {
 import type { Request, Response, NextFunction } from 'express';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
+  // Fail closed before anything else: no production boot with missing or
+  // publicly known JWT / BFF / KMS secrets.
+  assertProductionSecrets();
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false,
   });
+  // Caddy is the single reverse proxy in front of the API (and the web BFF
+  // forwards the browser's address on its server-side calls), so trust
+  // exactly one hop: req.ip is then the real client for rate limiting.
+  app.set('trust proxy', 1);
 
   // Metrics: initialize registry + default node/process collectors. The
   // request-timing middleware below feeds the per-route histogram +
@@ -61,7 +71,7 @@ async function bootstrap() {
   // client-supplied header: an `x-mergecrew-user-id` fallback here let any
   // caller act as any user whose id they knew.
   const prisma = app.get(PrismaService);
-  const jwt = new JwtService({ secret: process.env.JWT_SECRET ?? 'dev-secret' });
+  const jwt = new JwtService({ secret: jwtSecret() });
 
   app.use(async (req: Request, res: Response, next: NextFunction) => {
     // Routes requiring an authenticated user but not necessarily a tenant:
@@ -130,28 +140,36 @@ async function bootstrap() {
       }
     }
 
-    let userId: string | undefined;
-    let mfaChallengedAt: Date | undefined;
-    if (bearer) {
-      try {
-        const decoded = jwt.verify<{ sub: string; mfa_at?: number }>(bearer);
-        userId = decoded.sub;
-        if (typeof decoded.mfa_at === 'number') {
-          mfaChallengedAt = new Date(decoded.mfa_at * 1000);
-        }
-      } catch {
-        // fall through
-      }
-    }
-    if (!userId) {
-      res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'unauthorized' } });
+    // Signature, revocation (token version), and MFA-completion checks
+    // live in common/session-token.ts so whoami applies the same rules.
+    let session;
+    try {
+      session = await checkSessionToken({
+        jwt,
+        token: bearer,
+        allowMfaPending: isMfaChallengeRoute(req.method, req.path),
+        loadUser: (id) =>
+          prisma.withSystem((tx) =>
+            tx.user.findUnique({
+              where: { id },
+              select: { tokenVersion: true, mfaEnrolledAt: true },
+            }),
+          ),
+      });
+    } catch (err) {
+      next(err);
       return;
     }
+    if (!session.ok) {
+      res.status(401).json({ error: { code: session.code, message: session.message } });
+      return;
+    }
+    const { userId, mfaChallengedAt, mfaEnrolled } = session;
 
     const m = req.path.match(/^\/v1\/orgs\/([^/]+)/);
     if (!m) {
       // /v1/me/* (or any other user-only route).
-      stampUserContextOnRequest(req, { userId, mfaChallengedAt });
+      stampUserContextOnRequest(req, { userId, mfaChallengedAt, mfaEnrolled });
       next();
       return;
     }
@@ -174,6 +192,7 @@ async function bootstrap() {
       stampUserContextOnRequest(req, {
         userId,
         mfaChallengedAt,
+        mfaEnrolled,
         tenant: {
           organizationId: org.id,
           organizationSlug: org.slug,

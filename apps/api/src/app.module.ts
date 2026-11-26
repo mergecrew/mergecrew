@@ -1,4 +1,5 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { applyBodyParsers } from './common/body-parsers.js';
@@ -26,6 +27,7 @@ import { OutboundWebhookModule } from './modules/outbound-webhook/outbound-webho
 import { MagicLinkModule } from './modules/magic-link/magic-link.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { EvalModule } from './modules/eval/eval.module.js';
+import { AppThrottlerGuard } from './common/throttle.js';
 
 @Module({
   imports: [
@@ -56,6 +58,9 @@ import { EvalModule } from './modules/eval/eval.module.js';
     HealthModule,
     EvalModule,
   ],
+  // Rate limiting applies to every route (defaults above); auth routes
+  // tighten it with @Throttle. See common/throttle.ts.
+  providers: [{ provide: APP_GUARD, useClass: AppThrottlerGuard }],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

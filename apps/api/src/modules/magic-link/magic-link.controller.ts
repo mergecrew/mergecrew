@@ -1,6 +1,8 @@
 import { Body, Controller, HttpCode, Post } from '@nestjs/common';
 import { IsString, IsEmail, IsOptional, MaxLength } from 'class-validator';
+import { Throttle } from '@nestjs/throttler';
 import { MagicLinkService } from './magic-link.service.js';
+import { AUTH_STRICT_THROTTLE, MAGIC_LINK_REQUEST_THROTTLE } from '../../common/throttle.js';
 
 class RequestDto {
   @IsEmail()
@@ -36,6 +38,7 @@ export class MagicLinkController {
 
   @Post('request')
   @HttpCode(200)
+  @Throttle(MAGIC_LINK_REQUEST_THROTTLE)
   async request(@Body() body: RequestDto) {
     await this.magicLink.request({ email: body.email });
     // Always 200 — never reveal whether an account exists.
@@ -44,6 +47,7 @@ export class MagicLinkController {
 
   @Post('verify')
   @HttpCode(200)
+  @Throttle(AUTH_STRICT_THROTTLE)
   async verify(@Body() body: VerifyDto) {
     return this.magicLink.verify(body);
   }

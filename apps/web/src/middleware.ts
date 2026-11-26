@@ -1,5 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { JWT_OVERRIDE_COOKIE, USER_OVERRIDE_COOKIE } from '@/lib/session';
+import {
+  JWT_OVERRIDE_COOKIE,
+  MFA_PENDING_COOKIE,
+  USER_OVERRIDE_COOKIE,
+  clientIpFromHeaders,
+} from '@/lib/auth-cookies';
 
 const API_BASE = process.env.API_BASE_URL ?? 'http://localhost:4000';
 
@@ -21,10 +26,15 @@ export async function middleware(req: NextRequest) {
   const jwt = req.cookies.get(JWT_OVERRIDE_COOKIE)?.value;
   if (!jwt) return NextResponse.next();
 
+  const ip = clientIpFromHeaders(req.headers);
   try {
     const r = await fetch(`${API_BASE}/v1/auth/whoami`, {
       method: 'GET',
-      headers: { authorization: `Bearer ${jwt}` },
+      headers: {
+        authorization: `Bearer ${jwt}`,
+        // Key the API's per-IP rate limit on the browser, not this tier.
+        ...(ip ? { 'x-forwarded-for': ip } : {}),
+      },
       cache: 'no-store',
     });
     if (r.status === 401) {
@@ -35,15 +45,26 @@ export async function middleware(req: NextRequest) {
       // mergecrew_jwt stale typically also leaves a half-consumed
       // pkce_code_verifier behind, which surfaces as `[auth][error]
       // InvalidCheck` on the next OAuth attempt.
-      const stale = [JWT_OVERRIDE_COOKIE, USER_OVERRIDE_COOKIE];
+      // Also covers revoked (signed-out) sessions: the API answers 401
+      // SESSION_REVOKED for a JWT whose token version was bumped.
+      const stale = [JWT_OVERRIDE_COOKIE, USER_OVERRIDE_COOKIE, MFA_PENDING_COOKIE];
       for (const c of req.cookies.getAll()) {
-        if (c.name.startsWith('next-auth.') || c.name.startsWith('__Secure-next-auth.')) {
+        if (
+          c.name.startsWith('next-auth.') ||
+          c.name.startsWith('__Secure-next-auth.') ||
+          c.name.startsWith('authjs.') ||
+          c.name.startsWith('__Secure-authjs.') ||
+          c.name.startsWith('__Host-authjs.')
+        ) {
           stale.push(c.name);
         }
       }
       for (const name of stale) req.cookies.delete(name);
       const res = NextResponse.next({ request: req });
-      for (const name of stale) res.cookies.set(name, '', { path: '/', maxAge: 0 });
+      for (const name of stale) {
+        // `__Secure-` / `__Host-` cookies can only be overwritten with Secure set.
+        res.cookies.set(name, '', { path: '/', maxAge: 0, ...(name.startsWith('__') ? { secure: true } : {}) });
+      }
       return res;
     }
   } catch {

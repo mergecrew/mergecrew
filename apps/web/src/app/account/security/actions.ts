@@ -4,23 +4,18 @@ import { cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { api } from '@/lib/api';
 import { JWT_OVERRIDE_COOKIE, requireSession } from '@/lib/session';
-
-const JWT_COOKIE_OPTS = {
-  path: '/',
-  httpOnly: true,
-  sameSite: 'lax' as const,
-  // Mirror the API JWT TTL (signOptions.expiresIn = '14d' on AuthModule).
-  maxAge: 60 * 60 * 24 * 14,
-};
+import { SESSION_MAX_AGE_S, cookieOpts } from '@/lib/auth-cookies';
+import { requestUsesSecureCookies } from '@/lib/server-cookies';
 
 async function setJwtOverride(token: string): Promise<void> {
   const c = await cookies();
-  c.set(JWT_OVERRIDE_COOKIE, token, JWT_COOKIE_OPTS);
+  // Secure whenever the public origin is https (or in production).
+  c.set(JWT_OVERRIDE_COOKIE, token, cookieOpts(SESSION_MAX_AGE_S, await requestUsesSecureCookies()));
 }
 
 async function clearJwtOverride(): Promise<void> {
   const c = await cookies();
-  c.set(JWT_OVERRIDE_COOKIE, '', { ...JWT_COOKIE_OPTS, maxAge: 0 });
+  c.set(JWT_OVERRIDE_COOKIE, '', cookieOpts(0, await requestUsesSecureCookies()));
 }
 
 export interface MfaSetupResult {
@@ -35,13 +30,19 @@ export interface MfaActionError {
 }
 
 export async function startSetup(
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; code?: string } = {},
 ): Promise<MfaSetupResult | MfaActionError> {
   try {
     const session = await requireSession();
+    // `code` (current TOTP or recovery code) is required by the API when
+    // the account is already enrolled, i.e. for re-enrolment.
     const r = await api<{ otpauthUrl: string; secret: string }>(
       '/v1/me/mfa/setup',
-      { method: 'POST', body: JSON.stringify({ force: !!opts.force }), session },
+      {
+        method: 'POST',
+        body: JSON.stringify({ force: !!opts.force, ...(opts.code ? { code: opts.code } : {}) }),
+        session,
+      },
     );
     // Render the QR server-side so the client just gets a data URL — keeps
     // the 'qrcode' lib out of the bundled client JS.

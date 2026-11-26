@@ -3,10 +3,17 @@ import { Injectable } from '@nestjs/common';
 import { ValidationError } from '@mergecrew/domain';
 import { EmailClient, emailConfigFromEnv } from '@mergecrew/adapters-comms';
 import { PrismaService } from '../../common/prisma.service.js';
-import { AuthService } from '../auth/auth.service.js';
+import { AuthService, type LoginResult } from '../auth/auth.service.js';
 
 const TOKEN_BYTES = 32;
 const TOKEN_TTL_MS = 15 * 60 * 1000;
+/**
+ * Minimum gap between two emails to the same address. A request inside the
+ * window is accepted (same 200 response, nothing revealed) but no new token
+ * is minted and no email is sent — caps mailbox flooding per address
+ * regardless of how many client IPs the requests come from.
+ */
+export const PER_EMAIL_COOLDOWN_MS = 60 * 1000;
 
 function hashToken(t: string): string {
   return createHash('sha256').update(t).digest('hex');
@@ -52,16 +59,27 @@ export class MagicLinkService {
       throw new ValidationError('invalid email');
     }
     const token = randomBytes(TOKEN_BYTES).toString('base64url');
-    const expires = new Date(Date.now() + TOKEN_TTL_MS);
+    const now = Date.now();
+    const expires = new Date(now + TOKEN_TTL_MS);
 
-    await this.prisma.withSystem(async (tx) => {
+    const minted = await this.prisma.withSystem(async (tx) => {
+      // Per-address cooldown: tokens are minted with expires = now + TTL,
+      // so a token expiring after (now + TTL - cooldown) was issued within
+      // the cooldown window.
+      const recent = await tx.authVerificationToken.findFirst({
+        where: { identifier: email, expires: { gt: new Date(now + TOKEN_TTL_MS - PER_EMAIL_COOLDOWN_MS) } },
+        select: { identifier: true },
+      });
+      if (recent) return false;
       // One pending token per identifier; clear any previous so an old
       // outstanding link can't be replayed after a new request.
       await tx.authVerificationToken.deleteMany({ where: { identifier: email } });
       await tx.authVerificationToken.create({
         data: { identifier: email, token: hashToken(token), expires },
       });
+      return true;
     });
+    if (!minted) return;
 
     const link = `${magicLinkCallbackUrl()}?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
     const subject = 'Your Mergecrew sign-in link';
@@ -72,13 +90,11 @@ export class MagicLinkService {
   /**
    * Verify and consume a token. Returns a Mergecrew session JWT on success
    * along with the issued user's profile so the BFF can stamp it into its
-   * session cookie without a follow-up round-trip.
+   * session cookie without a follow-up round-trip — or, for MFA-enrolled
+   * users, `{ mfaRequired, mfaToken }` (see AuthService.issueLogin).
    * Throws ValidationError on missing / expired / mismatched token.
    */
-  async verify(input: { email: string; token: string }): Promise<{
-    token: string;
-    user: { id: string; email: string; name: string | null };
-  }> {
+  async verify(input: { email: string; token: string }): Promise<LoginResult> {
     const email = input.email.trim().toLowerCase();
     if (!email || !input.token) throw new ValidationError('missing email or token');
     const expectedHash = hashToken(input.token);
@@ -105,9 +121,10 @@ export class MagicLinkService {
       tx.authVerificationToken.deleteMany({ where: { identifier: email } }),
     );
 
+    // MFA-enrolled users get a pre-MFA token instead of a session; the
+    // BFF then routes them to the TOTP challenge.
     const user = await this.auth.findOrCreateByEmail(email);
-    const jwt = this.auth.signSessionJwt(user.id);
-    return { token: jwt, user: { id: user.id, email: user.email, name: user.name } };
+    return this.auth.issueLogin(user);
   }
 }
 

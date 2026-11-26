@@ -1,27 +1,30 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { JWT_OVERRIDE_COOKIE, SIGNED_OUT_COOKIE, USER_OVERRIDE_COOKIE } from '@/lib/session';
 import { publicOrigin } from '@/lib/public-origin';
-
-const API_BASE = process.env.API_BASE_URL ?? 'http://localhost:4000';
-
-const COOKIE_OPTS = {
-  path: '/',
-  httpOnly: true,
-  sameSite: 'lax' as const,
-  // Mirror the API JWT TTL (signOptions.expiresIn = '14d' on AuthModule).
-  maxAge: 60 * 60 * 24 * 14,
-};
+import {
+  MAGIC_LINK_STATE_COOKIE,
+  clientIpFromHeaders,
+  magicLinkMarkerMatches,
+  shouldUseSecureCookies,
+} from '@/lib/auth-cookies';
+import { loginCookieWrites, postLoginPath } from '@/lib/login-cookies';
+import { verifyMagicLink } from '@/lib/magic-link';
 
 /**
  * Magic-link callback (#1). The email contains a link to
- * /api/auth/magic-link?token=…&email=…. We POST to the API's verify
- * endpoint, which consumes the one-time token and returns a fresh
- * Mergecrew session JWT. We set that JWT as the override cookie so
- * `getSession()` sees a real signed-in user.
+ * /api/auth/magic-link?token=…&email=….
  *
- * The API endpoint is single-use: replays return 400. On error we
- * redirect to /login with an error query, never expose the API
- * response body to the client.
+ * The link only signs this browser in directly when it carries the
+ * same-browser marker cookie set when the link was requested for that
+ * email. Otherwise (a link opened on another device, or one minted for
+ * a different account) the user is sent to /login/confirm, which shows
+ * the account and requires an explicit, same-origin confirmation before
+ * the token is consumed.
+ *
+ * On success we set the API session JWT as the override cookie, or — for
+ * MFA-enrolled users — the short-lived pre-MFA cookie and redirect to the
+ * TOTP challenge. The API endpoint is single-use: replays return 400. On
+ * error we redirect to /login with an error query, never exposing the
+ * API response body to the client.
  */
 export async function GET(req: NextRequest) {
   const u = new URL(req.url);
@@ -33,29 +36,24 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL('/login?error=missing_token', origin));
   }
 
-  try {
-    const r = await fetch(`${API_BASE}/v1/auth/magic-link/verify`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, token }),
-      cache: 'no-store',
-    });
-    if (!r.ok) {
-      return NextResponse.redirect(new URL('/login?error=invalid_or_expired', origin));
-    }
-    const j = (await r.json()) as {
-      token: string;
-      user: { id: string; email: string; name: string | null };
-    };
-
-    const res = NextResponse.redirect(new URL('/', origin));
-    res.cookies.set(JWT_OVERRIDE_COOKIE, j.token, COOKIE_OPTS);
-    res.cookies.set(USER_OVERRIDE_COOKIE, JSON.stringify(j.user), COOKIE_OPTS);
-    // Clear the manual sign-out cookie if present, so devs hopping between
-    // login states don't get bounced back to a "Signed out" screen.
-    res.cookies.set(SIGNED_OUT_COOKIE, '', { ...COOKIE_OPTS, maxAge: 0 });
-    return res;
-  } catch {
-    return NextResponse.redirect(new URL('/login?error=verify_failed', origin));
+  if (!magicLinkMarkerMatches(req.cookies.get(MAGIC_LINK_STATE_COOKIE)?.value, email)) {
+    const confirm = new URL('/login/confirm', origin);
+    confirm.searchParams.set('email', email);
+    confirm.searchParams.set('token', token);
+    return NextResponse.redirect(confirm);
   }
+
+  const ip = clientIpFromHeaders(req.headers);
+  const v = await verifyMagicLink(email, token, ip ? { 'x-forwarded-for': ip } : {});
+  if (!v.ok) {
+    return NextResponse.redirect(new URL(`/login?error=${v.error}`, origin));
+  }
+
+  const res = NextResponse.redirect(new URL(postLoginPath(v.result), origin));
+  for (const w of loginCookieWrites(v.result, shouldUseSecureCookies(origin))) {
+    res.cookies.set(w.name, w.value, w.opts);
+  }
+  // Never let the token-bearing URL leak via Referer from the next page.
+  res.headers.set('referrer-policy', 'no-referrer');
+  return res;
 }
