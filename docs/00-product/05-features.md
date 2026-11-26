@@ -175,7 +175,7 @@ Each skill carries a JSON-schema input/output definition, capability requirement
 | Optional egress proxy sidecar with SNI inspection + audit log | Platform | Implemented (#575). |
 | Run digest surfaces blocked-outbound list per run | Mira | Implemented (#576). |
 | **Per-org `runner_profile` (V2.af, [ADR-0002](../adrs/0002-per-org-runner-profile.md))**: `instance-builtin`, `agent`, `fargate-byo`, `github-actions`, `none`. | All | Implemented |
-| Trusted-org gating for `instance-builtin` via `MERGECREW_TRUSTED_ORG_SLUGS` ([ADR-0006](../adrs/0006-trusted-org-gating.md)) | Platform | Implemented |
+| Trusted-org gating for `instance-builtin` via `MERGECREW_TRUSTED_ORG_IDS` ([ADR-0006](../adrs/0006-trusted-org-gating.md)) | Platform | Implemented |
 | Default profile = `none`; runs blocked at scheduling ([ADR-0008](../adrs/0008-default-profile-none.md)) | Platform | Implemented |
 | BYO runner-agent: `mergecrew/runner-agent` Docker image + long-poll job-pull protocol (#766) | Mira | In progress — protocol scaffolding shipped; agent-side executor stub until #782 (see [ADR-0009](../adrs/0009-byo-agent-as-remote-sandbox-driver.md)) |
 | BYO Fargate (STS role-assumption, no stored AWS keys, [ADR-0007](../adrs/0007-byo-cloud-credentials.md)) | Mira | In progress — config + trust-policy docs shipped; dispatcher pending #786 |

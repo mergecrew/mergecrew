@@ -21,9 +21,10 @@ export class ApprovalController {
   @Post('projects/:projectSlug/approvals/:approvalId/resolve')
   @RequireRole('operator')
   async resolve(
+    @Param('projectSlug') projectSlug: string,
     @Param('approvalId') approvalId: string,
     @Body() body: { resolution: GateDecision; comment?: string },
   ) {
-    return this.approvals.resolve(approvalId, body.resolution, body.comment);
+    return this.approvals.resolve(approvalId, body.resolution, body.comment, projectSlug);
   }
 }

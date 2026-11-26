@@ -1,5 +1,11 @@
 import { NextRequest } from 'next/server';
 import { getSession } from '@/lib/session';
+import {
+  buildForwardHeaders,
+  buildResponseHeaders,
+  isPublicApiPath,
+  safeApiPath,
+} from '@/lib/api-proxy';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -15,36 +21,30 @@ export const runtime = 'nodejs';
  * default into the standalone rewrites manifest. A route handler reads
  * `process.env` per request so the image is portable across deploys.
  *
- * Streams the upstream body (SSE works), forwards headers, propagates
- * status. Hop-by-hop headers (`connection`, `transfer-encoding`,
- * `keep-alive`) are stripped on both directions per RFC 7230.
+ * Streams the upstream body (SSE works), forwards an allowlist of request
+ * headers (see `lib/api-proxy.ts`), propagates status. Hop-by-hop
+ * response headers are stripped per RFC 7230. Path segments are validated
+ * so the proxy can only ever reach `${API_BASE_URL}/v1/*`.
  */
 
 const API_BASE = () => process.env.API_BASE_URL ?? 'http://localhost:4000';
 
-const HOP_BY_HOP = new Set([
-  'connection',
-  'keep-alive',
-  'proxy-authenticate',
-  'proxy-authorization',
-  'te',
-  'trailer',
-  'transfer-encoding',
-  'upgrade',
-  'host',
-  'content-length',
-]);
-
 async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const { path } = await ctx.params;
-  const target = new URL(`${API_BASE()}/v1/${path.join('/')}`);
+  // Reject anything that could escape `/v1/` (`..`, `.`, encoded
+  // slashes/backslashes, double-encoding) instead of relying on an edge
+  // proxy to filter it.
+  const apiPath = safeApiPath(path ?? []);
+  if (!apiPath) {
+    return new Response('Bad request path', { status: 400 });
+  }
+  const target = new URL(`${API_BASE()}/v1/${apiPath}`);
   const incoming = new URL(req.url);
   incoming.searchParams.forEach((v, k) => target.searchParams.set(k, v));
 
-  const headers = new Headers();
-  req.headers.forEach((value, key) => {
-    if (!HOP_BY_HOP.has(key.toLowerCase())) headers.set(key, value);
-  });
+  // Allowlisted request headers only: cookies and any client-supplied
+  // identity headers (e.g. `x-mergecrew-user-id`) never reach the API.
+  const headers = buildForwardHeaders(req.headers);
 
   // The API authenticates via `Authorization: Bearer <jwt>` only — it
   // doesn't read cookies. Browser-initiated calls (EventSource for
@@ -64,9 +64,17 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
       const session = await getSession();
       if (session?.jwt) headers.set('authorization', `Bearer ${session.jwt}`);
     } catch {
-      // No session — let the API return its own 401 so the client
-      // surfaces a meaningful error instead of a proxy crash.
+      // No session — handled below.
     }
+  }
+
+  // Unauthenticated requests are only relayed to explicitly public API
+  // paths; everything else gets a local 401 without touching the API.
+  if (!headers.has('authorization') && !isPublicApiPath(apiPath)) {
+    return Response.json(
+      { error: { code: 'UNAUTHORIZED', message: 'unauthorized' } },
+      { status: 401 },
+    );
   }
 
   const init: RequestInit = {
@@ -90,10 +98,7 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     return new Response(`Upstream unreachable: ${(err as Error).message}`, { status: 502 });
   }
 
-  const resHeaders = new Headers();
-  upstream.headers.forEach((value, key) => {
-    if (!HOP_BY_HOP.has(key.toLowerCase())) resHeaders.set(key, value);
-  });
+  const resHeaders = buildResponseHeaders(upstream.headers);
 
   return new Response(upstream.body, {
     status: upstream.status,

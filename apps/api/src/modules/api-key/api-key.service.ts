@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { Injectable, NotFoundException } from '@nestjs/common';
-import type { OrgRole } from '@mergecrew/domain';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ROLE_RANK, roleAtLeast, type OrgRole } from '@mergecrew/domain';
 import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
 
@@ -34,6 +34,34 @@ export function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
+/**
+ * API keys act on behalf of the member who issued them. A key is only
+ * honoured while its creator is still a member of the key's org with a
+ * role at least as high as the key's role, so removing (or demoting) a
+ * member immediately disables the keys they minted. Keys without a
+ * recorded creator are rejected. `OrgService` additionally revokes the
+ * affected rows on removal/demotion so the key list reflects reality.
+ */
+export async function apiKeyCreatorStillAuthorized(
+  prisma: Pick<PrismaService, 'withSystem'>,
+  key: { organizationId: string; createdByUserId: string | null; role: OrgRole },
+): Promise<boolean> {
+  const creatorId = key.createdByUserId;
+  if (!creatorId) return false;
+  const membership = await prisma.withSystem((tx) =>
+    tx.membership.findFirst({
+      where: { organizationId: key.organizationId, userId: creatorId },
+      select: { role: true },
+    }),
+  );
+  return !!membership && roleAtLeast(membership.role, key.role);
+}
+
+/** Roles strictly above `role` — keys with these roles exceed its authority. */
+export function rolesAbove(role: OrgRole): OrgRole[] {
+  return (Object.keys(ROLE_RANK) as OrgRole[]).filter((r) => ROLE_RANK[r] > ROLE_RANK[role]);
+}
+
 @Injectable()
 export class ApiKeyService {
   constructor(
@@ -43,6 +71,11 @@ export class ApiKeyService {
 
   async issue(input: { name: string; role?: OrgRole }): Promise<IssuedApiKey> {
     const t = this.tenant.require();
+    const role: OrgRole = input.role ?? 'operator';
+    // A key can never carry more authority than its issuer.
+    if (!roleAtLeast(t.role, role)) {
+      throw new ForbiddenException(`cannot issue an api key with role ${role} (your role is ${t.role})`);
+    }
     const secret = randomBytes(32).toString('base64url');
     const token = `${API_KEY_PREFIX}${secret}`;
     const tokenHash = hashToken(token);
@@ -57,7 +90,7 @@ export class ApiKeyService {
           name: input.name,
           tokenHash,
           prefix: displayPrefix,
-          role: (input.role ?? 'operator') as any,
+          role,
           createdByUserId: t.userId,
         },
       }),
@@ -113,7 +146,7 @@ export class ApiKeyService {
     if (found.revokedAt) return;
 
     await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.apiKey.update({ where: { id }, data: { revokedAt: new Date() } }),
+      tx.apiKey.update({ where: { id, organizationId: t.organizationId }, data: { revokedAt: new Date() } }),
     );
 
     await this.prisma.withTenant(t.organizationId, (tx) =>

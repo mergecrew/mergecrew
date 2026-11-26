@@ -65,6 +65,11 @@ async function seedCarefulRun(slugSuffix: string): Promise<Seed> {
   await prisma.runnerProfile.create({
     data: { organizationId: org.id, kind: 'instance_builtin' },
   });
+  // Built-in runner trust is keyed on the org UUID and re-checked at
+  // dispatch (ADR-0006), so the seeded org must be in the allowlist.
+  process.env.MERGECREW_TRUSTED_ORG_IDS = [process.env.MERGECREW_TRUSTED_ORG_IDS, org.id]
+    .filter(Boolean)
+    .join(',');
   const project = await prisma.project.create({
     data: {
       organizationId: org.id,

@@ -157,12 +157,16 @@ services:
         # via the seed and needs the operator-role token available later.
         MERGECREW_E2E_LOCAL_API_KEY: '${MERGECREW_E2E_LOCAL_API_KEY:-}'
         # Trusted-org allowlist for the instance-builtin runner profile
-        # (ADR-0006). Only listed slugs may pick `instance_builtin` —
-        # everyone else must BYO. Plus the implicit owner slug below.
+        # (ADR-0006). Only listed org UUIDs may use `instance_builtin` —
+        # everyone else must BYO. Plus the implicit owner org id below.
+        # (The old *_SLUG variables are ignored.)
         # See docs/03-infrastructure/16-self-host-runbook.md § Trust an
         # org for the instance-builtin runner profile.
-        MERGECREW_TRUSTED_ORG_SLUGS: '${MERGECREW_TRUSTED_ORG_SLUGS:-}'
-        MERGECREW_OWNER_ORG_SLUG: '${MERGECREW_OWNER_ORG_SLUG:-}'
+        MERGECREW_TRUSTED_ORG_IDS: '${MERGECREW_TRUSTED_ORG_IDS:-}'
+        MERGECREW_OWNER_ORG_ID: '${MERGECREW_OWNER_ORG_ID:-}'
+        # Optional bearer for scraping the API's /metrics from outside the
+        # private network (see .env.example § Observability).
+        METRICS_TOKEN: '${METRICS_TOKEN:-}'
         # Shared supervisor → API mediator secret (V2.ag / ADR-0009).
         # Generate a random 32+ char string per deployment and set
         # the same value here. Leave empty to disable the BYO

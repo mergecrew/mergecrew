@@ -116,10 +116,10 @@ export class EvalService {
         tx.evalRun.findFirst({ where: { id: ab.runBId, organizationId: t.organizationId } }),
       ),
       this.prisma.withTenant(t.organizationId, (tx) =>
-        tx.llmProfile.findFirst({ where: { id: ab.profileAId } }),
+        tx.llmProfile.findFirst({ where: { id: ab.profileAId, organizationId: t.organizationId } }),
       ),
       this.prisma.withTenant(t.organizationId, (tx) =>
-        tx.llmProfile.findFirst({ where: { id: ab.profileBId } }),
+        tx.llmProfile.findFirst({ where: { id: ab.profileBId, organizationId: t.organizationId } }),
       ),
     ]);
     if (!runA || !runB) throw new NotFoundError();

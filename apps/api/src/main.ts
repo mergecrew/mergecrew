@@ -12,13 +12,21 @@ import { buildOpenApiDocumentConfig } from './openapi-config.js';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 import { PrismaService } from './common/prisma.service.js';
 import { stampUserContextOnRequest } from './common/tenant-context.service.js';
-import { API_KEY_PREFIX, hashToken } from './modules/api-key/api-key.service.js';
+import { API_KEY_PREFIX, apiKeyCreatorStillAuthorized, hashToken } from './modules/api-key/api-key.service.js';
 import { assertProductionSecrets, jwtSecret } from './common/secrets.js';
 import { checkSessionToken, isMfaChallengeRoute } from './common/session-token.js';
+import {
+  ORG_SLUG_RE,
+  enableCaseSensitiveRouting,
+  isAuthedIntegrationPath as isAuthedIntegrationRoute,
+  isMePath as isMeRoute,
+  isOrgPath as isOrgRoute,
+} from './common/auth-paths.js';
 import {
   httpRequestDurationSeconds,
   httpRequestsTotal,
   initMetrics,
+  routeLabel,
 } from './modules/health/metrics.js';
 import type { Request, Response, NextFunction } from 'express';
 
@@ -33,6 +41,8 @@ async function bootstrap() {
   // forwards the browser's address on its server-side calls), so trust
   // exactly one hop: req.ip is then the real client for rate limiting.
   app.set('trust proxy', 1);
+  // `/V1/orgs/...` must not reach `/v1/orgs/...` controllers.
+  enableCaseSensitiveRouting(app);
 
   // Metrics: initialize registry + default node/process collectors. The
   // request-timing middleware below feeds the per-route histogram +
@@ -46,10 +56,10 @@ async function bootstrap() {
     const startNs = process.hrtime.bigint();
     res.on('finish', () => {
       const durationSec = Number(process.hrtime.bigint() - startNs) / 1e9;
-      // Use `req.route?.path` when NestJS resolved a controller route, fall
-      // back to a normalized path so we don't unbounded-cardinality the
-      // labels with raw `/v1/orgs/abc-123` ids.
-      const route = (req as Request & { route?: { path?: string } }).route?.path ?? normalizeRoute(req.path);
+      // Use `req.route?.path` (the route template) when NestJS resolved a
+      // controller route. Unmatched requests share one fixed label so a
+      // path scan can't grow the series count without bound.
+      const route = routeLabel(req as Request & { route?: { path?: unknown } });
       const status = `${Math.floor(res.statusCode / 100)}xx`;
       const labels = { method: req.method, route, status };
       httpRequestsTotal.inc(labels);
@@ -80,9 +90,11 @@ async function bootstrap() {
     // org-path-scoped (the org slug comes from the `org` query param),
     // but it needs `this.tenant.user()` to mint the state HMAC. The
     // matching callback path stays public so GitHub's redirect can land.
-    const isOrgPath = /^\/v1\/orgs(\/|$)/.test(req.path);
-    const isMePath = /^\/v1\/me(\/|$)/.test(req.path);
-    const isAuthedIntegrationPath = req.path === '/v1/integrations/github/install';
+    // Matching is case-insensitive (see common/auth-paths.ts) so `/V1/...`
+    // can't skip authentication.
+    const isOrgPath = isOrgRoute(req.path);
+    const isMePath = isMeRoute(req.path);
+    const isAuthedIntegrationPath = isAuthedIntegrationRoute(req.path);
     if (!isOrgPath && !isMePath && !isAuthedIntegrationPath) {
       next();
       return;
@@ -103,7 +115,13 @@ async function bootstrap() {
           res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'invalid api key' } });
           return;
         }
-        const m = req.path.match(/^\/v1\/orgs\/([^/]+)/);
+        // Keys act on behalf of their creator: reject once the creator is
+        // no longer a member with at least the key's role.
+        if (!(await apiKeyCreatorStillAuthorized(prisma, row))) {
+          res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'invalid api key' } });
+          return;
+        }
+        const m = req.path.match(ORG_SLUG_RE);
         if (m) {
           const slug = decodeURIComponent(m[1]!);
           const org = await prisma.withSystem((tx) =>
@@ -166,7 +184,7 @@ async function bootstrap() {
     }
     const { userId, mfaChallengedAt, mfaEnrolled } = session;
 
-    const m = req.path.match(/^\/v1\/orgs\/([^/]+)/);
+    const m = req.path.match(ORG_SLUG_RE);
     if (!m) {
       // /v1/me/* (or any other user-only route).
       stampUserContextOnRequest(req, { userId, mfaChallengedAt, mfaEnrolled });
@@ -215,14 +233,6 @@ async function bootstrap() {
   await app.listen(port);
   // eslint-disable-next-line no-console
   console.log(`[api] listening on :${port}`);
-}
-
-// Collapse uuid / slug / numeric segments so the `route` label stays bounded.
-// Anything that survives matches a real route shape — `/v1/orgs/:slug/...`.
-function normalizeRoute(path: string): string {
-  return path
-    .replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '/:uuid')
-    .replace(/\/\d+/g, '/:id');
 }
 
 bootstrap().catch((err) => {

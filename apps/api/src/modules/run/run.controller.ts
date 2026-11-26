@@ -19,29 +19,33 @@ export class RunController {
   }
 
   @Get(':runId')
-  async detail(@Param('runId') runId: string) {
-    return this.runs.get(runId);
+  async detail(@Param('projectSlug') projectSlug: string, @Param('runId') runId: string) {
+    return this.runs.get(runId, projectSlug);
   }
 
   @Get(':runId/full')
-  async full(@Param('runId') runId: string) {
-    return this.runs.detail(runId);
+  async full(@Param('projectSlug') projectSlug: string, @Param('runId') runId: string) {
+    return this.runs.detail(runId, projectSlug);
   }
 
   @Post(':runId/cancel')
   @RequireRole('operator')
-  async cancel(@Param('runId') runId: string) {
-    return this.runs.cancel(runId);
+  async cancel(@Param('projectSlug') projectSlug: string, @Param('runId') runId: string) {
+    return this.runs.cancel(runId, projectSlug);
   }
 
   @Get(':runId/timeline')
-  async timeline(@Param('runId') runId: string, @Query('after') after?: string) {
-    return { items: await this.runs.timeline(runId, after) };
+  async timeline(
+    @Param('projectSlug') projectSlug: string,
+    @Param('runId') runId: string,
+    @Query('after') after?: string,
+  ) {
+    return { items: await this.runs.timeline(runId, after, projectSlug) };
   }
 
   @Get(':runId/network-summary')
-  async networkSummary(@Param('runId') runId: string) {
-    return this.runs.networkSummary(runId);
+  async networkSummary(@Param('projectSlug') projectSlug: string, @Param('runId') runId: string) {
+    return this.runs.networkSummary(runId, projectSlug);
   }
 
   @Post(':runId/intent')

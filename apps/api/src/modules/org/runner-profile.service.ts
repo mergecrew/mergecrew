@@ -4,7 +4,7 @@ import { ValidationError } from '@mergecrew/domain';
 import { CryptoService } from '../../common/crypto.service.js';
 import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
-import { isTrustedOrgSlug } from '../../common/trusted-orgs.js';
+import { isTrustedOrgId } from '../../common/trusted-orgs.js';
 
 type ProfileKind =
   | 'none'
@@ -64,7 +64,7 @@ export class RunnerProfileService {
       const kind = profile?.kind ?? 'none';
       return {
         kind,
-        isTrustedForInstanceBuiltin: isTrustedOrgSlug(ctx.organizationSlug),
+        isTrustedForInstanceBuiltin: isTrustedOrgId(ctx.organizationId),
         awsRoleArn: profile?.awsRoleArn ?? null,
         awsExternalId: profile?.awsExternalId ?? null,
         awsRegion: profile?.awsRegion ?? null,
@@ -96,11 +96,11 @@ export class RunnerProfileService {
   async update(input: UpdateProfileInput) {
     const ctx = this.tenant.require();
 
-    if (input.kind === 'instance_builtin' && !isTrustedOrgSlug(ctx.organizationSlug)) {
+    if (input.kind === 'instance_builtin' && !isTrustedOrgId(ctx.organizationId)) {
       throw new ForbiddenException({
         code: 'NOT_TRUSTED',
         message:
-          'this org is not allowed to use the instance-builtin runner; ask the operator to add the slug to MERGECREW_TRUSTED_ORG_SLUGS',
+          'this org is not allowed to use the instance-builtin runner; ask the operator to add the org id to MERGECREW_TRUSTED_ORG_IDS',
       });
     }
 

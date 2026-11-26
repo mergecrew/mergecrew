@@ -37,23 +37,38 @@ export class ApprovalService {
     if (!project) throw new NotFoundError();
     return this.prisma.withTenant(t.organizationId, (tx) =>
       tx.approvalRequest.findMany({
-        where: { projectId: project.id, resolvedAt: null },
+        where: { projectId: project.id, organizationId: t.organizationId, resolvedAt: null },
         orderBy: { createdAt: 'asc' },
       }),
     );
   }
 
-  async resolve(approvalId: string, resolution: GateDecision, _comment?: string) {
+  async resolve(
+    approvalId: string,
+    resolution: GateDecision,
+    _comment?: string,
+    projectSlug?: string,
+  ) {
     const t = this.tenant.require();
+    // Scope to the tenant org AND the URL's project: binding the object to
+    // the URL project is what lets DemoProjectGuard (URL-based) cover it.
     const ar = await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.approvalRequest.findFirst({ where: { id: approvalId, organizationId: t.organizationId } }),
+      tx.approvalRequest.findFirst({
+        where: {
+          id: approvalId,
+          organizationId: t.organizationId,
+          ...(projectSlug !== undefined
+            ? { project: { slug: projectSlug, organizationId: t.organizationId, deletedAt: null } }
+            : {}),
+        },
+      }),
     );
     if (!ar) throw new NotFoundError();
     if (ar.resolvedAt) throw new ForbiddenError('already resolved');
 
     await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.approvalRequest.update({
-        where: { id: approvalId },
+        where: { id: approvalId, organizationId: t.organizationId },
         data: {
           resolvedAt: new Date(),
           resolvedByUserId: t.userId,

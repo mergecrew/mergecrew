@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
-import { NotFoundError, ValidationError } from '@mergecrew/domain';
+import { ForbiddenError, NotFoundError, ValidationError, type OrgRole } from '@mergecrew/domain';
 import { seedDemoProject } from '@mergecrew/db';
 import { PrismaService } from '../../common/prisma.service.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
 import { TelemetryService } from '../../common/telemetry.service.js';
-import { isTrustedOrgSlug } from '../../common/trusted-orgs.js';
+import { isTrustedOrgId } from '../../common/trusted-orgs.js';
+import { rolesAbove } from '../api-key/api-key.service.js';
 
 /**
  * Fields an org read may return to any member. Explicit allow-list so
@@ -88,16 +89,16 @@ export class OrgService {
     await this.prisma.withSystem((tx) =>
       tx.membership.create({ data: { organizationId: org.id, userId, role: 'owner' } }),
     );
-    // V2.af: every new org gets a `runner_profile` row. Trusted slugs
-    // (the operator's own org in the typical self-host setup) default
-    // to `instance_builtin` — the deployment's RUNNER_SANDBOX driver
-    // applies and runs work as before. Everyone else lands in `none`
-    // and must BYO via the runner-agent (ADR-0008).
+    // V2.af: every new org gets a `runner_profile` row. Trust is keyed
+    // on the org UUID (MERGECREW_TRUSTED_ORG_IDS / MERGECREW_OWNER_ORG_ID),
+    // which a brand-new org can't match unless the operator pre-listed
+    // it, so in practice new orgs land in `none` and must BYO via the
+    // runner-agent (ADR-0008). The slug is never consulted.
     await this.prisma.withSystem((tx) =>
       tx.runnerProfile.create({
         data: {
           organizationId: org.id,
-          kind: isTrustedOrgSlug(slugged) ? 'instance_builtin' : 'none',
+          kind: isTrustedOrgId(org.id) ? 'instance_builtin' : 'none',
         },
       }),
     );
@@ -526,6 +527,11 @@ export class OrgService {
       }),
     );
     if (!m) throw new NotFoundError('membership not found');
+    // Owner protection: only owners may grant `owner` (including to
+    // themselves) or change an existing owner's membership.
+    if ((m.role === 'owner' || role === 'owner') && t.role !== 'owner') {
+      throw new ForbiddenError('only owners can grant or modify owner memberships');
+    }
     // Demoting the last owner would orphan the org. Block it.
     if (m.role === 'owner' && role !== 'owner') {
       const owners = await this.prisma.withTenant(t.organizationId, (tx) =>
@@ -540,9 +546,31 @@ export class OrgService {
       }
     }
     const updated = await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.membership.update({ where: { id: membershipId }, data: { role } }),
+      tx.membership.update({
+        where: { id: membershipId, organizationId: t.organizationId },
+        data: { role },
+      }),
     );
+    // Keys the member minted above their new role are no longer backed by
+    // a sufficiently privileged creator; API-key auth already rejects
+    // them, revoke explicitly so the key list reflects it.
+    await this.revokeApiKeysCreatedBy(t.organizationId, m.userId, rolesAbove(role));
     return { id: updated.id, role: updated.role };
+  }
+
+  private async revokeApiKeysCreatedBy(organizationId: string, userId: string, roles?: OrgRole[]) {
+    if (roles && roles.length === 0) return;
+    await this.prisma.withTenant(organizationId, (tx) =>
+      tx.apiKey.updateMany({
+        where: {
+          organizationId,
+          createdByUserId: userId,
+          revokedAt: null,
+          ...(roles ? { role: { in: roles } } : {}),
+        },
+        data: { revokedAt: new Date() },
+      }),
+    );
   }
 
   async removeMember(membershipId: string) {
@@ -553,6 +581,9 @@ export class OrgService {
       }),
     );
     if (!m) throw new NotFoundError('membership not found');
+    if (m.role === 'owner' && t.role !== 'owner') {
+      throw new ForbiddenError('only owners can remove owner memberships');
+    }
     if (m.role === 'owner') {
       const owners = await this.prisma.withTenant(t.organizationId, (tx) =>
         tx.membership.count({
@@ -566,8 +597,11 @@ export class OrgService {
       }
     }
     await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.membership.delete({ where: { id: membershipId } }),
+      tx.membership.delete({ where: { id: membershipId, organizationId: t.organizationId } }),
     );
+    // Keys act on behalf of their creator; a removed member's keys die
+    // with the membership (API-key auth also re-checks the creator).
+    await this.revokeApiKeysCreatedBy(t.organizationId, m.userId);
     return { ok: true };
   }
 

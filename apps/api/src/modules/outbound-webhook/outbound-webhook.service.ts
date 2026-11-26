@@ -129,7 +129,7 @@ export class OutboundWebhookService {
 
     const updated = await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.outboundWebhook.update({
-        where: { id },
+        where: { id, organizationId: t.organizationId },
         data: {
           ...(input.url !== undefined ? { url: input.url } : {}),
           ...(input.events !== undefined ? { events: input.events } : {}),
@@ -155,7 +155,7 @@ export class OutboundWebhookService {
     );
     if (!found) throw new NotFoundException();
     await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.outboundWebhook.delete({ where: { id } }),
+      tx.outboundWebhook.delete({ where: { id, organizationId: t.organizationId } }),
     );
     await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.auditLogEntry.create({

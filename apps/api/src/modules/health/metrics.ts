@@ -53,3 +53,17 @@ export const orchestratorTickAgeSeconds: Gauge<string> = new client.Gauge({
 export async function exposition(): Promise<{ body: string; contentType: string }> {
   return { body: await registry.metrics(), contentType: registry.contentType };
 }
+
+/** Label used for every request that didn't resolve to a controller route. */
+export const UNMATCHED_ROUTE_LABEL = '__unmatched__';
+
+/**
+ * `route` label for the HTTP metrics: the matched route *template*
+ * (e.g. `/v1/orgs/:slug/projects`) or a single fixed label for anything
+ * unmatched. Raw request paths are never used, so a path scan can't grow
+ * the series count without bound.
+ */
+export function routeLabel(req: { route?: { path?: unknown } }): string {
+  const p = req.route?.path;
+  return typeof p === 'string' && p.length > 0 ? p : UNMATCHED_ROUTE_LABEL;
+}

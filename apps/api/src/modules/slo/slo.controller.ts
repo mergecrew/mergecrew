@@ -144,7 +144,7 @@ export class SloController {
       });
       if (!existing) throw new NotFoundError();
       return tx.projectSlo.update({
-        where: { id: sloId },
+        where: { id: sloId, projectId: project.id },
         data: {
           ...(input.name !== undefined ? { name: input.name } : {}),
           ...(input.metric !== undefined ? { metric: input.metric } : {}),
@@ -171,7 +171,7 @@ export class SloController {
         where: { id: sloId, projectId: project.id },
       });
       if (!existing) throw new NotFoundError();
-      await tx.projectSlo.delete({ where: { id: sloId } });
+      await tx.projectSlo.delete({ where: { id: sloId, projectId: project.id } });
     });
     return { deleted: true };
   }

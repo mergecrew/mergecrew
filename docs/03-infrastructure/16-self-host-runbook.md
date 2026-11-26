@@ -169,7 +169,7 @@ Each entry is symptom → likely cause → recovery → source of truth. If a sy
 ### Enable RUNNER_SANDBOX=docker
 <a id="runner-sandbox-docker"></a>
 
-> **Tenancy note.** `RUNNER_SANDBOX` now configures the **instance-builtin** runner profile only. It applies to orgs listed in `MERGECREW_TRUSTED_ORG_SLUGS` (or the implicit `MERGECREW_OWNER_ORG_SLUG`); other orgs default to the `none` profile and must bring their own runner. See [ADR-0006](../adrs/0006-trusted-org-gating.md) and [ADR-0008](../adrs/0008-default-profile-none.md).
+> **Tenancy note.** `RUNNER_SANDBOX` now configures the **instance-builtin** runner profile only. It applies to orgs whose **UUID** is listed in `MERGECREW_TRUSTED_ORG_IDS` (or the implicit `MERGECREW_OWNER_ORG_ID`); other orgs default to the `none` profile and must bring their own runner. See [ADR-0006](../adrs/0006-trusted-org-gating.md) and [ADR-0008](../adrs/0008-default-profile-none.md).
 
 **Symptom.** Default install runs in *unsandboxed mode* — supervisor startup logs a multi-line banner with the title `UNSANDBOXED RUNNER MODE` and a warning. Build steps for every tenant execute on the supervisor host. Suitable for single-tenant self-hosters; unsuitable for multi-tenant.
 
@@ -221,25 +221,28 @@ docker exec <container-id> ip addr show               # --network none until Pha
 
 **Symptom.** A new org signs up on the deployment but can't pick `instance-builtin` for its runner profile — the option is greyed out in the UI, and a direct PATCH returns 403.
 
-**Cause.** Per [ADR-0006](../adrs/0006-trusted-org-gating.md), only orgs listed in `MERGECREW_TRUSTED_ORG_SLUGS` (plus the implicit `MERGECREW_OWNER_ORG_SLUG`) may select `instance-builtin` — everyone else must BYO via the runner-agent or the `fargate-byo` profile.
+**Cause.** Per [ADR-0006](../adrs/0006-trusted-org-gating.md), only orgs whose **organization UUID** is listed in `MERGECREW_TRUSTED_ORG_IDS` (plus the implicit `MERGECREW_OWNER_ORG_ID`) may use `instance-builtin` — everyone else must BYO via the runner-agent or the `fargate-byo` profile. Trust is keyed on the immutable id, never the slug: slugs are user-chosen and any org admin can rename one.
 
 **Recovery.**
 
-1. Add the slug to one of the envs:
+1. Look up the org id and add it to one of the envs (API **and** orchestrator):
 
    ```sh
+   # select id, slug from organizations where slug = 'acme';
    # Comma-separated for the multi-org case.
-   MERGECREW_TRUSTED_ORG_SLUGS=acme,beta
-   # Single-org installs typically set just the owner slug:
-   MERGECREW_OWNER_ORG_SLUG=acme
+   MERGECREW_TRUSTED_ORG_IDS=6f1c…-…,a2b9…-…
+   # Single-org installs typically set just the owner org id:
+   MERGECREW_OWNER_ORG_ID=6f1c…-…
    ```
 
-2. Restart the API (the env is read per-request, but the value is captured at startup time in some deployment topologies — safer to redeploy).
-3. The org's runner-profile settings page now shows `instance-builtin` as a selectable option. Server-side validation gates the PATCH endpoint on the same env, so a UI bypass attempt returns 403.
+2. Restart the API and the orchestrator. At boot the orchestrator downgrades every `instance_builtin` profile of an org that is **not** listed to `none`, and it re-checks trust on every dispatch (an untrusted org's step fails closed with `runner_instance_builtin_untrusted_not_supported`).
+3. The org's runner-profile settings page now shows `instance-builtin` as a selectable option — re-select it if the boot-time check downgraded it. Server-side validation gates the PATCH endpoint and run-start on the same env, so a UI bypass attempt returns 403/400.
+
+**Migrating from `*_SLUG`.** `MERGECREW_TRUSTED_ORG_SLUGS` and `MERGECREW_OWNER_ORG_SLUG` are no longer read (the orchestrator logs a warning when they are still set). Replace each slug with the matching `organizations.id` as above.
 
 **Verification.** `GET /api/v1/orgs/<slug>/runner-profile` returns `isTrustedForInstanceBuiltin: true` for trusted orgs and `false` otherwise.
 
-**Source.** `apps/api/src/common/trusted-orgs.ts` exposes `isTrustedOrgSlug()`. ADRs: [0006](../adrs/0006-trusted-org-gating.md), [0008](../adrs/0008-default-profile-none.md).
+**Source.** `packages/domain/src/trusted-orgs.ts` exposes `isTrustedOrgId()`; the orchestrator gate lives in `apps/orchestrator/src/runner-trust.ts`. ADRs: [0006](../adrs/0006-trusted-org-gating.md), [0008](../adrs/0008-default-profile-none.md).
 
 ---
 
@@ -248,7 +251,7 @@ docker exec <container-id> ip addr show               # --network none until Pha
 
 **What changed.** The supervisor's BullMQ queue was renamed from `runner.step` to `runner.step.instance` ([ADR-0005](../adrs/0005-per-profile-queues.md)). The orchestrator now reads each org's `runner_profile.kind` and routes the step to either `runner.step.instance` (for trusted `instance_builtin` orgs) or a per-org agent queue `runner.step.agent.<orgId>` (consumed by the API's long-poll endpoint, lands in #766).
 
-**What this means for v0 operators.** Single-org deployments don't need any change beyond adding the org slug to `MERGECREW_TRUSTED_ORG_SLUGS` or `MERGECREW_OWNER_ORG_SLUG` (see § "Trust an org for the instance-builtin runner profile" above). The migration in #761 backfilled every pre-existing org to `kind='instance_builtin'`, so the supervisor's behavior is byte-identical.
+**What this means for v0 operators.** Single-org deployments must add the org **id** to `MERGECREW_TRUSTED_ORG_IDS` or `MERGECREW_OWNER_ORG_ID` (see § "Trust an org for the instance-builtin runner profile" above). The migration in #761 backfilled every pre-existing org to `kind='instance_builtin'`; the orchestrator now resets that backfill to `none` at boot for every org not in the id allowlist.
 
 **Bridge worker.** A one-release back-compat worker in `apps/runner/src/main.ts` consumes any leftover jobs from the legacy `runner.step` queue and processes them with the same handler used for `runner.step.instance`. It logs a warning on every job picked up so operators can confirm the legacy queue has drained. The bridge worker is removed in the next minor release.
 
@@ -358,15 +361,15 @@ cd mergecrew
 cp .env.example .env
 # Edit .env. Minimum to set:
 #
-#   MERGECREW_OWNER_ORG_SLUG=<your slug>   # your org gets kind=instance_builtin
-#   MERGECREW_TRUSTED_ORG_SLUGS=           # leave empty for single-tenant
+#   MERGECREW_OWNER_ORG_ID=<org uuid>      # set after creating your org; enables instance_builtin
+#   MERGECREW_TRUSTED_ORG_IDS=             # leave empty for single-tenant
 #   RUNNER_SANDBOX=docker
 #   KMS_MASTER_KEY=base64:<32 bytes>       # `openssl rand -base64 32`
 #   MERGECREW_INTERNAL_TOKEN=<32+ chars>   # `openssl rand -hex 32`
 #   GITHUB_APP_* …                         # see the GitHub App setup doc
 ```
 
-> **Slug ownership.** `MERGECREW_OWNER_ORG_SLUG` is trust-by-string. Whoever creates an org with that exact slug becomes the trusted org. Pre-create your org via the seed script (or pick a non-obvious slug) before opening signups, otherwise the first stranger with the right slug inherits your trust.
+> **Trust is by org id.** Create your org first, then copy its `organizations.id` into `MERGECREW_OWNER_ORG_ID` and restart the API + orchestrator. Creating or renaming an org to any slug grants nothing.
 
 **5. Boot.**
 
@@ -388,8 +391,7 @@ docker compose -f docker-compose.prod.yml up -d
 
 When someone else signs up and creates an org:
 
-- If their slug matches `MERGECREW_OWNER_ORG_SLUG` or appears in `MERGECREW_TRUSTED_ORG_SLUGS`, they get `runner_profile.kind = 'instance_builtin'` — their runs share your host's docker daemon.
-- Otherwise they get `runner_profile.kind = 'none'` and **cannot start runs** until they configure a BYO profile from the Settings → Runner page. The API enforces this in three layers: defaulted at signup, blocked on profile update, blocked at run-start. See [Trust an org for the instance-builtin runner profile](#trusted-orgs).
+- A brand-new org can't be in `MERGECREW_OWNER_ORG_ID` / `MERGECREW_TRUSTED_ORG_IDS` (its UUID didn't exist yet), so they get `runner_profile.kind = 'none'` and **cannot start runs** until they configure a BYO profile from the Settings → Runner page. The API enforces this in three layers: defaulted at signup, blocked on profile update, blocked at run-start. See [Trust an org for the instance-builtin runner profile](#trusted-orgs).
 
 To onboard the BYO agent path for non-trusted orgs, see [`34-runner-agent.md`](34-runner-agent.md).
 
