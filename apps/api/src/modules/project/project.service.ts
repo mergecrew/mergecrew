@@ -318,7 +318,7 @@ export class ProjectService {
       throw new ValidationError(`graphProfile='custom' requires a non-empty graphYaml`);
     }
     return this.prisma.withTenant(project.organizationId, (tx) =>
-      tx.project.update({ where: { id: project.id }, data }),
+      tx.project.update({ where: { id: project.id, organizationId: project.organizationId }, data }),
     );
   }
 
@@ -743,7 +743,7 @@ export class ProjectService {
     const now = new Date();
     const updated = await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.project.update({
-        where: { id: project.id },
+        where: { id: project.id, organizationId: project.organizationId },
         data: {
           runsPausedAt: now,
           runsPauseReason: trimmedReason,
@@ -784,7 +784,7 @@ export class ProjectService {
     }
     await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.project.update({
-        where: { id: project.id },
+        where: { id: project.id, organizationId: project.organizationId },
         data: {
           runsPausedAt: null,
           runsPauseReason: null,
@@ -878,7 +878,7 @@ export class ProjectService {
     const t = this.tenant.require();
     await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.project.update({
-        where: { id: project.id },
+        where: { id: project.id, organizationId: project.organizationId },
         data: { autoPromoteRules: parsed as any },
       }),
     );

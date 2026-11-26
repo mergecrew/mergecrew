@@ -270,16 +270,24 @@ export class LlmService {
     if (input.capabilityOverrides !== undefined) {
       data.capabilityOverrides = input.capabilityOverrides as any;
     }
-    return this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.llmProvider.update({ where: { id }, data }),
-    );
+    // Explicit org predicate on both the existence check and the write —
+    // never rely on RLS alone for cross-tenant isolation.
+    return this.prisma.withTenant(t.organizationId, async (tx) => {
+      const found = await tx.llmProvider.findFirst({
+        where: { id, organizationId: t.organizationId },
+        select: { id: true },
+      });
+      if (!found) throw new NotFoundError();
+      return tx.llmProvider.update({ where: { id, organizationId: t.organizationId }, data });
+    });
   }
 
   async deleteProvider(id: string) {
     const t = this.tenant.require();
-    await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.llmProvider.delete({ where: { id } }),
+    const { count } = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.llmProvider.deleteMany({ where: { id, organizationId: t.organizationId } }),
     );
+    if (count === 0) throw new NotFoundError();
   }
 
   /**
@@ -309,7 +317,7 @@ export class LlmService {
     const merged = { ...existing, models: r.models };
     await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.llmProvider.update({
-        where: { id },
+        where: { id, organizationId: t.organizationId },
         data: { capabilityOverrides: merged as any },
       }),
     );
@@ -413,16 +421,22 @@ export class LlmService {
     if (input.name !== undefined) data.name = input.name;
     if (input.preferenceOrder !== undefined) data.preferenceOrder = input.preferenceOrder as any;
     if (input.capabilityRouting !== undefined) data.capabilityRouting = input.capabilityRouting as any;
-    return this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.llmProfile.update({ where: { id }, data }),
-    );
+    return this.prisma.withTenant(t.organizationId, async (tx) => {
+      const found = await tx.llmProfile.findFirst({
+        where: { id, organizationId: t.organizationId },
+        select: { id: true },
+      });
+      if (!found) throw new NotFoundError();
+      return tx.llmProfile.update({ where: { id, organizationId: t.organizationId }, data });
+    });
   }
 
   async deleteProfile(id: string) {
     const t = this.tenant.require();
-    await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.llmProfile.delete({ where: { id } }),
+    const { count } = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.llmProfile.deleteMany({ where: { id, organizationId: t.organizationId } }),
     );
+    if (count === 0) throw new NotFoundError();
   }
 
   /**

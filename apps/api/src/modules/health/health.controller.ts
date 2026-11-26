@@ -1,8 +1,9 @@
-import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
-import type { Response } from 'express';
+import { Controller, Get, HttpStatus, NotFoundException, Req, Res } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { PrismaService } from '../../common/prisma.service.js';
 import { QueueService } from '../../common/queue.service.js';
 import { exposition, queueDepthGauge } from './metrics.js';
+import { isMetricsRequestAllowed } from './metrics-access.js';
 
 interface ReadyBody {
   status: 'ok' | 'degraded';
@@ -24,10 +25,10 @@ function withTimeout<T>(p: Promise<T>, label: string): Promise<T> {
   ]);
 }
 
-// Liveness, readiness + Prometheus exposition. All three endpoints are
-// unauthenticated by design — they're scraped by infra, not users — and
-// sit at the root path (no /v1 prefix) so the existing API tenant
-// middleware skips them.
+// Liveness, readiness + Prometheus exposition. They sit at the root path
+// (no /v1 prefix) so the API tenant middleware skips them. healthz/readyz
+// are unauthenticated; /metrics is limited to internal scrapers (private
+// peer, no proxy headers) or a `METRICS_TOKEN` bearer.
 @Controller()
 export class HealthController {
   constructor(private prisma: PrismaService, private queue: QueueService) {}
@@ -81,8 +82,14 @@ export class HealthController {
     return body;
   }
 
+  // Restricted: private-network scrapers or `METRICS_TOKEN` bearer only;
+  // see metrics-access.ts. Anything else is a 404.
   @Get('metrics')
-  async metrics(@Res({ passthrough: true }) res: Response): Promise<string> {
+  async metrics(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<string> {
+    if (!isMetricsRequestAllowed(req)) throw new NotFoundException();
     // Sample queue depths just before exposition. Cheap (Redis llen on a
     // handful of keys) and avoids carrying yet another background tick.
     try {

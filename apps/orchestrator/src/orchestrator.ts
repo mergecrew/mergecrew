@@ -38,6 +38,7 @@ import { dispatchEmailDigest } from './digest-email.js';
 import { handleSlackInteractivity } from './slack-interactivity.js';
 import { handleSentryWebhook } from './sentry-webhook.js';
 import { telemetry } from './telemetry.js';
+import { effectiveRunnerKind } from './runner-trust.js';
 
 interface OrchestratorDeps {
   connection: Redis;
@@ -109,7 +110,10 @@ export class Orchestrator {
     // `instance_builtin`; orgs created after the migration without an
     // explicit profile fall through to `none` here so the failure mode
     // matches a freshly-onboarded tenant who hasn't configured a runner.
-    const kind = profile?.kind ?? 'none';
+    // Trust is re-checked against the org-UUID allowlist on every
+    // dispatch (ADR-0006): an `instance_builtin` row for an org that is
+    // not trusted *now* fails closed instead of reaching the host runner.
+    const kind = effectiveRunnerKind(profile?.kind ?? 'none', args.organizationId);
     const payload = { ...args };
 
     if (kind === 'instance_builtin') {

@@ -55,8 +55,12 @@ export class RoleGuard implements CanActivate {
       ctx.getHandler(),
       ctx.getClass(),
     ]);
-    if (!required) return true;
     const t = this.tenant.current();
+    // Org-scoped routes (`/v1/orgs/:slug/...`) must never run without a
+    // resolved tenant, even when no minimum role is declared.
+    const params = ctx.switchToHttp().getRequest<{ params?: Record<string, string> }>()?.params;
+    if (params?.slug !== undefined && !t) throw new ForbiddenException();
+    if (!required) return true;
     if (!t) throw new ForbiddenException();
     if (!roleAtLeast(t.role, required)) {
       throw new ForbiddenException(`requires role ${required}`);

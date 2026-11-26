@@ -7,6 +7,8 @@ import { deliverOutboundWebhook, type OutboundJob } from './outbound-webhook-wor
 import { handleFanout } from './webhook-fanout-worker.js';
 import { HeartbeatSweeper } from './heartbeat-sweeper.js';
 import { markTick, startObservabilityServer } from './observability.js';
+import { withSystem } from '@mergecrew/db';
+import { downgradeUntrustedBuiltinProfiles } from './runner-trust.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
@@ -145,6 +147,14 @@ const observabilityServer = startObservabilityServer({
   staleTickMs: sweeperIntervalMs * 4,
   logger,
 });
+
+// Built-in runner trust (ADR-0006) is keyed on org UUIDs; reset any
+// `instance_builtin` profile (migration backfill, legacy slug trust) of
+// an org that isn't in the allowlist. Dispatch re-checks regardless, so
+// a failure here is logged rather than fatal.
+void withSystem((tx) => downgradeUntrustedBuiltinProfiles(tx, logger)).catch((err) =>
+  logger.error({ err: err?.message ?? err }, 'runner.trust: boot-time profile downgrade failed'),
+);
 
 logger.info('orchestrator started');
 

@@ -2,6 +2,7 @@ import type { Logger } from 'pino';
 import type { Queue } from 'bullmq';
 import { withSystem, withTenant } from '@mergecrew/db';
 import type { Eventlog } from '@mergecrew/eventlog';
+import { effectiveRunnerKind } from './runner-trust.js';
 
 /**
  * Heartbeat-based dead-runner recovery (#10 V1.4).
@@ -203,6 +204,44 @@ export class HeartbeatSweeper {
       this.deps.logger.debug(
         { stepId, attempt, ageMs, threshold },
         'sweeper: still in per-attempt backoff window, skipping re-dispatch',
+      );
+      return;
+    }
+
+    // Re-dispatch targets the built-in runner queue without an executor
+    // marker, so it is only valid for orgs that are trusted for
+    // `instance_builtin` *now* (ADR-0006). Anything else — BYO kinds, or
+    // a builtin row for an org that is no longer trusted — fails closed
+    // instead of landing on the host runner.
+    const profile = await withTenant(organizationId, (tx) =>
+      tx.runnerProfile.findUnique({ where: { organizationId }, select: { kind: true } }),
+    );
+    const kind = effectiveRunnerKind(profile?.kind ?? 'none', organizationId);
+    if (kind !== 'instance_builtin') {
+      await withTenant(organizationId, (tx) =>
+        tx.agentStep.updateMany({
+          where: { id: stepId, organizationId, status: 'running' },
+          data: {
+            status: 'failed',
+            finishedAt: new Date(),
+            heartbeatAt: null,
+            failureReason: `runner_dead: heartbeat stale ${staleSeconds}s, not re-dispatchable for runner kind ${kind}`,
+          },
+        }),
+      );
+      await this.deps.eventlog.emit({
+        organizationId,
+        projectId,
+        dailyRunId: runId,
+        workflowRunId,
+        agentStepId: stepId,
+        type: 'AGENT_STEP_FAILED',
+        actor: { kind: 'system' },
+        payload: { reason: 'runner_dead', attempts: attempt, staleSeconds, runnerKind: kind },
+      });
+      this.deps.logger.warn(
+        { stepId, organizationId, kind },
+        'sweeper: stale step not re-dispatched to the built-in runner, marked failed',
       );
       return;
     }

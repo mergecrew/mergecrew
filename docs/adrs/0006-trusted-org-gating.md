@@ -43,3 +43,7 @@ Validation:
 - #762 — `MERGECREW_TRUSTED_ORG_SLUGS` + `MERGECREW_OWNER_ORG_SLUG` envs; `isTrustedOrgSlug` helper; surfaced in the GET response.
 - #767 — `PATCH` endpoint rejects `kind=instance_builtin` for non-trusted orgs server-side.
 - #763 — `org.service.ts:create` seeds the profile per the trust gate on org creation.
+
+## Amendment (Nov 2026): trust keyed on org id
+
+The slug-based envs were replaced by `MERGECREW_TRUSTED_ORG_IDS` / `MERGECREW_OWNER_ORG_ID` (organization UUIDs). Slugs are user-chosen and renameable by any org admin, so they cannot anchor access to the host runner. The `*_SLUG` envs are ignored. The orchestrator re-checks trust on every dispatch (including heartbeat-sweeper re-dispatch) and fails closed, and at boot downgrades any `instance_builtin` profile of an untrusted org to `none`.

@@ -19,19 +19,23 @@ export class ChangesetController {
   }
 
   @Get('changesets/:csId')
-  async get(@Param('csId') csId: string) {
-    return this.cs.get(csId);
+  async get(@Param('projectSlug') projectSlug: string, @Param('csId') csId: string) {
+    return this.cs.get(csId, projectSlug);
   }
 
   @Get('changesets/:csId/diff')
-  async diff(@Param('csId') csId: string) {
-    return this.cs.getDiff(csId);
+  async diff(@Param('projectSlug') projectSlug: string, @Param('csId') csId: string) {
+    return this.cs.getDiff(csId, projectSlug);
   }
 
   @Post('changesets/:csId/decisions')
   @RequireRole('operator')
-  async decide(@Param('csId') csId: string, @Body() body: { kind: DecisionKind; comment?: string }) {
-    return this.cs.decide(csId, body.kind, body.comment);
+  async decide(
+    @Param('projectSlug') projectSlug: string,
+    @Param('csId') csId: string,
+    @Body() body: { kind: DecisionKind; comment?: string },
+  ) {
+    return this.cs.decide(csId, body.kind, body.comment, projectSlug);
   }
 
   /**
@@ -42,8 +46,8 @@ export class ChangesetController {
    */
   @Post('changesets/:csId/rollback')
   @RequireRole('admin')
-  async rollback(@Param('csId') csId: string) {
-    return this.cs.rollback(csId);
+  async rollback(@Param('projectSlug') projectSlug: string, @Param('csId') csId: string) {
+    return this.cs.rollback(csId, projectSlug);
   }
 
   /**
@@ -56,8 +60,8 @@ export class ChangesetController {
    */
   @Post('changesets/:csId/drop')
   @RequireRole('operator')
-  async drop(@Param('csId') csId: string) {
-    return this.cs.drop(csId);
+  async drop(@Param('projectSlug') projectSlug: string, @Param('csId') csId: string) {
+    return this.cs.drop(csId, projectSlug);
   }
 
   /**
@@ -90,12 +94,13 @@ export class ChangesetController {
   }
 
   @Get('changesets/:csId/comments')
-  async listComments(@Param('csId') csId: string) {
-    return { items: await this.comments.list(csId) };
+  async listComments(@Param('projectSlug') projectSlug: string, @Param('csId') csId: string) {
+    return { items: await this.comments.list(projectSlug, csId) };
   }
 
   @Post('changesets/:csId/comments')
   async createComment(
+    @Param('projectSlug') projectSlug: string,
     @Param('csId') csId: string,
     @Body() body: {
       filePath: string;
@@ -104,20 +109,26 @@ export class ChangesetController {
       parentId?: string;
     },
   ) {
-    return this.comments.create(csId, body);
+    return this.comments.create(projectSlug, csId, body);
   }
 
   @Patch('changesets/:csId/comments/:commentId')
   async updateComment(
+    @Param('projectSlug') projectSlug: string,
+    @Param('csId') csId: string,
     @Param('commentId') commentId: string,
     @Body() body: { body?: string; resolved?: boolean },
   ) {
-    return this.comments.update(commentId, body);
+    return this.comments.update(projectSlug, csId, commentId, body);
   }
 
   @Delete('changesets/:csId/comments/:commentId')
-  async deleteComment(@Param('commentId') commentId: string) {
-    await this.comments.delete(commentId);
+  async deleteComment(
+    @Param('projectSlug') projectSlug: string,
+    @Param('csId') csId: string,
+    @Param('commentId') commentId: string,
+  ) {
+    await this.comments.delete(projectSlug, csId, commentId);
     return { ok: true };
   }
 }

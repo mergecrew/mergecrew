@@ -6,6 +6,7 @@ import { TenantContextService } from '../../common/tenant-context.service.js';
 import { QueueService } from '../../common/queue.service.js';
 import { EventlogService } from '../../common/eventlog.service.js';
 import { TelemetryService } from '../../common/telemetry.service.js';
+import { isTrustedOrgId } from '../../common/trusted-orgs.js';
 
 @Injectable()
 export class RunService {
@@ -32,10 +33,23 @@ export class RunService {
     );
   }
 
-  async get(runId: string) {
+  /**
+   * Resolve a run by id, scoped explicitly to the tenant org and — when the
+   * route carries one — the `:projectSlug`. Never rely on RLS alone here:
+   * a run id from another org (or another project in this org) is a 404.
+   */
+  async get(runId: string, projectSlug?: string) {
     const t = this.tenant.require();
     const run = await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.dailyRun.findFirst({ where: { id: runId, organizationId: t.organizationId } }),
+      tx.dailyRun.findFirst({
+        where: {
+          id: runId,
+          organizationId: t.organizationId,
+          ...(projectSlug !== undefined
+            ? { project: { slug: projectSlug, organizationId: t.organizationId, deletedAt: null } }
+            : {}),
+        },
+      }),
     );
     if (!run) throw new NotFoundError();
     return run;
@@ -95,6 +109,13 @@ export class RunService {
       }),
     );
     const profileKind = profile?.kind ?? 'none';
+    // The orchestrator re-checks this at dispatch; rejecting here keeps
+    // the error close to the click (ADR-0006, trust keyed on org UUID).
+    if (profileKind === 'instance_builtin' && !isTrustedOrgId(t.organizationId)) {
+      throw new ValidationError(
+        'this org is not trusted for the built-in runner — configure a runner profile from Settings → Runner',
+      );
+    }
     const supportedKinds = new Set([
       'instance_builtin',
       'agent',
@@ -170,17 +191,18 @@ export class RunService {
     return { queued: true, projectId: project.id, runId: run.id };
   }
 
-  async cancel(runId: string) {
+  async cancel(runId: string, projectSlug?: string) {
     const t = this.tenant.require();
+    const run = await this.get(runId, projectSlug);
     await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.dailyRun.update({
-        where: { id: runId },
+        where: { id: run.id, organizationId: t.organizationId },
         data: { status: 'cancelled', finishedAt: new Date() },
       }),
     );
     await this.eventlogSvc.eventlog.emit({
       organizationId: t.organizationId,
-      projectId: (await this.get(runId)).projectId,
+      projectId: run.projectId,
       dailyRunId: runId,
       type: 'RUN_CANCELLED',
       actor: { kind: 'user', id: t.userId },
@@ -216,9 +238,10 @@ export class RunService {
     return { cancelled: true };
   }
 
-  async timeline(runId: string, afterEventId?: string) {
+  async timeline(runId: string, afterEventId?: string, projectSlug?: string) {
     const t = this.tenant.require();
-    return this.eventlogSvc.eventlog.replayRun(t.organizationId, runId, afterEventId);
+    const run = await this.get(runId, projectSlug);
+    return this.eventlogSvc.eventlog.replayRun(t.organizationId, run.id, afterEventId);
   }
 
   /**
@@ -231,18 +254,12 @@ export class RunService {
    * every entry is 'audit' the UI shows the would-have-been-blocked
    * chip.
    */
-  async networkSummary(runId: string) {
+  async networkSummary(runId: string, projectSlug?: string) {
     const t = this.tenant.require();
-    const run = await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.dailyRun.findFirst({
-        where: { id: runId, organizationId: t.organizationId },
-        select: { id: true, projectId: true },
-      }),
-    );
-    if (!run) throw new NotFoundError();
+    const run = await this.get(runId, projectSlug);
     const events = await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.egressEvent.findMany({
-        where: { dailyRunId: runId },
+        where: { dailyRunId: run.id, organizationId: t.organizationId },
         orderBy: { occurredAt: 'asc' },
       }),
     );
@@ -331,16 +348,13 @@ export class RunService {
    * Returns the run as a tree of workflows → agent steps → (model turns + tool calls).
    * Used by the run-detail page to show what the agents actually did.
    */
-  async detail(runId: string) {
+  async detail(runId: string, projectSlug?: string) {
     const t = this.tenant.require();
-    const run = await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.dailyRun.findFirst({ where: { id: runId, organizationId: t.organizationId } }),
-    );
-    if (!run) throw new NotFoundError();
+    const run = await this.get(runId, projectSlug);
 
     const workflows = await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.workflowRun.findMany({
-        where: { dailyRunId: runId },
+        where: { dailyRunId: run.id, organizationId: t.organizationId },
         orderBy: { startedAt: 'asc' },
       }),
     );

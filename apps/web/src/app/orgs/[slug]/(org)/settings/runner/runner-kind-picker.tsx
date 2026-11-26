@@ -36,7 +36,7 @@ export const KIND_LABEL: Record<ProfileKind, string> = {
 export const KIND_DESC: Record<ProfileKind, string> = {
   none: 'Runs are blocked until you pick a runner profile.',
   instance_builtin:
-    "Use the deployment's built-in runner. Available only to orgs the operator has trusted (MERGECREW_TRUSTED_ORG_SLUGS).",
+    "Use the deployment's built-in runner. Available only to orgs the operator has trusted (MERGECREW_TRUSTED_ORG_IDS).",
   agent:
     'Run the `mergecrew/runner-agent` container on your own machine or cloud account. The agent pulls jobs over HTTPS and executes them locally.',
   fargate_byo:

@@ -423,7 +423,7 @@ export class PromoteService {
     const t = this.tenant.require();
     return this.prisma.withTenant(t.organizationId, (tx) =>
       tx.promoteRun.update({
-        where: { id },
+        where: { id, organizationId: t.organizationId },
         data: {
           status: patch.status,
           releaseRef: patch.releaseRef,
@@ -440,7 +440,7 @@ export class PromoteService {
   private async recordReleaseRef(id: string, releaseRef: string): Promise<void> {
     const t = this.tenant.require();
     await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.promoteRun.update({ where: { id }, data: { releaseRef } }),
+      tx.promoteRun.update({ where: { id, organizationId: t.organizationId }, data: { releaseRef } }),
     );
   }
 

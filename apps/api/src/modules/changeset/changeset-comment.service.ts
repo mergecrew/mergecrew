@@ -15,6 +15,8 @@ interface UpdateInput {
   resolved?: boolean;
 }
 
+const USER_SELECT = { id: true, name: true, email: true, avatarUrl: true } as const;
+
 @Injectable()
 export class ChangesetCommentService {
   constructor(
@@ -22,19 +24,39 @@ export class ChangesetCommentService {
     private tenant: TenantContextService,
   ) {}
 
-  async list(csId: string) {
+  /**
+   * Every comment operation first proves the changeset belongs to the
+   * tenant org AND the URL's project. Comment lookups then carry the
+   * org + changeset predicates explicitly instead of relying on RLS.
+   */
+  private async requireChangeset(projectSlug: string, csId: string) {
     const t = this.tenant.require();
+    const cs = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.changeset.findFirst({
+        where: {
+          id: csId,
+          organizationId: t.organizationId,
+          project: { slug: projectSlug, organizationId: t.organizationId, deletedAt: null },
+        },
+        select: { id: true },
+      }),
+    );
+    if (!cs) throw new NotFoundError();
+    return { t, cs };
+  }
+
+  async list(projectSlug: string, csId: string) {
+    const { t, cs } = await this.requireChangeset(projectSlug, csId);
     return this.prisma.withTenant(t.organizationId, (tx) =>
       tx.changesetComment.findMany({
-        where: { changesetId: csId },
+        where: { changesetId: cs.id, organizationId: t.organizationId },
         orderBy: { createdAt: 'asc' },
-        include: { user: { select: { id: true, name: true, email: true, avatarUrl: true } } },
+        include: { user: { select: USER_SELECT } },
       }),
     );
   }
 
-  async create(csId: string, input: CreateInput) {
-    const t = this.tenant.require();
+  async create(projectSlug: string, csId: string, input: CreateInput) {
     if (!input.body || input.body.trim().length === 0) {
       throw new ValidationError('comment body is required');
     }
@@ -49,15 +71,12 @@ export class ChangesetCommentService {
       }
     }
 
-    const cs = await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.changeset.findFirst({ where: { id: csId, organizationId: t.organizationId } }),
-    );
-    if (!cs) throw new NotFoundError();
+    const { t, cs } = await this.requireChangeset(projectSlug, csId);
 
     if (input.parentId) {
       const parent = await this.prisma.withTenant(t.organizationId, (tx) =>
         tx.changesetComment.findFirst({
-          where: { id: input.parentId, changesetId: csId },
+          where: { id: input.parentId, changesetId: cs.id, organizationId: t.organizationId },
         }),
       );
       if (!parent) throw new ValidationError('parent comment not found on this changeset');
@@ -67,22 +86,24 @@ export class ChangesetCommentService {
       tx.changesetComment.create({
         data: {
           organizationId: t.organizationId,
-          changesetId: csId,
+          changesetId: cs.id,
           userId: t.userId,
           filePath: input.filePath,
           ...(input.lineRange ? { lineRange: input.lineRange } : {}),
           body: input.body.trim(),
           parentId: input.parentId ?? null,
         },
-        include: { user: { select: { id: true, name: true, email: true, avatarUrl: true } } },
+        include: { user: { select: USER_SELECT } },
       }),
     );
   }
 
-  async update(commentId: string, input: UpdateInput) {
-    const t = this.tenant.require();
+  async update(projectSlug: string, csId: string, commentId: string, input: UpdateInput) {
+    const { t, cs } = await this.requireChangeset(projectSlug, csId);
     const existing = await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.changesetComment.findFirst({ where: { id: commentId } }),
+      tx.changesetComment.findFirst({
+        where: { id: commentId, changesetId: cs.id, organizationId: t.organizationId },
+      }),
     );
     if (!existing) throw new NotFoundError();
 
@@ -101,24 +122,26 @@ export class ChangesetCommentService {
 
     return this.prisma.withTenant(t.organizationId, (tx) =>
       tx.changesetComment.update({
-        where: { id: commentId },
+        where: { id: existing.id, organizationId: t.organizationId },
         data,
-        include: { user: { select: { id: true, name: true, email: true, avatarUrl: true } } },
+        include: { user: { select: USER_SELECT } },
       }),
     );
   }
 
-  async delete(commentId: string): Promise<void> {
-    const t = this.tenant.require();
+  async delete(projectSlug: string, csId: string, commentId: string): Promise<void> {
+    const { t, cs } = await this.requireChangeset(projectSlug, csId);
     const existing = await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.changesetComment.findFirst({ where: { id: commentId } }),
+      tx.changesetComment.findFirst({
+        where: { id: commentId, changesetId: cs.id, organizationId: t.organizationId },
+      }),
     );
     if (!existing) throw new NotFoundError();
     if (existing.userId !== t.userId) {
       throw new ValidationError('only the author can delete a comment');
     }
     await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.changesetComment.delete({ where: { id: commentId } }),
+      tx.changesetComment.delete({ where: { id: existing.id, organizationId: t.organizationId } }),
     );
   }
 }

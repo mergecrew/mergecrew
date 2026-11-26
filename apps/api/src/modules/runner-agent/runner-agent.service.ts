@@ -181,7 +181,7 @@ export class RunnerAgentService {
 
     await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.runnerAgent.update({
-        where: { id },
+        where: { id, organizationId: t.organizationId },
         data: { revokedAt: new Date() },
       }),
     );

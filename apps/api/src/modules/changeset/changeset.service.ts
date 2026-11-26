@@ -34,12 +34,32 @@ export class ChangesetService {
     );
   }
 
-  async get(csId: string) {
+  /**
+   * Resolve a changeset scoped explicitly to the tenant org and — when the
+   * route carries one — the URL's `:projectSlug`. Binding the object to the
+   * URL project is what lets the global DemoProjectGuard (which inspects
+   * the URL project) also cover the object being mutated.
+   */
+  private async findScoped(csId: string, projectSlug?: string) {
     const t = this.tenant.require();
-    const r = await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.changeset.findFirst({ where: { id: csId, organizationId: t.organizationId } }),
+    const cs = await this.prisma.withTenant(t.organizationId, (tx) =>
+      tx.changeset.findFirst({
+        where: {
+          id: csId,
+          organizationId: t.organizationId,
+          ...(projectSlug !== undefined
+            ? { project: { slug: projectSlug, organizationId: t.organizationId, deletedAt: null } }
+            : {}),
+        },
+      }),
     );
-    if (!r) throw new NotFoundError();
+    if (!cs) throw new NotFoundError();
+    return cs;
+  }
+
+  async get(csId: string, projectSlug?: string) {
+    const t = this.tenant.require();
+    const r = await this.findScoped(csId, projectSlug);
     // Agent-review state (#421, V2.al). Computed from the latest
     // CHANGESET_REVIEW_POSTED event the runner emitted for this
     // changeset (#420). Folded into the detail response so the
@@ -51,7 +71,7 @@ export class ChangesetService {
     // Absent for changesets without a PR or runs that don't use a Reviewer agent.
     const latestReview = await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.timelineEvent.findFirst({
-        where: { changesetId: csId, type: 'CHANGESET_REVIEW_POSTED' },
+        where: { changesetId: csId, organizationId: t.organizationId, type: 'CHANGESET_REVIEW_POSTED' },
         orderBy: { occurredAt: 'desc' },
         select: { payload: true, occurredAt: true },
       }),
@@ -94,9 +114,9 @@ export class ChangesetService {
     };
   }
 
-  async decide(csId: string, kind: DecisionKind, comment?: string) {
+  async decide(csId: string, kind: DecisionKind, comment?: string, projectSlug?: string) {
     const t = this.tenant.require();
-    const cs = await this.get(csId);
+    const cs = await this.get(csId, projectSlug);
 
     // Hard product invariant: production promote requires operator+.
     if (kind === 'promote' && t.role !== 'owner' && t.role !== 'admin' && t.role !== 'operator') {
@@ -117,7 +137,7 @@ export class ChangesetService {
 
     await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.changeset.update({
-        where: { id: csId },
+        where: { id: csId, organizationId: t.organizationId },
         data: {
           status: kind === 'promote' ? 'promoted' : kind === 'rollback' ? 'rolled_back' : 'deferred',
           updatedAt: new Date(),
@@ -157,12 +177,12 @@ export class ChangesetService {
     return decision;
   }
 
-  async getDiff(csId: string): Promise<{ prNumber: number; files: PullRequestFile[] }> {
+  async getDiff(
+    csId: string,
+    projectSlug?: string,
+  ): Promise<{ prNumber: number; files: PullRequestFile[] }> {
     const t = this.tenant.require();
-    const cs = await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.changeset.findFirst({ where: { id: csId, organizationId: t.organizationId } }),
-    );
-    if (!cs) throw new NotFoundError();
+    const cs = await this.findScoped(csId, projectSlug);
     if (!cs.prNumber) {
       throw new ValidationError('changeset has no open PR — diff is not available yet');
     }
@@ -199,7 +219,7 @@ export class ChangesetService {
    * shows the operator before they click confirm — but we don't refuse
    * the action, only document the consequence.
    */
-  async rollback(csId: string): Promise<{
+  async rollback(csId: string, projectSlug?: string): Promise<{
     ok: true;
     revertPrNumber: number;
     revertPrUrl: string;
@@ -207,10 +227,7 @@ export class ChangesetService {
     migrationFiles: string[];
   }> {
     const t = this.tenant.require();
-    const cs = await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.changeset.findFirst({ where: { id: csId, organizationId: t.organizationId } }),
-    );
-    if (!cs) throw new NotFoundError();
+    const cs = await this.findScoped(csId, projectSlug);
     if (cs.status !== 'promoted') {
       throw new ValidationError(
         `rollback requires status=promoted, got ${cs.status}. Only merged changesets can be rolled back.`,
@@ -262,7 +279,7 @@ export class ChangesetService {
 
     await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.changeset.update({
-        where: { id: csId },
+        where: { id: csId, organizationId: t.organizationId },
         data: {
           status: 'rolled_back',
           revertPrNumber,
@@ -318,17 +335,14 @@ export class ChangesetService {
    * rather than opening a duplicate. Callers should rely on this so
    * UI double-tap doesn't fan out into two PRs.
    */
-  async drop(csId: string): Promise<{
+  async drop(csId: string, projectSlug?: string): Promise<{
     ok: true;
     revertPrUrl: string;
     droppedAt: string;
     alreadyDropped: boolean;
   }> {
     const t = this.tenant.require();
-    const cs = await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.changeset.findFirst({ where: { id: csId, organizationId: t.organizationId } }),
-    );
-    if (!cs) throw new NotFoundError();
+    const cs = await this.findScoped(csId, projectSlug);
     if (!cs.prNumber) {
       throw new ValidationError(
         'changeset_not_merged: drop requires a merged PR to revert against',
@@ -374,7 +388,7 @@ export class ChangesetService {
 
     await this.prisma.withTenant(t.organizationId, (tx) =>
       tx.changeset.update({
-        where: { id: csId },
+        where: { id: csId, organizationId: t.organizationId },
         data: {
           droppedAt,
           dropRevertPrUrl: revertPrUrl,
@@ -452,7 +466,7 @@ export class ChangesetService {
     if (!project) throw new NotFoundError();
     const decisions: any[] = [];
     for (const id of ids) {
-      decisions.push(await this.decide(id, 'promote'));
+      decisions.push(await this.decide(id, 'promote', undefined, projectSlug));
     }
     await this.queue.get('orchestrator.dispatch').add(
       'group_promote',
