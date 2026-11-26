@@ -14,21 +14,27 @@ type Member = {
   user: { id: string; email: string; name?: string | null };
 };
 
+type Invitation = { id: string; email: string; role: Role; expiresAt: string };
+
 type ServerActions = {
   invite: (input: { email: string; role: 'admin' | 'operator' | 'viewer' }) => Promise<
     { ok: true } | { ok: false; error: string }
   >;
+  revokeInvitation?: (id: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   updateRole: (id: string, role: Role) => Promise<{ ok: true } | { ok: false; error: string }>;
   remove: (id: string) => Promise<{ ok: true } | { ok: false; error: string }>;
 };
 
 export function MembersSection({
   members,
+  invitations = [],
   canEdit,
   currentUserId,
   actions,
 }: {
   members: Member[];
+  /** Pending invitations (admins only). */
+  invitations?: Invitation[];
   canEdit: boolean;
   currentUserId: string | null;
   actions: ServerActions;
@@ -36,10 +42,12 @@ export function MembersSection({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
 
   const invite = (formData: FormData) => {
     setError(null);
+    setNotice(null);
     const email = String(formData.get('email') ?? '').trim();
     const role = String(formData.get('role') ?? 'viewer') as 'admin' | 'operator' | 'viewer';
     if (!email) {
@@ -49,7 +57,10 @@ export function MembersSection({
     startTransition(async () => {
       const r = await actions.invite({ email, role });
       if (!r.ok) setError(r.error);
-      else router.refresh();
+      else {
+        setNotice(`Invitation sent to ${email}. They join once they sign in with that address and accept.`);
+        router.refresh();
+      }
     });
   };
 
@@ -107,6 +118,49 @@ export function MembersSection({
       {error && (
         <div className="border border-energy bg-energy-soft p-3 text-[12.5px] text-energy-deep">
           {error}
+        </div>
+      )}
+
+      {notice && (
+        <div className="border border-hair bg-paper-2 p-3 text-[12.5px] text-ink-2">{notice}</div>
+      )}
+
+      {canEdit && invitations.length > 0 && (
+        <div className="border border-hair bg-paper">
+          <div className="border-b border-hair-2 px-5 py-2 font-mono text-[11px] uppercase tracking-[0.08em] text-muted">
+            Pending invitations
+          </div>
+          <ul className="m-0 list-none p-0">
+            {invitations.map((inv, i) => (
+              <li
+                key={inv.id}
+                className={
+                  'grid grid-cols-[1fr_auto_auto] items-center gap-4 px-5 py-3 text-[13px] ' +
+                  (i < invitations.length - 1 ? 'border-b border-hair-2' : '')
+                }
+              >
+                <span className="min-w-0 truncate font-mono text-[12.5px]">{inv.email}</span>
+                <RolePill role={inv.role} />
+                {actions.revokeInvitation && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={pending}
+                    onClick={() =>
+                      startTransition(async () => {
+                        setError(null);
+                        const r = await actions.revokeInvitation!(inv.id);
+                        if (!r.ok) setError(r.error);
+                        else router.refresh();
+                      })
+                    }
+                  >
+                    Revoke
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

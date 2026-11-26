@@ -6,7 +6,13 @@ const nextConfig = {
   // surface — node:bookworm-slim + the standalone output, nothing else.
   output: 'standalone',
   experimental: {
-    serverActions: { allowedOrigins: ['localhost:3000', 'mergecrew.dev'] },
+    // Same-origin server actions are always allowed; this list only adds
+    // extra origins. localhost is a dev convenience and is not accepted by
+    // production builds.
+    serverActions: {
+      allowedOrigins:
+        process.env.NODE_ENV === 'production' ? ['mergecrew.dev'] : ['localhost:3000', 'mergecrew.dev'],
+    },
   },
   // `/api/v1/*` is proxied to the API tier by a runtime route handler at
   // apps/web/src/app/api/v1/[...path]/route.ts. We used to declare it

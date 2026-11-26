@@ -13,10 +13,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import { Throttle } from '@nestjs/throttler';
 import { OrgService } from './org.service.js';
 import { RoleGuard, RequireRole } from '../../common/role.guard.js';
 import { TenantContextService } from '../../common/tenant-context.service.js';
 import { TelemetryService } from '../../common/telemetry.service.js';
+import { InvitationService } from '../invitation/invitation.service.js';
+import { AUTH_STRICT_THROTTLE } from '../../common/throttle.js';
 
 @Controller('v1')
 export class OrgController {
@@ -24,6 +27,7 @@ export class OrgController {
     private orgs: OrgService,
     private tenant: TenantContextService,
     private telemetry: TelemetryService,
+    private invitations: InvitationService,
   ) {}
 
   @Get('orgs')
@@ -61,6 +65,7 @@ export class OrgController {
   }
 
   @Post('orgs/:slug/members')
+  @Throttle(AUTH_STRICT_THROTTLE)
   @UseGuards(RoleGuard)
   @RequireRole('admin')
   async inviteMember(
@@ -72,7 +77,9 @@ export class OrgController {
     if (!['admin', 'operator', 'viewer'].includes(role)) {
       throw new BadRequestException('role must be admin | operator | viewer');
     }
-    return this.orgs.inviteMemberByEmail(body.email, role);
+    // Creates a pending invitation; same response whether or not the
+    // address has an account. Membership is created on acceptance.
+    return this.invitations.invite(body.email, role);
   }
 
   @Patch('orgs/:slug/members/:id')

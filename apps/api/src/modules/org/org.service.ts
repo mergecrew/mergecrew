@@ -7,6 +7,38 @@ import { TenantContextService } from '../../common/tenant-context.service.js';
 import { TelemetryService } from '../../common/telemetry.service.js';
 import { isTrustedOrgSlug } from '../../common/trusted-orgs.js';
 
+/**
+ * Fields an org read may return to any member. Explicit allow-list so
+ * envelope-encrypted columns (`slackWebhookCiphertext`) and any column
+ * added later never leak through `GET /v1/orgs/:slug` or the update
+ * echoes. `slackWebhookCreatedAt` stays as the "configured" signal.
+ */
+const ORG_DETAIL_SELECT = {
+  id: true,
+  slug: true,
+  name: true,
+  timezone: true,
+  workingHoursStart: true,
+  workingHoursEnd: true,
+  defaultLlmProfileId: true,
+  defaultGatePolicyId: true,
+  dailyBudgetUsd: true,
+  monthlySpendCapUsd: true,
+  evalsEnabled: true,
+  evalsLastRanAt: true,
+  orgConcurrencyCap: true,
+  complianceAuditRetention: true,
+  telemetryEnabled: true,
+  telemetryInstallId: true,
+  runsPausedAt: true,
+  runsPauseReason: true,
+  runsPausedByUserId: true,
+  slackWebhookCreatedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  deletedAt: true,
+} as const;
+
 function startOfUtcDay(d: Date): Date {
   const r = new Date(d);
   r.setUTCHours(0, 0, 0, 0);
@@ -94,7 +126,7 @@ export class OrgService {
   async detail() {
     const t = this.tenant.require();
     const org = await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.organization.findUnique({ where: { id: t.organizationId } }),
+      tx.organization.findUnique({ where: { id: t.organizationId }, select: ORG_DETAIL_SELECT }),
     );
     if (!org) throw new NotFoundError();
     return org;
@@ -164,7 +196,7 @@ export class OrgService {
     }
 
     return this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.organization.update({ where: { id: t.organizationId }, data }),
+      tx.organization.update({ where: { id: t.organizationId }, data, select: ORG_DETAIL_SELECT }),
     );
   }
 
@@ -177,6 +209,7 @@ export class OrgService {
       tx.organization.update({
         where: { id: t.organizationId },
         data: { dailyBudgetUsd: dailyBudgetUsd as any },
+        select: ORG_DETAIL_SELECT,
       }),
     );
   }
@@ -317,6 +350,7 @@ export class OrgService {
       tx.organization.update({
         where: { id: t.organizationId },
         data: { monthlySpendCapUsd: monthlySpendCapUsd as any },
+        select: ORG_DETAIL_SELECT,
       }),
     );
   }
@@ -380,6 +414,7 @@ export class OrgService {
       tx.organization.update({
         where: { id: t.organizationId },
         data: { orgConcurrencyCap },
+        select: ORG_DETAIL_SELECT,
       }),
     );
   }
@@ -480,39 +515,8 @@ export class OrgService {
     }));
   }
 
-  /**
-   * Invite an existing user (looked up by email) into the current org
-   * with the given role. Pending-invitation rows for users who haven't
-   * signed up yet would need an OrgInvitation table; deferred until
-   * the magic-link or OAuth flow signs up the recipient.
-   */
-  async inviteMemberByEmail(email: string, role: 'admin' | 'operator' | 'viewer') {
-    const t = this.tenant.require();
-    const normalized = email.trim().toLowerCase();
-    if (!normalized) throw new ValidationError('email is required');
-    const user = await this.prisma.withSystem((tx) =>
-      tx.user.findUnique({ where: { email: normalized } }),
-    );
-    if (!user) {
-      throw new ValidationError(
-        `No Mergecrew account found for ${normalized}. Ask them to sign up first, then invite them.`,
-      );
-    }
-    const existing = await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.membership.findFirst({
-        where: { organizationId: t.organizationId, userId: user.id },
-      }),
-    );
-    if (existing) {
-      throw new ValidationError(`${normalized} is already a member of this org.`);
-    }
-    const created = await this.prisma.withTenant(t.organizationId, (tx) =>
-      tx.membership.create({
-        data: { organizationId: t.organizationId, userId: user.id, role },
-      }),
-    );
-    return { id: created.id, role: created.role, user: { id: user.id, email: user.email, name: user.name } };
-  }
+  // Inviting by email lives in InvitationService (pending invitations the
+  // invitee accepts); see modules/invitation.
 
   async updateMemberRole(membershipId: string, role: 'owner' | 'admin' | 'operator' | 'viewer') {
     const t = this.tenant.require();

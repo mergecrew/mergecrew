@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import crypto from 'node:crypto';
+import { kmsMasterKey } from './secrets.js';
 
 /**
  * Envelope encryption (dev-grade): a single master key in env (`KMS_MASTER_KEY`)
@@ -11,7 +12,8 @@ export class CryptoService {
   private masterKey: Buffer;
 
   constructor() {
-    const v = process.env.KMS_MASTER_KEY ?? 'base64:0000000000000000000000000000000000000000000=';
+    // Refuses a missing / all-zero key in production (see secrets.ts).
+    const v = kmsMasterKey();
     if (!v.startsWith('base64:')) throw new Error('KMS_MASTER_KEY must start with base64:');
     const buf = Buffer.from(v.slice(7), 'base64');
     if (buf.length !== 32) throw new Error('KMS_MASTER_KEY must be 32 bytes');

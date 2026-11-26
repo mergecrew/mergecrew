@@ -1,23 +1,28 @@
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { auth } from '@/auth';
+import { getToken } from 'next-auth/jwt';
 import type { Session } from './api';
+import {
+  JWT_OVERRIDE_COOKIE,
+  MFA_PENDING_COOKIE,
+  SIGNED_OUT_COOKIE,
+  USER_OVERRIDE_COOKIE,
+  clientIpFromHeaders,
+} from './auth-cookies';
+import { bffTrustToken } from './secrets';
 
-export const SIGNED_OUT_COOKIE = 'mergecrew_signed_out';
 /**
- * Cookie that overrides the session JWT when set. The MFA enrollment +
- * challenge flows write to it so the upgraded JWT (which carries `mfa_at`)
- * is used for subsequent server actions without bouncing through NextAuth
- * or the dev-mode exchange cache.
+ * Cookie names re-exported for existing importers. See auth-cookies.ts.
+ *
+ * `mergecrew_jwt` overrides the session JWT when set. The magic-link,
+ * MFA enrolment, and MFA challenge flows write to it so the (upgraded)
+ * JWT is used for subsequent requests without bouncing through NextAuth.
+ *
+ * `mergecrew_user` carries the signed-in user profile (id/email/name)
+ * for sessions minted outside NextAuth. When set alongside
+ * `mergecrew_jwt`, `getSession()` returns that identity directly.
  */
-export const JWT_OVERRIDE_COOKIE = 'mergecrew_jwt';
-/**
- * Cookie carrying the signed-in user profile (id/email/name) for sessions
- * minted outside NextAuth — namely the magic-link flow (#1). When set
- * alongside `mergecrew_jwt`, `getSession()` returns the override identity
- * directly without going through NextAuth.
- */
-export const USER_OVERRIDE_COOKIE = 'mergecrew_user';
+export { JWT_OVERRIDE_COOKIE, USER_OVERRIDE_COOKIE, SIGNED_OUT_COOKIE, MFA_PENDING_COOKIE };
 
 export function isDevAutoLogin(): boolean {
   const raw =
@@ -36,6 +41,11 @@ function devUserName(): string {
 
 let cachedDevSession: Session | null = null;
 
+/** Drop the cached dev auto-login session (its JWT is revoked on sign-out). */
+export function resetDevSessionCache(): void {
+  cachedDevSession = null;
+}
+
 async function devExchange(): Promise<Session | null> {
   if (cachedDevSession) return cachedDevSession;
   try {
@@ -49,13 +59,15 @@ async function devExchange(): Promise<Session | null> {
         body: JSON.stringify({
           email,
           name,
-          trustToken: process.env.BFF_TRUST_TOKEN ?? 'dev-trust-token',
+          trustToken: bffTrustToken(),
         }),
         cache: 'no-store',
       },
     );
     if (!r.ok) return null;
-    const j = (await r.json()) as { token: string; user: { id: string } };
+    const j = (await r.json()) as { token?: string; user: { id: string } };
+    // An MFA-enrolled demo user gets no auto-login session.
+    if (!j.token) return null;
     cachedDevSession = { userId: j.user.id, email, name, jwt: j.token };
     return cachedDevSession;
   } catch {
@@ -90,6 +102,44 @@ async function userOverride(): Promise<{ userId: string; email: string; name?: s
   }
 }
 
+interface NextAuthToken {
+  email?: string | null;
+  name?: string | null;
+  mergecrewJwt?: string;
+  mergecrewMfaToken?: string;
+  mergecrewUserId?: string;
+}
+
+/**
+ * Decode NextAuth's encrypted session cookie on the server. The API JWT
+ * is stored there (not in the session object served to the browser), so
+ * this is the only way to read it. Tries the `__Secure-` cookie name
+ * first, then the plain one.
+ */
+async function readNextAuthToken(): Promise<NextAuthToken | null> {
+  const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+  if (!secret) return null;
+  let cookie = '';
+  try {
+    cookie = (await headers()).get('cookie') ?? '';
+  } catch {
+    return null;
+  }
+  if (!cookie.includes('authjs.session-token')) return null;
+  // Only the cookie header — never let a client-supplied Authorization
+  // header stand in for the session cookie.
+  const req = { headers: new Headers({ cookie }) };
+  for (const secureCookie of [true, false]) {
+    try {
+      const t = await getToken({ req, secret, secureCookie });
+      if (t) return t as NextAuthToken;
+    } catch {
+      /* try the other cookie name */
+    }
+  }
+  return null;
+}
+
 export async function getSession(): Promise<Session | null> {
   if (await isManuallySignedOut()) return null;
   const override = await jwtOverride();
@@ -99,20 +149,68 @@ export async function getSession(): Promise<Session | null> {
     if (!base) return null;
     return override ? { ...base, jwt: override } : base;
   }
-  // Magic-link flow (#1): we have a JWT + user cookie set by the BFF
-  // verify route. That's a complete session on its own — bypass NextAuth.
+  // Magic-link / MFA-completed flow: we have a JWT + user cookie set by
+  // the BFF. That's a complete session on its own — bypass NextAuth.
   if (override && userOv) {
     return { userId: userOv.userId, email: userOv.email, name: userOv.name, jwt: override };
   }
-  const s = await auth();
-  if (!s?.user?.email) return null;
-  const baseJwt = (s as any).mergecrewJwt as string | undefined;
+  const t = await readNextAuthToken();
+  if (!t?.email || !t.mergecrewUserId) return null;
+  const jwt = override ?? t.mergecrewJwt;
+  // No API JWT means the OAuth sign-in is still waiting on MFA.
+  if (!jwt) return null;
   return {
-    userId: (s as any).mergecrewUserId,
-    email: s.user.email,
-    name: s.user.name ?? undefined,
-    jwt: override ?? baseJwt!,
+    userId: t.mergecrewUserId,
+    email: t.email,
+    name: t.name ?? undefined,
+    jwt,
   };
+}
+
+export interface PendingMfa {
+  /** Pre-MFA API token, accepted only by POST /v1/me/mfa/challenge. */
+  token: string;
+  user: { id: string; email: string; name: string | null };
+  source: 'magic-link' | 'oauth';
+}
+
+/**
+ * The first factor has been proven but the TOTP challenge is still
+ * outstanding (magic-link cookie, or an OAuth sign-in whose exchange
+ * answered `mfaRequired`).
+ */
+export async function getPendingMfa(): Promise<PendingMfa | null> {
+  const c = await cookies();
+  const raw = c.get(MFA_PENDING_COOKIE)?.value;
+  if (raw) {
+    try {
+      const p = JSON.parse(raw) as { t?: string; u?: { id?: string; email?: string; name?: string | null } };
+      if (p.t && p.u?.id && p.u.email) {
+        return { token: p.t, user: { id: p.u.id, email: p.u.email, name: p.u.name ?? null }, source: 'magic-link' };
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+  const t = await readNextAuthToken();
+  if (t?.mergecrewMfaToken && !t.mergecrewJwt && t.mergecrewUserId && t.email) {
+    return {
+      token: t.mergecrewMfaToken,
+      user: { id: t.mergecrewUserId, email: t.email, name: t.name ?? null },
+      source: 'oauth',
+    };
+  }
+  return null;
+}
+
+/** Browser address to forward on server-side calls to auth endpoints. */
+export async function forwardedClientIpHeader(): Promise<Record<string, string>> {
+  try {
+    const ip = clientIpFromHeaders(await headers());
+    return ip ? { 'x-forwarded-for': ip } : {};
+  } catch {
+    return {};
+  }
 }
 
 export async function requireSession(): Promise<Session> {
@@ -126,11 +224,19 @@ export async function requireSession(): Promise<Session> {
     //
     // No refresh-token rotation today (API JWT TTL is 14d). If the
     // stale_jwt count climbs, that's the case for adding one.
+    let pendingMfa = false;
     try {
       const c = await cookies();
       const hadJwt = !!c.get(JWT_OVERRIDE_COOKIE)?.value;
       const signedOut = c.get(SIGNED_OUT_COOKIE)?.value === '1';
-      const reason = signedOut ? 'manual_signout' : hadJwt ? 'stale_jwt' : 'no_session';
+      pendingMfa = !signedOut && (await getPendingMfa()) !== null;
+      const reason = signedOut
+        ? 'manual_signout'
+        : pendingMfa
+          ? 'mfa_pending'
+          : hadJwt
+            ? 'stale_jwt'
+            : 'no_session';
       console.warn(
         JSON.stringify({
           event: 'session.expired_redirect',
@@ -149,7 +255,7 @@ export async function requireSession(): Promise<Session> {
     // sign in. redirect() throws an internal NEXT_REDIRECT that Next
     // handles for both server components and server actions, so this
     // function's signature stays `Promise<Session>` for callers.
-    redirect('/login');
+    redirect(pendingMfa ? '/login/mfa' : '/login');
   }
   return s;
 }

@@ -130,6 +130,11 @@ services:
         MERGECREW_DEV_USER_EMAIL: demo@mergecrew.local
         MERGECREW_DEV_USER_NAME: Demo User
         BFF_TRUST_TOKEN: dev-trust-token
+        # Localhost trial stack only: the secrets above are public dev
+        # defaults, and the web image runs with NODE_ENV=production, which
+        # otherwise refuses to boot with them. Never set this on a
+        # deployment reachable by anyone else — generate real secrets.
+        MERGECREW_ALLOW_INSECURE_DEFAULTS: 'true'
         LOG_LEVEL: info
         # Plumbed through for the local-stack e2e (#228). Empty in normal
         # trial use; set to `1` by scripts/e2e-local.sh so the agent loop

@@ -4,12 +4,13 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from './prisma.service.js';
 import { stampUserContextOnRequest } from './tenant-context.service.js';
+import { jwtSecret } from './secrets.js';
 
 @Injectable()
 export class TenantMiddleware implements NestMiddleware {
   private jwt: JwtService;
-  constructor(private prisma: PrismaService, config: ConfigService) {
-    this.jwt = new JwtService({ secret: config.get<string>('JWT_SECRET') ?? 'dev-secret' });
+  constructor(private prisma: PrismaService, _config: ConfigService) {
+    this.jwt = new JwtService({ secret: jwtSecret() });
   }
 
   async use(req: Request, _res: Response, next: NextFunction): Promise<void> {

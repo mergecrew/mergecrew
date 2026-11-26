@@ -122,8 +122,8 @@ export function MfaPanel({
 
         <Section title="Disable MFA" tone="danger">
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Removes the secret and all recovery codes. Admin and owner write actions will be
-            blocked until you re-enroll.
+            Removes the secret and all recovery codes. Admin and owner write actions will no
+            longer ask for a recent code.
           </p>
           <CodeForm
             placeholder="123456"

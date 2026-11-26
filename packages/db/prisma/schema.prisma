@@ -39,6 +39,19 @@ model User {
   /// consumption the matching row is deleted, not flipped — keeps the table
   /// honest about how many codes remain.
   mfaRecoveryCodes     UserMfaRecoveryCode[]
+  /// Highest TOTP time-step (Unix seconds / 30) accepted for this user.
+  /// A code is only accepted when its step is strictly greater, so the
+  /// same code cannot be used twice within its validity window.
+  mfaLastUsedStep      Int?                  @map("mfa_last_used_step")
+  /// Consecutive failed MFA code attempts since the last success. Reset
+  /// on success; reaching the limit sets `mfaLockedUntil`.
+  mfaFailedAttempts    Int                   @default(0) @map("mfa_failed_attempts")
+  /// While in the future, every MFA code check for this user is refused.
+  mfaLockedUntil       DateTime?             @map("mfa_locked_until") @db.Timestamptz(6)
+  /// Session token version. Session JWTs carry it as the `tv` claim and
+  /// the API rejects tokens whose `tv` differs. Bumped on sign-out to
+  /// revoke outstanding sessions server-side.
+  tokenVersion         Int                   @default(0) @map("token_version")
   /// Per-user opt-in for daily digest emails (#748). Disabled by
   /// default. The unsubscribe link in every email flips this back
   /// to false without requiring the user to sign in.
@@ -128,8 +141,29 @@ model Organization {
   runnerProfile       RunnerProfile?
   runnerAgents        RunnerAgent[]
   githubInstallations OrgGithubInstallation[]
+  invitations         OrgInvitation[]
 
   @@map("organizations")
+}
+
+/// Pending org invitation. Admins invite by email; nothing is revealed
+/// about whether the address has an account, and no membership exists
+/// until the invitee (signed in with that exact email) accepts it.
+model OrgInvitation {
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @map("organization_id") @db.Uuid
+  /// Lower-cased invitee email.
+  email           String
+  role            OrgRole
+  invitedByUserId String?   @map("invited_by_user_id") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt       DateTime  @map("expires_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, email])
+  @@index([email])
+  @@map("org_invitations")
 }
 
 /// Per-event-kind delivery routing (V2.af / #749). One row per

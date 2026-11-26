@@ -2,6 +2,8 @@
 // a BFF trust token + the user's email. In V1 dev we accept simple bearer JWT.
 
 import { notFound } from 'next/navigation';
+import { headers as requestHeaders } from 'next/headers';
+import { clientIpFromHeaders } from './auth-cookies';
 
 const API_BASE = process.env.API_BASE_URL ?? 'http://localhost:4000';
 
@@ -38,6 +40,17 @@ export async function api<T>(
   }
   if (!headers.has('content-type') && init.body) {
     headers.set('content-type', 'application/json');
+  }
+  // Forward the browser's address so the API's per-IP rate limits key on
+  // the real client rather than the web container (the API trusts one
+  // proxy hop). Outside a request scope there is nothing to forward.
+  if (!headers.has('x-forwarded-for')) {
+    try {
+      const ip = clientIpFromHeaders(await requestHeaders());
+      if (ip) headers.set('x-forwarded-for', ip);
+    } catch {
+      /* no request context */
+    }
   }
   const r = await fetch(`${API_BASE}${path}`, { ...init, headers, cache: 'no-store' });
   if (!r.ok) {

@@ -15,6 +15,11 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_or_expired: 'That sign-in link is invalid or has expired. Request a new one below.',
   verify_failed: 'We could not verify the sign-in link. Try again in a moment.',
   request_failed: 'We could not send a sign-in link. Try again in a moment.',
+  rate_limited: 'Too many attempts. Wait a minute and try again.',
+  unverified_email:
+    'Your provider did not confirm a verified email address. Verify your primary email with the provider, or use an email sign-in link instead.',
+  AccessDenied:
+    'Your provider did not confirm a verified email address. Verify your primary email with the provider, or use an email sign-in link instead.',
 };
 
 async function clearSignedOutCookie() {
