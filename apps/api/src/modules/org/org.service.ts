@@ -775,7 +775,7 @@ export class OrgService {
         key: 'llm_provider' as const,
         label: 'Add an LLM provider',
         status: data.llm > 0 ? ('complete' as const) : ('pending' as const),
-        actionUrl: `/orgs/${orgSlug}/settings/llm-providers`,
+        actionUrl: `/orgs/${orgSlug}/settings#llm`,
       },
       {
         key: 'runner_profile' as const,
