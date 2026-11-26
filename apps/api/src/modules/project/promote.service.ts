@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execa, type ExecaError } from 'execa';
-import { GitHubProvider, type VcsProvider } from '@mergecrew/adapters-vcs';
+import { GitHubProvider, type ConnectedRepoRef, type VcsProvider } from '@mergecrew/adapters-vcs';
 import { effectiveBaseBranch, Prisma, type PromoteRun } from '@mergecrew/db';
 import { NotFoundError, ValidationError, interpolateTagPattern } from '@mergecrew/domain';
 import { PrismaService } from '../../common/prisma.service.js';
@@ -293,7 +293,7 @@ export class PromoteService {
           });
           // Push the partial branch with whatever cleanly cherry-picked
           // before the conflict, so the user has something to look at.
-          await this.pushSafely(vcs, workspace, newBranch);
+          await this.pushSafely(vcs, workspace, newBranch, repoRef, releaseBranch);
           this.logger.warn(
             { runId: run.id, changesetId: d.id, prNumber: d.pr.number, err: errMsg(err) },
             'promote: cherry-pick conflict',
@@ -306,7 +306,7 @@ export class PromoteService {
         }
       }
 
-      await vcs.push(workspace, newBranch);
+      await vcs.push(workspace, newBranch, repoRef, { protectedBranches: [releaseBranch] });
 
       // Per-strategy trigger. Errors here aren't conflicts — they're
       // failures (push went through, but dispatch/tag didn't). The
@@ -387,9 +387,11 @@ export class PromoteService {
     vcs: VcsProvider,
     workspace: string,
     branch: string,
+    repoRef: ConnectedRepoRef,
+    releaseBranch: string,
   ): Promise<void> {
     try {
-      await vcs.push(workspace, branch);
+      await vcs.push(workspace, branch, repoRef, { protectedBranches: [releaseBranch] });
     } catch (err) {
       this.logger.warn(
         { branch, err: errMsg(err) },

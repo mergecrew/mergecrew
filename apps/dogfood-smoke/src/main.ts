@@ -75,7 +75,7 @@ async function main(): Promise<void> {
   const urlFixed = process.env.URL_FIXED;
   const timeoutMs = Number(process.env.TIMEOUT_MS ?? 300_000);
 
-  const branch = `mergecrew-smoke/${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  const branch = `mergecrew/smoke-${new Date().toISOString().replace(/[:.]/g, '-')}`;
   const correlationId = `smoke-${Date.now().toString(36)}`;
 
   const vcs = new GitHubProvider(ghCreds);
@@ -119,7 +119,7 @@ async function main(): Promise<void> {
       authorName: 'Mergecrew Smoke',
       authorEmail: 'smoke@mergecrew.dev',
     });
-    await vcs.push(workspace, branch);
+    await vcs.push(workspace, branch, repoRef);
     console.log(`[smoke]            head sha ${sha}`);
 
     console.log(`[smoke] step 4/6  opening PR`);

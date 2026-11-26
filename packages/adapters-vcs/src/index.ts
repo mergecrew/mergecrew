@@ -4,3 +4,4 @@ export * from './gitea.js';
 export * from './gitlab.js';
 export * from './parse-patch.js';
 export * from './credentials.js';
+export * from './safe-git.js';

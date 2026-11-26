@@ -124,7 +124,7 @@ export class LifecyclePrService {
         authorName: 'Mergecrew Bot',
         authorEmail: `mergecrew@${t.organizationId}.mergecrew.dev`,
       });
-      await vcs.push(workspace, branch);
+      await vcs.push(workspace, branch, repoRef, { protectedBranches: [baseBranch] });
 
       const pr = await vcs.openPullRequest(repoRef, {
         head: branch,

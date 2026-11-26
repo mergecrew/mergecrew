@@ -1,12 +1,26 @@
 import { createAppAuth } from '@octokit/auth-app';
 import { Octokit } from '@octokit/rest';
-import { execa } from 'execa';
 import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import {
+  assertPushableBranch,
+  basicAuth,
+  gitClone,
+  gitCommitAll,
+  gitCreateBranch,
+  gitFetch,
+  gitPush,
+  gitRevertToBranch,
+  type GitHttpAuth,
+} from './safe-git.js';
 import type {
+  CommitOpts,
   ConnectedRepoRef,
   DispatchWorkflowOpts,
+  InstallationTokenScope,
+  PushOpts,
   FileChangeStatus,
   MergeOpts,
   MergeResult,
@@ -74,85 +88,92 @@ export class GitHubProvider implements VcsProvider {
 
   // ─── tokens ─────────────────────────────────────────────────────────────
 
-  private async tokenFor(installationId: string): Promise<string> {
+  /**
+   * Mint an installation token. Every mint (clone, fetch, push, PR / API
+   * calls, `getInstallationToken`, revert) goes through here, so the
+   * `authorizeInstallation` binding check always runs first. When
+   * `scope` names a repository and/or permissions, the token is
+   * down-scoped to exactly that (GitHub enforces it server-side) — a
+   * leaked token cannot touch other repos in the customer's
+   * installation or exceed the operation's needs.
+   */
+  private async tokenFor(installationId: string, scope?: InstallationTokenScope): Promise<string> {
     if (this.authorizeInstallation) await this.authorizeInstallation(installationId);
-    const r: any = await this.auth({ type: 'installation', installationId: Number(installationId) });
+    const req: Record<string, unknown> = { type: 'installation', installationId: Number(installationId) };
+    if (scope?.repoId && /^\d+$/.test(scope.repoId)) {
+      req.repositoryIds = [Number(scope.repoId)];
+    } else if (scope?.repoFullName) {
+      req.repositoryNames = [parseRepo(scope.repoFullName).name];
+    }
+    if (scope?.permissions) req.permissions = scope.permissions;
+    const r: any = await this.auth(req as any);
     return r.token;
   }
 
   /**
-   * Public access to the installation token (#550). Other GitHub-backed
-   * adapters in the runner — the GitHubIssuesProvider for the
-   * `tracker.list_issues` skill, the GitHubActionsProvider for deploys
-   * — need the same short-lived token the VCS provider mints. Exposing
-   * the path here keeps token minting centralized so a future swap to a
-   * different GH auth method only touches one place.
+   * Public access to an installation token (#550) for the runner's other
+   * GitHub-backed adapters. Callers should pass a `scope`; without one
+   * the token is installation-wide.
    */
-  async getInstallationToken(installationId: string): Promise<string> {
-    return this.tokenFor(installationId);
+  async getInstallationToken(installationId: string, scope?: InstallationTokenScope): Promise<string> {
+    return this.tokenFor(installationId, scope);
   }
 
-  private async kit(installationId: string): Promise<Octokit> {
-    const token = await this.tokenFor(installationId);
+  private async kit(repo: ConnectedRepoRef, permissions: Record<string, 'read' | 'write'>): Promise<Octokit> {
+    const token = await this.tokenFor(repo.installationId, scopeFor(repo, permissions));
     return new Octokit({ auth: token, baseUrl: this.apiUrl });
   }
 
-  private async cloneUrl(repoFullName: string, installationId: string): Promise<string> {
-    const token = await this.tokenFor(installationId);
-    return `https://x-access-token:${token}@${this.host}/${repoFullName}.git`;
+  private cleanUrl(repoFullName: string): string {
+    parseRepo(repoFullName);
+    return `https://${this.host}/${repoFullName}.git`;
+  }
+
+  private async gitAuth(repo: ConnectedRepoRef, permissions: Record<string, 'read' | 'write'>): Promise<GitHttpAuth> {
+    const token = await this.tokenFor(repo.installationId, scopeFor(repo, permissions));
+    return basicAuth(`https://${this.host}`, 'x-access-token', token);
   }
 
   // ─── workspace ──────────────────────────────────────────────────────────
+  //
+  // All workspace git goes through `safe-git` (minimal env, hooks /
+  // fsmonitor / filters disabled, repo config validated). The token is
+  // passed per invocation and never lands in `.git/config`.
 
   async cloneIntoWorkspace(repo: ConnectedRepoRef, ref: string, dest: string): Promise<void> {
-    await fs.mkdir(path.dirname(dest), { recursive: true });
-    const url = await this.cloneUrl(repo.repoFullName, repo.installationId);
-    await execa('git', ['clone', '--depth', '50', '--filter=blob:none', '--branch', ref, url, dest], {
-      stdio: 'inherit',
-      env: gitEnv(),
+    await gitClone({
+      cleanUrl: this.cleanUrl(repo.repoFullName),
+      ref,
+      dest,
+      auth: await this.gitAuth(repo, PERMS.read),
     });
   }
 
-  async fetchUpdate(workspace: string, ref: string): Promise<void> {
-    await execa('git', ['fetch', 'origin', ref], { cwd: workspace, env: gitEnv() });
+  async fetchUpdate(workspace: string, ref: string, repo: ConnectedRepoRef): Promise<void> {
+    await gitFetch(workspace, this.cleanUrl(repo.repoFullName), ref, await this.gitAuth(repo, PERMS.read));
   }
 
   async createBranch(workspace: string, name: string, fromRef: string): Promise<void> {
-    if (fromRef && fromRef !== 'HEAD') {
-      await execa('git', ['checkout', fromRef], { cwd: workspace, env: gitEnv() });
-    }
-    await execa('git', ['checkout', '-b', name], { cwd: workspace, env: gitEnv() });
+    await gitCreateBranch(workspace, name, fromRef);
   }
 
-  async commit(
-    workspace: string,
-    opts: { message: string; authorName: string; authorEmail: string; signoff?: boolean },
-  ): Promise<string> {
-    await execa('git', ['add', '-A'], { cwd: workspace, env: gitEnv() });
-    const args = ['commit', '-m', opts.message];
-    if (opts.signoff) args.push('--signoff');
-    await execa('git', args, {
-      cwd: workspace,
-      env: {
-        ...gitEnv(),
-        GIT_AUTHOR_NAME: opts.authorName,
-        GIT_AUTHOR_EMAIL: opts.authorEmail,
-        GIT_COMMITTER_NAME: opts.authorName,
-        GIT_COMMITTER_EMAIL: opts.authorEmail,
-      },
+  async commit(workspace: string, opts: CommitOpts): Promise<string> {
+    return gitCommitAll(workspace, opts);
+  }
+
+  async push(workspace: string, branch: string, repo: ConnectedRepoRef, opts: PushOpts = {}): Promise<void> {
+    // Validate before minting a write token.
+    if (!opts.allowAnyBranchPrefix) assertPushableBranch(branch, [...(opts.protectedBranches ?? []), repo.defaultBranch]);
+    await gitPush(workspace, this.cleanUrl(repo.repoFullName), branch, await this.gitAuth(repo, PERMS.push), {
+      ...opts,
+      protectedBranches: [...(opts.protectedBranches ?? []), repo.defaultBranch],
     });
-    const r = await execa('git', ['rev-parse', 'HEAD'], { cwd: workspace, env: gitEnv() });
-    return r.stdout.trim();
-  }
-
-  async push(workspace: string, branch: string): Promise<void> {
-    await execa('git', ['push', '-u', 'origin', branch], { cwd: workspace, env: gitEnv() });
   }
 
   // ─── PR operations ──────────────────────────────────────────────────────
 
   async openPullRequest(repo: ConnectedRepoRef, opts: PullRequestOpts): Promise<PullRequest> {
-    const kit = await this.kit(repo.installationId);
+    const kit = await this.kit(repo, PERMS.prWrite);
     const { owner, name } = parseRepo(repo.repoFullName);
     const r = await kit.pulls.create({
       owner,
@@ -172,7 +193,7 @@ export class GitHubProvider implements VcsProvider {
   }
 
   async commentOnPullRequest(repo: ConnectedRepoRef, prNumber: number, body: string): Promise<void> {
-    const kit = await this.kit(repo.installationId);
+    const kit = await this.kit(repo, PERMS.prWrite);
     const { owner, name } = parseRepo(repo.repoFullName);
     await kit.issues.createComment({ owner, repo: name, issue_number: prNumber, body });
   }
@@ -182,7 +203,7 @@ export class GitHubProvider implements VcsProvider {
     prNumber: number,
     opts: PostReviewOpts,
   ): Promise<void> {
-    const kit = await this.kit(repo.installationId);
+    const kit = await this.kit(repo, PERMS.prWrite);
     const { owner, name } = parseRepo(repo.repoFullName);
     // GitHub's review API takes uppercase events; map our union to it.
     const event =
@@ -216,7 +237,7 @@ export class GitHubProvider implements VcsProvider {
   }
 
   async markReadyForReview(repo: ConnectedRepoRef, prNumber: number): Promise<void> {
-    const kit = await this.kit(repo.installationId);
+    const kit = await this.kit(repo, PERMS.prWrite);
     const { owner, name } = parseRepo(repo.repoFullName);
     // Need the PR's node_id for the GraphQL mutation. REST PR object
     // exposes it on `data.node_id`.
@@ -242,7 +263,7 @@ export class GitHubProvider implements VcsProvider {
     prNumber: number,
     opts: MergeOpts,
   ): Promise<MergeResult> {
-    const kit = await this.kit(repo.installationId);
+    const kit = await this.kit(repo, PERMS.merge);
     const { owner, name } = parseRepo(repo.repoFullName);
     const r = await kit.pulls.merge({
       owner,
@@ -263,22 +284,23 @@ export class GitHubProvider implements VcsProvider {
     //   1) fetch the PR
     //   2) clone temp workspace, run `git revert <sha>` on the default branch, push
     //   3) open a PR
-    const kit = await this.kit(repo.installationId);
+    const kit = await this.kit(repo, PERMS.revert);
     const { owner, name } = parseRepo(repo.repoFullName);
     const pr = await kit.pulls.get({ owner, repo: name, pull_number: prNumber });
     const mergeSha = pr.data.merge_commit_sha;
     if (!mergeSha) throw new Error(`PR #${prNumber} not merged`);
     const branch = `mergecrew/revert-${prNumber}-${shortSha(mergeSha)}`;
 
-    const tmp = await fs.mkdtemp(path.join(process.env.TMPDIR ?? '/tmp', 'mergecrew-revert-'));
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mergecrew-revert-'));
     try {
-      const url = await this.cloneUrl(repo.repoFullName, repo.installationId);
-      await execa('git', ['clone', '--depth', '50', url, tmp], { env: gitEnv() });
-      await execa('git', ['fetch', 'origin', repo.defaultBranch], { cwd: tmp, env: gitEnv() });
-      await execa('git', ['checkout', repo.defaultBranch], { cwd: tmp, env: gitEnv() });
-      await execa('git', ['checkout', '-b', branch], { cwd: tmp, env: gitEnv() });
-      await execa('git', ['revert', '--no-edit', '-m', '1', mergeSha], { cwd: tmp, env: gitEnv() });
-      await execa('git', ['push', '-u', 'origin', branch], { cwd: tmp, env: gitEnv() });
+      await gitRevertToBranch({
+        dir: path.join(tmp, 'repo'),
+        cleanUrl: this.cleanUrl(repo.repoFullName),
+        auth: await this.gitAuth(repo, PERMS.push),
+        baseBranch: repo.defaultBranch,
+        branch,
+        mergeSha,
+      });
 
       const r = await kit.pulls.create({
         owner,
@@ -295,13 +317,13 @@ export class GitHubProvider implements VcsProvider {
   }
 
   async closePullRequest(repo: ConnectedRepoRef, prNumber: number): Promise<void> {
-    const kit = await this.kit(repo.installationId);
+    const kit = await this.kit(repo, PERMS.prWrite);
     const { owner, name } = parseRepo(repo.repoFullName);
     await kit.pulls.update({ owner, repo: name, pull_number: prNumber, state: 'closed' });
   }
 
   async listOpenPullRequests(repo: ConnectedRepoRef): Promise<PullRequest[]> {
-    const kit = await this.kit(repo.installationId);
+    const kit = await this.kit(repo, PERMS.read);
     const { owner, name } = parseRepo(repo.repoFullName);
     const r = await kit.pulls.list({ owner, repo: name, state: 'open', per_page: 50 });
     return r.data.map((p) => ({
@@ -313,7 +335,7 @@ export class GitHubProvider implements VcsProvider {
   }
 
   async getDefaultBranch(repo: ConnectedRepoRef): Promise<string> {
-    const kit = await this.kit(repo.installationId);
+    const kit = await this.kit(repo, PERMS.read);
     const { owner, name } = parseRepo(repo.repoFullName);
     const r = await kit.repos.get({ owner, repo: name });
     return r.data.default_branch;
@@ -324,7 +346,7 @@ export class GitHubProvider implements VcsProvider {
     ref: string,
     filepath: string,
   ): Promise<{ contentBase64: string }> {
-    const kit = await this.kit(repo.installationId);
+    const kit = await this.kit(repo, PERMS.read);
     const { owner, name } = parseRepo(repo.repoFullName);
     const r = await kit.repos.getContent({ owner, repo: name, path: filepath, ref });
     const data = r.data as any;
@@ -338,7 +360,7 @@ export class GitHubProvider implements VcsProvider {
     repo: ConnectedRepoRef,
     prNumber: number,
   ): Promise<PullRequestFile[]> {
-    const kit = await this.kit(repo.installationId);
+    const kit = await this.kit(repo, PERMS.read);
     const { owner, name } = parseRepo(repo.repoFullName);
     // Paginate — large PRs return >100 files.
     const files = await kit.paginate(kit.pulls.listFiles, {
@@ -368,7 +390,10 @@ export class GitHubProvider implements VcsProvider {
   async listInstallationRepos(
     installationId: string,
   ): Promise<Array<{ repoId: string; repoFullName: string; defaultBranch: string; private: boolean }>> {
-    const kit = await this.kit(installationId);
+    // Installation-wide by necessity (it enumerates repos), but
+    // metadata-only.
+    const token = await this.tokenFor(installationId, { permissions: { metadata: 'read' } });
+    const kit = new Octokit({ auth: token, baseUrl: this.apiUrl });
     const repos = await kit.paginate(kit.apps.listReposAccessibleToInstallation, {
       per_page: 100,
     });
@@ -386,7 +411,7 @@ export class GitHubProvider implements VcsProvider {
     repo: ConnectedRepoRef,
     prNumber: number,
   ): Promise<MergedPullRequest> {
-    const kit = await this.kit(repo.installationId);
+    const kit = await this.kit(repo, PERMS.read);
     const { owner, name } = parseRepo(repo.repoFullName);
     const pr = await kit.pulls.get({ owner, repo: name, pull_number: prNumber });
     const mergeSha = pr.data.merge_commit_sha;
@@ -414,7 +439,7 @@ export class GitHubProvider implements VcsProvider {
     repo: ConnectedRepoRef,
     opts: DispatchWorkflowOpts,
   ): Promise<void> {
-    const kit = await this.kit(repo.installationId);
+    const kit = await this.kit(repo, PERMS.dispatch);
     const { owner, name } = parseRepo(repo.repoFullName);
     await kit.actions.createWorkflowDispatch({
       owner,
@@ -514,18 +539,35 @@ function resolveBaseUrls(baseUrl: string | undefined): { apiUrl: string; host: s
   return { apiUrl, host };
 }
 
-function gitEnv(): NodeJS.ProcessEnv {
-  return {
-    ...process.env,
-    GIT_TERMINAL_PROMPT: '0',
-    GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_SYSTEM: '/dev/null',
-  };
+/**
+ * Minimal permission sets per operation. Requested on every mint so a
+ * token never carries more than the call needs (GitHub refuses to mint
+ * permissions the App does not hold, and silently drops none).
+ */
+const PERMS = {
+  read: { contents: 'read', pull_requests: 'read', metadata: 'read' },
+  push: { contents: 'write', metadata: 'read' },
+  prWrite: { pull_requests: 'write', contents: 'read', metadata: 'read' },
+  merge: { contents: 'write', pull_requests: 'write', metadata: 'read' },
+  revert: { pull_requests: 'write', contents: 'read', metadata: 'read' },
+  dispatch: { actions: 'write', contents: 'read', metadata: 'read' },
+} as const satisfies Record<string, Record<string, 'read' | 'write'>>;
+
+function scopeFor(
+  repo: ConnectedRepoRef,
+  permissions: Record<string, 'read' | 'write'>,
+): InstallationTokenScope {
+  return { repoId: repo.repoId, repoFullName: repo.repoFullName, permissions };
 }
 
+const REPO_PART = /^[A-Za-z0-9_.-]+$/;
+
 function parseRepo(full: string): { owner: string; name: string } {
-  const [owner, name] = full.split('/');
-  if (!owner || !name) throw new Error(`invalid repoFullName: ${full}`);
+  const parts = full.split('/');
+  const [owner, name] = parts;
+  if (parts.length !== 2 || !owner || !name || !REPO_PART.test(owner) || !REPO_PART.test(name) || name === '.' || name === '..') {
+    throw new Error(`invalid repoFullName: ${full}`);
+  }
   return { owner, name };
 }
 

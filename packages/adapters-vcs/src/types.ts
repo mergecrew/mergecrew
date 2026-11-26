@@ -5,6 +5,43 @@ export interface ConnectedRepoRef {
   defaultBranch: string;
 }
 
+/**
+ * Down-scoping for minted installation tokens. GitHub tokens are limited
+ * to the connected repository and to the permissions the operation
+ * needs; adapters with static tokens (GitLab / Gitea) ignore it.
+ */
+export interface InstallationTokenScope {
+  /** Numeric provider repository id (preferred). */
+  repoId?: string;
+  /** `owner/name`; used when `repoId` is unknown. */
+  repoFullName?: string;
+  /** e.g. `{ contents: 'read' }`. */
+  permissions?: Record<string, 'read' | 'write'>;
+}
+
+export interface CommitOpts {
+  message: string;
+  authorName: string;
+  authorEmail: string;
+  signoff?: boolean;
+  /**
+   * Called with the actually-staged paths (after `git add -A`) before
+   * the commit is created; throw to refuse. The commit contains exactly
+   * the index the guard inspected.
+   */
+  guardStagedPaths?: (paths: string[]) => void | Promise<void>;
+}
+
+export interface PushOpts {
+  /** Branches that must never be pushed (base / default / release). */
+  protectedBranches?: readonly string[];
+  /**
+   * Allow branch names outside the `mergecrew/` namespace. Only for
+   * supervisor flows whose branch names are generated in code.
+   */
+  allowAnyBranchPrefix?: boolean;
+}
+
 export interface PullRequestOpts {
   head: string;
   base: string;
@@ -129,7 +166,7 @@ export interface VcsProvider {
   readonly id: 'github' | 'gitlab' | 'gitea';
 
   cloneIntoWorkspace(repo: ConnectedRepoRef, ref: string, dest: string): Promise<void>;
-  fetchUpdate(workspace: string, ref: string): Promise<void>;
+  fetchUpdate(workspace: string, ref: string, repo: ConnectedRepoRef): Promise<void>;
 
   /**
    * Mint a short-lived clone-capable token for the given installation
@@ -143,14 +180,22 @@ export interface VcsProvider {
    * throw `not implemented` until their BYO story lands; the
    * supervisor falls back to the host-side bootstrap for those.
    */
-  getInstallationToken(installationId: string): Promise<string>;
+  getInstallationToken(installationId: string, scope?: InstallationTokenScope): Promise<string>;
 
+  /**
+   * Create `name` from `fromRef`. `fromRef` is resolved against an
+   * allowlist (HEAD, local branches, origin/<branch>); both values are
+   * validated so they can never be interpreted as git options.
+   */
   createBranch(workspace: string, name: string, fromRef: string): Promise<void>;
-  commit(
-    workspace: string,
-    opts: { message: string; authorName: string; authorEmail: string; signoff?: boolean },
-  ): Promise<string>;
-  push(workspace: string, branch: string): Promise<void>;
+  commit(workspace: string, opts: CommitOpts): Promise<string>;
+  /**
+   * Push `refs/heads/<branch>` to the same ref on `repo`. Auth is passed
+   * for this invocation only (never persisted). Refuses protected
+   * branches and, unless `allowAnyBranchPrefix`, anything outside
+   * `mergecrew/`.
+   */
+  push(workspace: string, branch: string, repo: ConnectedRepoRef, opts?: PushOpts): Promise<void>;
 
   openPullRequest(repo: ConnectedRepoRef, opts: PullRequestOpts): Promise<PullRequest>;
   commentOnPullRequest(repo: ConnectedRepoRef, prNumber: number, body: string): Promise<void>;
